@@ -1,258 +1,195 @@
-import { motion, useScroll, useTransform, useSpring, useInView } from 'framer-motion';
-import { useRef, useEffect, useState } from 'react';
-import HelmetCanvas from './HelmetCanvas';
-import { ChevronDown, Play } from 'lucide-react';
+import { Suspense, useState, useEffect, useRef } from 'react';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import { ChevronDown } from 'lucide-react';
+import FluidCanvas from './FluidCanvas';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const CountUp = ({ end, duration = 2, suffix = '' }: { end: number; duration?: number; suffix?: string }) => {
   const [count, setCount] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true });
 
   useEffect(() => {
-    if (isInView) {
-      let startTime: number;
-      const step = (timestamp: number) => {
-        if (!startTime) startTime = timestamp;
-        const progress = Math.min((timestamp - startTime) / (duration * 1000), 1);
-        setCount(Math.floor(progress * end));
-        if (progress < 1) {
-          requestAnimationFrame(step);
-        }
-      };
-      requestAnimationFrame(step);
-    }
-  }, [isInView, end, duration]);
+    let startTime: number;
+    const step = (timestamp: number) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / (duration * 1000), 1);
+      setCount(Math.floor(progress * end));
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      }
+    };
+    requestAnimationFrame(step);
+  }, [end, duration]);
 
-  return <span ref={ref}>{count}{suffix}</span>;
+  return <span>{count}{suffix}</span>;
 };
 
+// Loading fallback for 3D canvas
+const CanvasLoader = () => (
+  <div className="absolute inset-0 flex items-center justify-center bg-background">
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+      className="flex gap-2"
+    >
+      {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
+        <motion.div
+          key={color}
+          animate={{ scale: [1, 1.5, 1] }}
+          transition={{ duration: 1, repeat: Infinity, delay: i * 0.1 }}
+          className="w-4 h-4 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      ))}
+    </motion.div>
+  </div>
+);
+
 const HeroSection = () => {
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
+  const { theme } = useTheme();
   const { scrollYProgress } = useScroll({
-    target: ref,
-    offset: ['start start', 'end start'],
+    target: containerRef,
+    offset: ["start start", "end start"]
   });
 
-  const y = useTransform(scrollYProgress, [0, 1], [0, 400]);
-  const ySpring = useSpring(y, { stiffness: 100, damping: 30 });
-  const opacity = useTransform(scrollYProgress, [0, 0.4], [1, 0]);
+  const y = useTransform(scrollYProgress, [0, 1], [0, 300]);
+  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
   const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.8]);
-  const titleY = useTransform(scrollYProgress, [0, 0.5], [0, 150]);
 
   const stats = [
-    { value: 7, suffix: '', label: 'RACE WINS' },
-    { value: 24, suffix: '', label: 'PODIUMS' },
-    { value: 6, suffix: '', label: 'POLE POSITIONS' },
-    { value: 4, suffix: '', label: 'F1 SEASONS' },
+    { value: 50, suffix: '+', label: 'EVENTS HOSTED', color: '#4285F4' },
+    { value: 1200, suffix: '+', label: 'MEMBERS', color: '#EA4335' },
+    { value: 20, suffix: '', label: 'WORKSHOPS', color: '#FBBC04' },
+    { value: 5, suffix: '', label: 'YEARS ACTIVE', color: '#34A853' },
   ];
 
   return (
-    <section ref={ref} className="relative min-h-[120vh] overflow-hidden noise">
-      {/* Ambient background */}
-      <div className="absolute inset-0 gradient-hero" />
-      
-      {/* Animated grid lines */}
-      <div className="absolute inset-0 track-lines opacity-20" />
-      
-      {/* Radial glow */}
-      <motion.div 
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full"
-        style={{
-          background: 'radial-gradient(circle, hsl(75 100% 50% / 0.1) 0%, transparent 70%)',
-        }}
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-      />
+    <section ref={containerRef} className="relative h-screen flex flex-col items-center justify-center overflow-hidden bg-background">
+      {/* WebGL Fluid Canvas Background */}
+      <div className="absolute inset-0 z-0">
+        <Suspense fallback={<CanvasLoader />}>
+          <FluidCanvas />
+        </Suspense>
+      </div>
 
-      {/* Circuit path SVG */}
-      <svg className="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
-        <motion.path
-          d="M-100 500 Q200 300 400 450 T800 400 T1200 500 T1600 350 T2020 450"
-          fill="none"
-          stroke="url(#gradient1)"
-          strokeWidth="2"
-          strokeDasharray="10 10"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 3, ease: 'easeInOut' }}
-        />
-        <motion.path
-          d="M-100 600 Q300 750 500 600 T900 700 T1300 580 T1700 680 T2020 600"
-          fill="none"
-          stroke="url(#gradient1)"
-          strokeWidth="2"
-          strokeDasharray="10 10"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 3, delay: 0.3, ease: 'easeInOut' }}
-        />
-        <motion.path
-          d="M-100 800 Q400 700 600 800 T1000 750 T1400 850 T1800 780 T2020 820"
-          fill="none"
-          stroke="url(#gradient1)"
-          strokeWidth="2"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 3, delay: 0.6, ease: 'easeInOut' }}
-        />
-        <defs>
-          <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="hsl(75 100% 50% / 0.3)" />
-            <stop offset="50%" stopColor="hsl(75 100% 50% / 0.8)" />
-            <stop offset="100%" stopColor="hsl(75 100% 50% / 0.3)" />
-          </linearGradient>
-        </defs>
-      </svg>
+      {/* Overlay gradient for better text readability */}
+      <div className="absolute inset-0 z-10 bg-gradient-to-b from-transparent via-transparent to-background/80 pointer-events-none" />
 
-      {/* Left Stats Card */}
+      {/* Content Layer */}
       <motion.div
-        initial={{ x: -100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ delay: 1.5, duration: 1, ease: [0.23, 1, 0.32, 1] }}
-        style={{ opacity, y: ySpring }}
-        className="absolute left-6 lg:left-12 bottom-40 z-20 hidden md:block"
-      >
-        <div className="glass rounded-2xl p-6 w-64">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-3 h-3 rounded-full bg-lime animate-pulse" />
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">Live Stats</p>
-          </div>
-          
-          <div className="space-y-4">
-            {stats.map((stat, i) => (
-              <div key={i} className="flex items-end justify-between">
-                <span className="font-display text-3xl text-lime">
-                  <CountUp end={stat.value} suffix={stat.suffix} duration={2 + i * 0.3} />
-                </span>
-                <span className="text-xs text-muted-foreground uppercase tracking-wide">{stat.label}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-border">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-5 rounded overflow-hidden bg-papaya flex items-center justify-center">
-                <span className="text-[8px] font-bold text-background">MCL</span>
-              </div>
-              <div>
-                <p className="text-xs font-medium">McLaren F1 Team</p>
-                <p className="text-xs text-muted-foreground">Since 2019</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Right Quick Actions */}
-      <motion.div
-        initial={{ x: 100, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        transition={{ delay: 1.7, duration: 1, ease: [0.23, 1, 0.32, 1] }}
-        style={{ opacity }}
-        className="absolute right-6 lg:right-12 top-1/2 -translate-y-1/2 z-20 hidden lg:flex flex-col gap-4"
-      >
-        <motion.button
-          whileHover={{ scale: 1.1, x: -10 }}
-          whileTap={{ scale: 0.95 }}
-          className="w-14 h-14 glass rounded-xl flex items-center justify-center group"
-        >
-          <Play className="w-5 h-5 text-muted-foreground group-hover:text-lime transition-colors" />
-        </motion.button>
-        <div className="w-px h-20 bg-gradient-to-b from-transparent via-border to-transparent mx-auto" />
-        <motion.a
-          href="#on-track"
-          whileHover={{ scale: 1.1, x: -10 }}
-          className="text-xs uppercase tracking-widest text-muted-foreground [writing-mode:vertical-lr] hover:text-lime transition-colors"
-        >
-          Explore
-        </motion.a>
-      </motion.div>
-
-      {/* 3D Helmet */}
-      <motion.div 
-        style={{ scale, opacity }} 
-        className="absolute inset-0 z-10"
-      >
-        <HelmetCanvas />
-      </motion.div>
-
-      {/* Hero Title */}
-      <motion.div
-        style={{ y: titleY, opacity }}
-        className="absolute bottom-32 left-0 right-0 text-center z-20 px-6"
+        style={{ y, opacity, scale }}
+        className="container mx-auto px-6 relative z-20 text-center"
       >
         <motion.div
-          initial={{ opacity: 0, y: 100 }}
+          initial={{ opacity: 0, y: 50 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.8, duration: 1.2, ease: [0.23, 1, 0.32, 1] }}
+          transition={{ duration: 1, delay: 0.5, ease: [0.23, 1, 0.32, 1] }}
         >
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7, duration: 0.8 }}
+            className={`text-sm md:text-base uppercase tracking-[0.5em] mb-8 font-medium ${theme === 'light' ? 'text-[rgb(var(--text-secondary-raw))]' : 'text-white/80'}`}
+          >
+            Building Community Together
+          </motion.p>
+
+          {/* Title is now rendered in 3D via FluidCanvas, so we show a subtle DOM version for SEO */}
+          <h1 className="sr-only">Google Developer Groups</h1>
+
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.2, duration: 0.8 }}
-            className="text-sm md:text-base uppercase tracking-[0.4em] text-lime mb-6"
+            className={`text-xl md:text-2xl font-body max-w-2xl mx-auto mb-16 mt-32 ${theme === 'light' ? 'text-[rgb(var(--text-secondary-raw))]' : 'text-white/60'}`}
           >
-            McLaren Formula 1 Driver
+            Connect, learn, and grow with a community of developers passionate about Google technologies.
           </motion.p>
-          
-          <h1 className="text-display-xl font-display relative">
-            <motion.span
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9, duration: 0.8 }}
-              className="block"
+        </motion.div>
+
+        {/* Stats Grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 60 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.5, duration: 0.8 }}
+          className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto"
+        >
+          {stats.map((stat, i) => (
+            <motion.div
+              key={i}
+              whileHover={{ scale: 1.05, y: -5 }}
+              className="flex flex-col items-center justify-center p-6 rounded-2xl border backdrop-blur-md transition-colors"
+              style={{
+                backgroundColor: theme === 'light' ? `${stat.color}15` : 'rgba(0,0,0,0.3)',
+                borderColor: theme === 'light' ? `${stat.color}40` : 'rgba(255,255,255,0.1)',
+                boxShadow: theme === 'light'
+                  ? `0 4px 20px -5px ${stat.color}30`
+                  : `0 0 30px ${stat.color}15, inset 0 1px 0 rgba(255,255,255,0.1)`,
+              }}
             >
-              LANDO
-            </motion.span>
-            <motion.span
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.1, duration: 0.8 }}
-              className="block text-lime glow-text"
-            >
-              NORRIS
-            </motion.span>
-          </h1>
+              <span
+                className="font-display text-4xl md:text-5xl mb-2"
+                style={{
+                  color: theme === 'light' ? stat.color : stat.color,
+                  textShadow: theme === 'light' ? 'none' : `0 0 40px ${stat.color}80`,
+                }}
+              >
+                <CountUp end={stat.value} suffix={stat.suffix} duration={2 + i * 0.2} />
+              </span>
+              <span className={`text-xs uppercase tracking-wider font-semibold ${theme === 'light' ? 'text-[rgb(var(--text-secondary-raw))]' : 'text-white/50'}`}>
+                {stat.label}
+              </span>
+            </motion.div>
+          ))}
         </motion.div>
       </motion.div>
 
-      {/* Double Marquee */}
-      <div className="absolute bottom-0 left-0 right-0 z-20">
-        <div className="overflow-hidden py-4 border-t border-border/50 bg-background/50 backdrop-blur-sm">
-          <motion.div
-            animate={{ x: [0, -1920] }}
-            transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
-            className="flex whitespace-nowrap"
-          >
-            {Array(6).fill(null).map((_, i) => (
-              <span key={i} className="text-sm uppercase tracking-[0.5em] text-muted-foreground mx-12 flex items-center gap-8">
-                <span>McLaren F1</span>
-                <span className="w-2 h-2 rounded-full bg-lime" />
-                <span>Driver #4</span>
-                <span className="w-2 h-2 rounded-full bg-papaya" />
-                <span>Since 2019</span>
-                <span className="w-2 h-2 rounded-full bg-lime" />
-              </span>
-            ))}
-          </motion.div>
-        </div>
+      {/* Marquee */}
+      <div className={`absolute bottom-0 left-0 right-0 z-30 w-full overflow-hidden py-5 backdrop-blur-sm border-t ${theme === 'light' ? 'bg-black/90 border-white/10' : 'bg-black/50 border-white/5'}`}>
+        <motion.div
+          animate={{ x: [0, -1000] }}
+          transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
+          className="flex whitespace-nowrap items-center"
+        >
+          {Array(10).fill(null).map((_, i) => (
+            <div key={i} className="flex items-center mx-8 gap-6">
+              <span className={`text-sm font-bold uppercase tracking-[0.2em] ${theme === 'light' ? 'text-[#4285F4]' : 'text-white/40'}`}>GDG On Campus</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme === 'light' ? '#4285F4' : '#4285F4', boxShadow: `0 0 10px ${theme === 'light' ? 'transparent' : '#4285F4'}` }} />
+              <span className={`text-sm font-bold uppercase tracking-[0.2em] ${theme === 'light' ? 'text-[#EA4335]' : 'text-white/40'}`}>Connect</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme === 'light' ? '#EA4335' : '#EA4335', boxShadow: `0 0 10px ${theme === 'light' ? 'transparent' : '#EA4335'}` }} />
+              <span className={`text-sm font-bold uppercase tracking-[0.2em] ${theme === 'light' ? 'text-[#FBBC04]' : 'text-white/40'}`}>Learn</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme === 'light' ? '#FBBC04' : '#FBBC04', boxShadow: `0 0 10px ${theme === 'light' ? 'transparent' : '#FBBC04'}` }} />
+              <span className={`text-sm font-bold uppercase tracking-[0.2em] ${theme === 'light' ? 'text-[#34A853]' : 'text-white/40'}`}>Grow</span>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme === 'light' ? '#34A853' : '#34A853', boxShadow: `0 0 10px ${theme === 'light' ? 'transparent' : '#34A853'}` }} />
+            </div>
+          ))}
+        </motion.div>
       </div>
 
-      {/* Scroll indicator */}
+      {/* Scroll Indicator */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 2.5, duration: 1 }}
-        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30"
+        className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40"
       >
         <motion.div
           animate={{ y: [0, 10, 0] }}
           transition={{ duration: 2, repeat: Infinity }}
-          className="flex flex-col items-center gap-2"
+          className={`p-3 rounded-full border backdrop-blur-sm ${theme === 'light' ? 'border-[rgb(var(--text-secondary-raw))]/20 bg-[rgb(var(--creme-200))]' : 'border-white/20 bg-black/30'}`}
         >
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">Scroll</span>
-          <ChevronDown className="w-5 h-5 text-lime" />
+          <ChevronDown className={`w-5 h-5 ${theme === 'light' ? 'text-[rgb(var(--text-secondary-raw))]' : 'text-white/50'}`} />
         </motion.div>
+      </motion.div>
+
+      {/* Interaction hint */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: [0, 1, 0] }}
+        transition={{ delay: 3, duration: 3, repeat: 2 }}
+        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none"
+      >
+        <p className="text-white/30 text-sm uppercase tracking-widest">Move your mouse to interact</p>
       </motion.div>
     </section>
   );
