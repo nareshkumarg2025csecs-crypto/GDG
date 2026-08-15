@@ -35,16 +35,16 @@ const FluidBackground = () => {
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
+    const _targetVec = useMemo(() => new THREE.Vector2(), []);
+
     useFrame((state) => {
         if (meshRef.current) {
             const material = meshRef.current.material as THREE.ShaderMaterial;
             material.uniforms.uTime.value = state.clock.elapsedTime;
 
-            // Smooth mouse position
-            material.uniforms.uMouse.value.lerp(
-                new THREE.Vector2(mouseRef.current.x, mouseRef.current.y),
-                0.1
-            );
+            // Smooth mouse position — reuse vector to avoid GC
+            _targetVec.set(mouseRef.current.x, mouseRef.current.y);
+            material.uniforms.uMouse.value.lerp(_targetVec, 0.1);
 
             // Decay velocity
             material.uniforms.uMouseVelocity.value = THREE.MathUtils.lerp(
@@ -152,7 +152,7 @@ const FloatingOrbs = () => {
 // Floating Particles
 const FloatingParticles = () => {
     const particlesRef = useRef<THREE.Points>(null);
-    const count = 150;
+    const count = 80;
 
     const [positions, colors] = useMemo(() => {
         const pos = new Float32Array(count * 3);
@@ -216,12 +216,13 @@ const FluidCanvas = () => {
     return (
         <Canvas
             camera={{ position: [0, 0, 6], fov: 45 }}
-            dpr={[1, 2]}
+            dpr={[1, 1.5]}
             gl={{
-                antialias: true,
+                antialias: false,
                 alpha: true,
                 powerPreference: "high-performance"
             }}
+            frameloop="always"
             style={{
                 position: 'absolute',
                 top: 0,

@@ -10,15 +10,16 @@
  * 4. InstancedMesh for particles - maintains 60 FPS
  */
 
-import { Suspense, useState, useMemo, useCallback } from 'react'
+import { Suspense, useState, useMemo, useCallback, useEffect } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { ScrollControls, useScroll, Html } from '@react-three/drei'
+import { ScrollControls, useScroll, Html, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 
 import { eventsData } from './data/eventsData'
 import { SplinePath, createTimelineCurve } from './components/SplinePath'
 import { Starfield } from './components/Starfield'
 import { EventNode } from './components/EventNode'
+import { useEasterEggStore } from '@/store/easterEggStore'
 
 // ================================
 // CONSTANTS
@@ -41,8 +42,10 @@ interface CameraControllerProps {
 function CameraController({ curve, isMobile }: CameraControllerProps) {
     const scroll = useScroll()
     const { camera } = useThree()
+    const { noclipMode } = useEasterEggStore()
 
     useFrame(() => {
+        if (noclipMode) return // Let OrbitControls take over
         // Get normalized scroll progress (0 to 1)
         const t = THREE.MathUtils.clamp(scroll.offset, 0, 0.995)
 
@@ -149,12 +152,16 @@ interface SceneProps {
 function Scene({ isMobile, onProgress }: SceneProps) {
     // Create curve once
     const curve = useMemo(() => createTimelineCurve(isMobile), [isMobile])
+    const { noclipMode } = useEasterEggStore()
 
     return (
         <>
             {/* Background & Fog */}
             <color attach="background" args={[BG_COLOR]} />
             <fog attach="fog" args={[BG_COLOR, 6, 70]} />
+
+            {/* Noclip Mode (OrbitControls) */}
+            {noclipMode && <OrbitControls makeDefault enableDamping dampingFactor={0.05} />}
 
             {/* Track scroll progress */}
             <ScrollTracker onProgress={onProgress} />

@@ -7,74 +7,81 @@
 /* Theme Variables */
 @layer base {
   :root {
-    /* CRÈME & DARK NEUTRAL LIGHT MODE SCALE */
+    /* CLEAN MODERN LIGHT MODE */
 
-    /* Variables */
-    --creme-50: 60 40% 98%;
-    /* #FAF9F5 (Lighter) */
-    --creme-100: 48 44% 94%;
-    /* #FAF6E8 (Requested Background) */
-    --creme-200: 47 44% 91%;
-    /* #F2EEDC (Elevated Surface) */
-    --creme-300: 45 32% 83%;
-    /* #E2DDC8 (Border) */
+    /* Surface Scale — warm white, not dull cream */
+    --surface-50: 0 0% 100%;
+    /* #FFFFFF */
+    --surface-100: 60 9% 98%;
+    /* #FAFAFA — body background */
+    --surface-200: 60 6% 95%;
+    /* #F3F3F1 — elevated cards */
+    --surface-300: 60 5% 88%;
+    /* #E2E1DE — borders */
+    --surface-400: 0 0% 78%;
+    /* #C7C7C7 — strong borders */
 
-    /* Text Colors - Dark Neutrals */
-    --text-primary-raw: 0 0% 12%;
-    /* #1F1F1F */
-    --text-secondary-raw: 0 0% 29%;
-    /* #4A4A4A */
+    /* Text Colors - High Contrast Neutrals */
+    --text-primary-raw: 0 0% 9%;
+    /* #171717 */
+    --text-secondary-raw: 0 0% 32%;
+    /* #525252 */
 
-    /* Basic Semantic Mapping */
-    --background: var(--creme-100);
+    /* Semantic Mapping */
+    --background: var(--surface-100);
     --foreground: var(--text-primary-raw);
 
-    --card-bg: var(--creme-200);
-    --card: var(--creme-200);
+    --card-bg: var(--surface-50);
+    --card: var(--surface-50);
     --card-foreground: var(--text-primary-raw);
-    --card-border: var(--creme-300);
+    --card-border: var(--surface-300);
 
     /* UI Elements */
-    --popover: var(--creme-100);
+    --popover: var(--surface-50);
     --popover-foreground: var(--text-primary-raw);
 
-    --primary: 0 0% 12%;
-    --primary-foreground: 48 44% 94%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: var(--creme-300);
+    --secondary: var(--surface-200);
     --secondary-foreground: var(--text-primary-raw);
 
-    --muted: var(--creme-200);
+    --muted: var(--surface-200);
     --muted-foreground: var(--text-secondary-raw);
 
-    --accent: var(--creme-300);
+    --accent: var(--surface-300);
     --accent-foreground: var(--text-primary-raw);
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: var(--creme-300);
-    --input: var(--creme-200);
-    --ring: 0 0% 12%;
+    --border: var(--surface-300);
+    --input: var(--surface-200);
+    --ring: 217 89% 61%;
 
     --radius: 0.75rem;
 
-    /* Shadow Utilities (Neutral) */
+    /* Shadow Utilities */
     --shadow-color: 0 0% 0%;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    --shadow-card-hover: 0 4px 16px rgba(0,0,0,0.1), 0 1px 4px rgba(0,0,0,0.06);
 
-    /* Brand Accents (Restricted Logic) */
-    /* We keep these definitions for 'semantic' usage but strictly avoid them for text */
+    /* Google Brand Colors */
     --lime: 217 89% 61%;
-    /* Google Blue */
     --papaya: 4 90% 58%;
-    /* Google Red */
     --gold: 44 98% 50%;
-    /* Google Yellow */
     --forest: 146 53% 43%;
-    /* Google Green */
-    --carbon: var(--creme-200);
-    --cream: var(--creme-100);
-    --track-line: var(--creme-300);
+    --carbon: var(--surface-200);
+    --cream: var(--surface-100);
+    --track-line: var(--surface-300);
+
+    /* Google semantic colors */
+    --google-blue: 217 89% 61%;
+    --google-red: 4 90% 58%;
+    --google-yellow: 44 98% 50%;
+    --google-green: 146 53% 43%;
+    --google-grey: 0 0% 96%;
+    --google-white: 0 0% 9%;
   }
 
   /* DARK MODE OVERRIDES */
@@ -181,7 +188,7 @@
     color: transparent;
   }
 
-  /* Glassmorphism */
+  /* Glassmorphism — theme-aware */
   .glass {
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(20px);
@@ -189,11 +196,23 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
+  :root .glass {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
   .glass-strong {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
     border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  :root .glass-strong {
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   }
 
   /* Premium gradients */
@@ -263,6 +282,22 @@
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Global focus-visible ring */
+  *:focus-visible {
+    outline: 2px solid #4285F4;
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
@@ -670,4 +705,226 @@
 /* Custom cursor area */
 .cursor-glow {
   cursor: none;
+}
+
+/* ============================================
+   PREMIUM ADDITIONS — State of the Art Upgrade
+   ============================================ */
+
+/* Animated film-grain noise overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  animation: noise-drift 0.5s steps(4) infinite;
+}
+
+/* Much subtler grain in light mode */
+:root:not(.dark) body::after {
+  opacity: 0.012;
+  mix-blend-mode: multiply;
+}
+
+@keyframes noise-drift {
+  0%   { transform: translate(0, 0); }
+  25%  { transform: translate(-2%, 3%); }
+  50%  { transform: translate(3%, -1%); }
+  75%  { transform: translate(-1%, -3%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* Custom cursor ring */
+.cursor-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  will-change: transform, width, height, opacity;
+}
+
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+/* Underline wipe — premium link animation */
+.link-wipe {
+  position: relative;
+  display: inline-block;
+  text-decoration: none;
+}
+
+.link-wipe::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 100%;
+  height: 1px;
+  background: currentColor;
+  transition: right 0.35s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.link-wipe:hover::after {
+  right: 0;
+}
+
+/* Button shimmer effect */
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  transition: left 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.btn-shimmer:hover::before {
+  left: 150%;
+}
+
+/* Scroll-reveal base classes */
+.reveal {
+  opacity: 0;
+  transform: translateY(60px);
+  transition: opacity 0.8s cubic-bezier(0.23, 1, 0.32, 1),
+              transform 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-60px);
+  transition: opacity 0.8s cubic-bezier(0.23, 1, 0.32, 1),
+              transform 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.reveal-left.in-view {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.reveal-right {
+  opacity: 0;
+  transform: translateX(60px);
+  transition: opacity 0.8s cubic-bezier(0.23, 1, 0.32, 1),
+              transform 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.reveal-right.in-view {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Text stroke utilities */
+.text-stroke-sm {
+  -webkit-text-stroke: 1px currentColor;
+  color: transparent;
+}
+
+.text-stroke-md {
+  -webkit-text-stroke: 2px currentColor;
+  color: transparent;
+}
+
+/* Clip-reveal animation */
+@keyframes clip-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0% 0 0); }
+}
+
+.animate-clip-reveal {
+  animation: clip-reveal 0.9s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+/* Poster card gradient mesh */
+.poster-mesh {
+  background:
+    radial-gradient(circle at 25% 25%, var(--poster-color-a) 0%, transparent 55%),
+    radial-gradient(circle at 75% 75%, var(--poster-color-b) 0%, transparent 55%);
+}
+
+/* Editorial section label */
+.section-eyebrow {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+}
+
+/* Hide native cursor when custom cursor is active */
+body.custom-cursor-active,
+body.custom-cursor-active * {
+  cursor: none !important;
+}
+
+/* Stagger delay helpers */
+.stagger-1 { transition-delay: 0.05s; }
+.stagger-2 { transition-delay: 0.10s; }
+.stagger-3 { transition-delay: 0.15s; }
+.stagger-4 { transition-delay: 0.20s; }
+.stagger-5 { transition-delay: 0.25s; }
+.stagger-6 { transition-delay: 0.30s; }
+
+/* Vignette overlay utility */
+.vignette::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.4) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Smooth will-change hints */
+.will-transform {
+  will-change: transform;
+}
+
+.will-opacity {
+  will-change: opacity;
+}
+
+/* Reduce motion for accessibility + perf */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* GPU-promote heavy scroll containers */
+section {
+  contain: layout style;
 }

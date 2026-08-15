@@ -1,4 +1,4 @@
-import { useEffect, useRef, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { motion, useMotionValue, useTransform } from 'framer-motion';
 import { GalleryItem } from './data/galleryData';
@@ -60,6 +60,7 @@ const MemoryCard = ({ item, onClick, index }: { item: GalleryItem; onClick: () =
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-10%" }}
             transition={{ duration: 0.6, delay: index * 0.05 }}
+            data-physics
             style={{
                 x: x,
                 y: y,
@@ -137,8 +138,6 @@ const MemoryDeskGrid = ({ items, onItemClick }: MemoryDeskGridProps) => {
         // Since we are using Framer Motion for the cards, we can let AnimatePresence handle it or just simple re-renders.
         // However, the "Scattered" layout is best achieved with CSS constraints.
     }, [items]);
-
-    console.log('MemoryDeskGrid rendering with items:', items.length, items);
 
     return (
         <div ref={containerRef} className="w-full py-20 px-4 md:px-0">

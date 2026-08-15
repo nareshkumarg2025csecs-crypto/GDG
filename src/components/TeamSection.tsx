@@ -25,14 +25,14 @@ interface TeamMember {
     name: string
     role: string
     codename: string
-    team: 'techops' | 'design' | 'media' | 'logistics'
+    team: 'leads' | 'techops' | 'design' | 'media' | 'logistics'
     color: string
     initial: string
     status: 'ACTIVE' | 'STANDBY'
 }
 
 interface TeamBay {
-    id: 'techops' | 'design' | 'media' | 'logistics'
+    id: 'leads' | 'techops' | 'design' | 'media' | 'logistics'
     name: string
     label: string
     color: string
@@ -40,6 +40,7 @@ interface TeamBay {
 }
 
 const teamBays: TeamBay[] = [
+    { id: 'leads', name: 'LEADS', label: '// LEADERSHIP', color: '#9E9E9E', description: 'GDG on Campus leadership team' },
     { id: 'techops', name: 'TECH_OPS', label: '// TECHNICAL OPERATIONS', color: '#4285F4', description: 'Backend architects & code masters' },
     { id: 'design', name: 'DESIGN', label: '// VISUAL SYSTEMS', color: '#EA4335', description: 'UI/UX & brand identity specialists' },
     { id: 'media', name: 'MEDIA', label: '// CONTENT OPS', color: '#FBBC04', description: 'Photography, video & social' },
@@ -47,14 +48,16 @@ const teamBays: TeamBay[] = [
 ]
 
 const teamMembers: TeamMember[] = [
-    { id: 1, name: 'Alex Johnson', role: 'Tech Lead', codename: 'CIPHER', team: 'techops', color: '#4285F4', initial: 'A', status: 'ACTIVE' },
-    { id: 2, name: 'Sarah Chen', role: 'Backend Dev', codename: 'VECTOR', team: 'techops', color: '#4285F4', initial: 'S', status: 'ACTIVE' },
-    { id: 3, name: 'Emily Davis', role: 'Lead Designer', codename: 'PRISM', team: 'design', color: '#EA4335', initial: 'E', status: 'ACTIVE' },
-    { id: 4, name: 'Lisa Anderson', role: 'UI/UX', codename: 'PIXEL', team: 'design', color: '#EA4335', initial: 'L', status: 'STANDBY' },
-    { id: 5, name: 'Mike Smith', role: 'Content Lead', codename: 'LENS', team: 'media', color: '#FBBC04', initial: 'M', status: 'ACTIVE' },
-    { id: 6, name: 'Anna White', role: 'Social Media', codename: 'SIGNAL', team: 'media', color: '#FBBC04', initial: 'A', status: 'ACTIVE' },
-    { id: 7, name: 'David Wilson', role: 'Ops Manager', codename: 'NEXUS', team: 'logistics', color: '#34A853', initial: 'D', status: 'ACTIVE' },
-    { id: 8, name: 'James Brown', role: 'Coordinator', codename: 'RELAY', team: 'logistics', color: '#34A853', initial: 'J', status: 'STANDBY' },
+    { id: 0, name: 'Rakesh', role: 'Lead', codename: 'ORBIT', team: 'leads', color: '#9E9E9E', initial: 'R', status: 'ACTIVE' },
+    { id: 9, name: 'Kishore', role: 'Co-lead', codename: 'PULSE', team: 'leads', color: '#9E9E9E', initial: 'K', status: 'ACTIVE' },
+    { id: 1, name: 'Lokesh JR', role: 'Tech-Ops Lead', codename: 'CIPHER', team: 'techops', color: '#4285F4', initial: 'L', status: 'ACTIVE' },
+    { id: 2, name: 'Prasanna', role: 'Tech-Ops Co-Lead', codename: 'VECTOR', team: 'techops', color: '#4285F4', initial: 'P', status: 'STANDBY' },
+    { id: 3, name: 'Aishwarya', role: 'Design Lead', codename: 'PRISM', team: 'design', color: '#EA4335', initial: 'A', status: 'ACTIVE' },
+    { id: 4, name: 'Akshithaa', role: 'Design Co-Lead', codename: 'PIXEL', team: 'design', color: '#EA4335', initial: 'A', status: 'STANDBY' },
+    { id: 5, name: 'Benin', role: 'Media Lead', codename: 'LENS', team: 'media', color: '#FBBC04', initial: 'B', status: 'ACTIVE' },
+    { id: 6, name: 'Madhusha Harini', role: 'Media Co-Lead', codename: 'SIGNAL', team: 'media', color: '#FBBC04', initial: 'M', status: 'STANDBY' },
+    { id: 7, name: 'Venkat', role: 'Logistics Lead', codename: 'NEXUS', team: 'logistics', color: '#34A853', initial: 'V', status: 'ACTIVE' },
+    { id: 8, name: 'Aboorvan', role: 'Logistics Co-Lead', codename: 'RELAY', team: 'logistics', color: '#34A853', initial: 'A', status: 'STANDBY' },
 ]
 
 // ================================
@@ -174,9 +177,9 @@ function HolographicCard({ member, index }: HolographicCardProps) {
 
                     {/* Bottom Info */}
                     <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: `linear-gradient(to top, ${member.color}E6 0%, transparent 100%)` }}>
-                        <p className="text-[10px] font-mono tracking-[0.3em] mb-1" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>// {member.codename}</p>
-                        <h4 className="font-display text-lg leading-tight" style={{ color: 'rgb(var(--foreground))' }}>{member.name}</h4>
-                        <p className="text-xs font-mono mt-1" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>{member.role}</p>
+                        <p className="text-[10px] font-mono tracking-[0.3em] mb-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>// {member.codename}</p>
+                        <h4 className="font-display text-lg leading-tight break-words" style={{ color: 'rgb(var(--foreground))', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
+                        <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.role}</p>
                     </div>
 
                     {/* Corner decorations */}
@@ -211,7 +214,7 @@ function BayTab({ bay, isActive, onClick }: BayTabProps) {
             {isActive && (
                 <motion.div layoutId="activeBay" className="absolute inset-0" style={{ boxShadow: `inset 0 0 30px ${bay.color}20` }} />
             )}
-            <p className="text-[10px] font-mono tracking-[0.2em] mb-0.5" style={{ color: isActive ? bay.color : 'rgba(var(--foreground), 0.3)' }}>{bay.label}</p>
+            <p className="text-[10px] font-mono tracking-[0.2em] mb-0.5" style={{ color: bay.color }}>{bay.label}</p>
             <p className="font-display text-lg md:text-xl transition-colors duration-300" style={{ color: isActive ? 'rgb(var(--foreground))' : 'rgba(var(--foreground), 0.4)' }}>{bay.name}</p>
         </button>
     )
@@ -227,7 +230,7 @@ interface TeamSection2DProps {
 }
 
 function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) {
-    const [activeBay, setActiveBay] = useState<TeamBay['id']>('techops')
+    const [activeBay, setActiveBay] = useState<TeamBay['id']>('leads')
     const { theme } = useTheme()
     // Override activeBayData color for light mode to always be yellow-400 or related
     const rawActiveBayData = teamBays.find(b => b.id === activeBay)!
@@ -244,10 +247,11 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
         <section id="team" className="py-20 md:py-32 relative overflow-hidden bg-background transition-colors duration-300">
             {/* View toggle - Always visible */}
             {showToggle && onSwitchTo3D && (
-                <div className="absolute top-6 right-6 z-30 flex items-center gap-1 bg-[rgb(var(--card-bg))] border border-white/30 rounded-lg p-1 backdrop-blur-sm">
+                <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.15)'}` }}>
                     <button
                         onClick={onSwitchTo3D}
-                        className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 text-[rgb(var(--foreground))]/50 hover:text-[rgb(var(--foreground))] hover:bg-[rgb(var(--foreground))]/10"
+                        className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300"
+                        style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(31,31,31,0.5)' }}
                     >
                         3D GARAGE
                     </button>
@@ -265,7 +269,7 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
             }} />
 
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[150px] opacity-20"
-                style={{ background: theme === 'light' ? 'radial-gradient(circle, rgba(var(--creme-300), 0.5), transparent)' : `radial-gradient(circle, ${activeBayData.color}, transparent)` }} />
+                style={{ background: theme === 'light' ? 'radial-gradient(circle, rgba(var(--surface-300), 0.5), transparent)' : `radial-gradient(circle, ${activeBayData.color}, transparent)` }} />
 
             <div className="container mx-auto px-4 md:px-6 relative z-10">
                 <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12 md:mb-16">
@@ -279,7 +283,7 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                     <p className="text-[rgb(var(--foreground))]/30 font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {filteredMembers.length} OPERATIVES ASSIGNED</p>
                 </motion.div>
 
-                <div className="flex flex-wrap gap-2 md:gap-0 mb-10 md:mb-14 border-b border-white/10 pb-4 md:pb-0 md:border-b-0">
+                <div className="flex flex-wrap gap-2 md:gap-0 mb-10 md:mb-14 border-b pb-4 md:pb-0 md:border-b-0" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.1)' }}>
                     {teamBays.map(bay => (
                         <BayTab key={bay.id} bay={bay} isActive={activeBay === bay.id} onClick={() => setActiveBay(bay.id)} />
                     ))}
@@ -293,11 +297,11 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                     ))}
                 </motion.div>
 
-                <div className="mt-12 pt-6 border-t border-white/10">
-                    <div className="flex flex-wrap items-center justify-between gap-4 text-[10px] font-mono text-white/30">
+                <div className="mt-12 pt-6 border-t" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.1)' }}>
+                    <div className="flex flex-wrap items-center justify-between gap-4 text-[10px] font-mono" style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.35)' }}>
                         <div className="flex items-center gap-4 md:gap-6">
                             <span>SYSTEM: <span className={theme === 'light' ? 'text-green-600' : 'text-green-500'}>ONLINE</span></span>
-                            <span>MEMBERS: <span className={theme === 'light' ? 'text-black' : 'text-white'}>{teamMembers.length}</span></span>
+                            <span>MEMBERS: <span style={{ color: 'rgb(var(--foreground))' }}>{teamMembers.length}</span></span>
                         </div>
                         <span className="flex items-center gap-2">
                             <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${theme === 'light' ? 'bg-green-600' : 'bg-green-500'}`} />
@@ -340,12 +344,13 @@ export default function TeamSection() {
     return (
         <section id="team" className="relative">
             {/* View toggle - VISIBLE */}
-            <div className="absolute top-6 right-6 z-30 flex items-center gap-1 bg-black/80 border border-white/30 rounded-lg p-1 backdrop-blur-sm">
+            <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${isMobile ? 'transparent' : 'rgba(var(--foreground), 0.15)'}` }}>
                 <button
                     onClick={() => setView('3d')}
                     className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '3d'
                         ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/30'
-                        : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                        : ''}`}
+                    style={view !== '3d' ? { color: 'rgba(var(--foreground), 0.5)' } : undefined}
                 >
                     3D GARAGE
                 </button>
@@ -353,14 +358,15 @@ export default function TeamSection() {
                     onClick={() => setView('2d')}
                     className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '2d'
                         ? 'bg-gradient-to-r from-green-500 to-cyan-500 text-white shadow-lg shadow-green-500/30'
-                        : 'text-white/50 hover:text-white hover:bg-white/10'}`}
+                        : ''}`}
+                    style={view !== '2d' ? { color: 'rgba(var(--foreground), 0.5)' } : undefined}
                 >
                     2D CARDS
                 </button>
             </div>
 
             <Suspense fallback={
-                <div className="h-screen bg-black flex items-center justify-center">
+                <div className="h-screen bg-background flex items-center justify-center">
                     <div className="flex gap-2">
                         {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
                             <div key={color} className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: color, animationDelay: `${i * 0.15}s` }} />

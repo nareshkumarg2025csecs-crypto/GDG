@@ -3,6 +3,8 @@ import { Menu, X, ExternalLink, Calendar, Sun, Moon } from 'lucide-react';
 import { useState, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
+import { toast } from '@/hooks/use-toast';
+import { useEasterEggStore } from '@/store/easterEggStore';
 
 // --- Constants & Data ---
 
@@ -11,7 +13,7 @@ const SECTIONS = [
   { id: 'about', name: 'About', href: '#about', color: '#EA4335' },
   { id: 'events', name: 'Events', href: '#events', color: '#FBBC04' },
   { id: 'gallery', name: 'Gallery', href: '/gallery', color: '#FBBC04' },
-  { id: 'team', name: 'Team', href: '#team', color: '#FBBC04' },
+  { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
 ];
 
 const SOCIAL_LINKS = [
@@ -100,9 +102,11 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const [activeSection, setActiveSection] = useState('home');
   const [isHidden, setIsHidden] = useState(false);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const logoTapHistoryRef = useRef<number[]>([]);
   const { scrollY } = useScroll();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
+  const isDark = theme === 'dark';
 
   // Update active section based on route
   useMemo(() => {
@@ -117,6 +121,24 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const activeColor = useMemo(() => {
     return SECTIONS.find(s => s.id === activeSection)?.color || '#4285F4';
   }, [activeSection]);
+
+  const handleLogoPointerDown = () => {
+    const now = Date.now();
+    const recentTaps = logoTapHistoryRef.current.filter((timestamp) => now - timestamp <= 4000);
+    recentTaps.push(now);
+    logoTapHistoryRef.current = recentTaps;
+
+    if (recentTaps.length < 7) return;
+
+    logoTapHistoryRef.current = [];
+    setMenuOpen(false);
+    useEasterEggStore.getState().openTerminal();
+    toast({
+      title: "Terminal Unlocked",
+      description: "Hidden channel open. Type 'help'.",
+      duration: 2400,
+    });
+  };
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     const direction = latest > lastScrollY ? "down" : "up";
@@ -148,17 +170,18 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           className="relative flex items-center gap-1 pl-2 pr-2 py-2 rounded-full border transition-all duration-300"
           style={{
             background: theme === 'light'
-              ? 'rgba(242, 238, 220, 0.9)' // Crème-200 with opacity
-              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(5, 5, 5, 0.8)',
-            backdropFilter: isTransparentState ? 'none' : 'blur(16px) saturate(180%)',
+              ? 'rgba(255, 255, 255, 0.88)'
+              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(5, 5, 5, 0.75)',
+            backdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
+            WebkitBackdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
             borderColor: theme === 'light'
-              ? 'rgba(226, 221, 200, 1)' // Crème-300
-              : isTransparentState ? 'transparent' : 'rgba(255,255,255,0.1)',
+              ? 'rgba(226, 226, 222, 0.6)'
+              : isTransparentState ? 'transparent' : 'rgba(255,255,255,0.08)',
             boxShadow: theme === 'light'
-              ? '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)' // Standard shadow
+              ? '0 4px 24px -4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8)'
               : isTransparentState
                 ? 'none'
-                : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1), 0 0 80px ${activeColor}15`,
+                : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 80px ${activeColor}15`,
             width: 'auto',
             maxWidth: '95vw'
           }}
@@ -168,6 +191,9 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="flex items-center gap-2 px-3 py-2 mr-2"
+            onPointerDown={handleLogoPointerDown}
+            data-easter-trigger="logo"
+            data-no-leet
           >
             <span className="font-sans text-xl font-bold tracking-tight" style={{ color: theme === 'light' ? '#1F1F1F' : 'white' }}>GDG</span>
             <div className="flex gap-0.5">
@@ -185,7 +211,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
           {/* Desktop Nav Items - Hidden on Mobile */}
           <div className="hidden md:flex items-center gap-1">
-            <div className="w-px h-6 bg-white/10 mr-2" />
+            <div className="w-px h-6 mr-2" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
             {SECTIONS.map((section) => (
               <MagneticNavItem
                 key={section.id}
@@ -199,7 +225,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 {section.name}
               </MagneticNavItem>
             ))}
-            <div className="w-px h-6 bg-white/10 mx-2" />
+            <div className="w-px h-6 mx-2" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
           </div>
 
           {/* Spacer for mobile layout to push CTA to right */}
@@ -240,8 +266,12 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             onClick={() => setMenuOpen(!menuOpen)}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
-            className="w-10 h-10 ml-2 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-all z-50"
+            className="w-10 h-10 ml-2 flex items-center justify-center rounded-full transition-all z-50"
             aria-label="Menu"
+            style={{
+              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(31,31,31,0.06)',
+              color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(31,31,31,0.7)',
+            }}
           >
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </motion.button>

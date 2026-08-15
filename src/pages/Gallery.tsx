@@ -84,7 +84,7 @@ const Gallery = () => {
         <div
             ref={containerRef}
             className="min-h-screen text-[rgb(var(--foreground))] transition-colors duration-300"
-            style={{ backgroundColor: theme === 'light' ? '#FAF6E8' : '#050505' }}
+            style={{ backgroundColor: theme === 'light' ? '#FAFAFA' : '#050505' }}
         >
             <Header transparent={true} />
             <StoryDetailView item={selectedItem} onClose={() => setSelectedItem(null)} />
@@ -131,7 +131,7 @@ const Gallery = () => {
             <div className="relative z-10 pt-[100vh]">
                 <div
                     className="min-h-screen rounded-t-[3rem] border-t border-white/10 dark:border-white/10 border-gray-200 shadow-[0_-20px_50px_rgba(0,0,0,0.5)] transition-colors duration-300"
-                    style={{ backgroundColor: theme === 'light' ? '#FAF6E8' : '#050505' }}
+                    style={{ backgroundColor: theme === 'light' ? '#FAFAFA' : '#050505' }}
                 >
 
                     {/* Sticky Filters */}

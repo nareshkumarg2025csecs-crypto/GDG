@@ -3,11 +3,12 @@
  * 
  * PART 1: Holographic "Select Player" Garage - 3D Scene
  * 
- * A 3D environment with 4 distinct team bays:
+ * A 3D environment with themed team bays:
  * - TechOps: Server racks, Matrix-style code, cyan lighting
  * - Design: Geometric primitives, soft neon gradients  
  * - Media: Cameras, microphones, waveforms
  * - Logistics: Command center, holographic maps
+ * - Leads (optional): Leadership spotlight
  * 
  * Camera transitions smoothly between bays on selection.
  */
@@ -22,69 +23,180 @@ import { useTheme } from '@/contexts/ThemeContext'
 // TYPES
 // ================================
 
-type BayId = 'techops' | 'design' | 'media' | 'logistics'
+export type BayId = 'leads' | 'techops' | 'design' | 'media' | 'logistics'
 
-interface TeamMember {
-    id: number
+export interface TeamGarageMember {
+    id: string | number
     name: string
     role: string
-    codename: string
+    codename?: string
 }
+
+export type TeamGarageMembersByBay = Partial<Record<BayId, TeamGarageMember[]>>
 
 interface BayData {
     id: BayId
     name: string
     color: string
     position: [number, number, number]
-    members: TeamMember[]
+    members: TeamGarageMember[]
+}
+
+export type TeamGarageBayMeta = Omit<BayData, 'members'>
+
+export interface TeamGarageCameraConfig {
+    overviewZ?: number
+    overviewY?: number
+    focusZ?: number
+    fov?: number
 }
 
 // ================================
 // DATA
 // ================================
 
-const baysData: BayData[] = [
+const DEFAULT_BAY_META: TeamGarageBayMeta[] = [
+    {
+        id: 'leads',
+        name: 'LEADS',
+        color: '#9E9E9E',
+        position: [-5, 0, 0],
+    },
     {
         id: 'techops',
         name: 'TECH_OPS',
         color: '#4285F4',
-        position: [-4, 0, 0],
-        members: [
-            { id: 1, name: 'Alex Johnson', role: 'Tech Lead', codename: 'CIPHER' },
-            { id: 2, name: 'Sarah Chen', role: 'Backend Dev', codename: 'VECTOR' },
-        ],
+        position: [-2.5, 0, 0],
     },
     {
         id: 'design',
         name: 'DESIGN',
         color: '#EA4335',
-        position: [-1.3, 0, 0],
-        members: [
-            { id: 3, name: 'Emily Davis', role: 'Lead Designer', codename: 'PRISM' },
-            { id: 4, name: 'Lisa Anderson', role: 'UI/UX', codename: 'PIXEL' },
-        ],
+        position: [0, 0, 0],
     },
     {
         id: 'media',
         name: 'MEDIA',
         color: '#FBBC04',
-        position: [1.3, 0, 0],
-        members: [
-            { id: 5, name: 'Mike Smith', role: 'Content Lead', codename: 'LENS' },
-            { id: 6, name: 'Anna White', role: 'Social Media', codename: 'SIGNAL' },
-        ],
+        position: [2.5, 0, 0],
     },
     {
         id: 'logistics',
         name: 'LOGISTICS',
         color: '#34A853',
-        position: [4, 0, 0],
-        members: [
-            { id: 7, name: 'David Wilson', role: 'Ops Manager', codename: 'NEXUS' },
-            { id: 8, name: 'James Brown', role: 'Coordinator', codename: 'RELAY' },
-        ],
+        position: [5, 0, 0],
     },
 ]
+
+const DEFAULT_MEMBERS_BY_BAY: Record<BayId, TeamGarageMember[]> = {
+    leads: [
+        { id: 0, name: 'Rakesh', role: 'Lead', codename: 'ORBIT' },
+        { id: 9, name: 'Kishore', role: 'Co-lead', codename: 'PULSE' },
+    ],
+    techops: [
+        { id: 1, name: 'Lokesh JR', role: 'Tech-Ops Lead', codename: 'CIPHER' },
+        { id: 2, name: 'Prasanna', role: 'Tech-Ops Co-Lead', codename: 'VECTOR' },
+    ],
+    design: [
+        { id: 3, name: 'Aishwarya', role: 'Design Lead', codename: 'PRISM' },
+        { id: 4, name: 'Akshithaa', role: 'Design Co-Lead', codename: 'PIXEL' },
+    ],
+    media: [
+        { id: 5, name: 'Benin', role: 'Media Lead', codename: 'LENS' },
+        { id: 6, name: 'Madhusha Harini', role: 'Media Co-Lead', codename: 'SIGNAL' },
+    ],
+    logistics: [
+        { id: 7, name: 'Venkat', role: 'Logistics Lead', codename: 'NEXUS' },
+        { id: 8, name: 'Aboorvan', role: 'Logistics Co-Lead', codename: 'RELAY' },
+    ],
+}
+
+function resolveBaysData(bayMeta: TeamGarageBayMeta[], membersByBay?: TeamGarageMembersByBay): BayData[] {
+    return bayMeta.map((bay) => ({
+        ...bay,
+        members: membersByBay?.[bay.id] ?? DEFAULT_MEMBERS_BY_BAY[bay.id],
+    }))
+}
+
+interface CardMetrics {
+    width: number
+    height: number
+    gapX: number
+    gapY: number
+    glowPadding: number
+    infoOffsetY: number
+    infoWidth: number
+    textScale: number
+}
+
+const CARD_METRICS: Record<'classic' | 'grid', CardMetrics> = {
+    classic: {
+        width: 0.8,
+        height: 1.1,
+        gapX: 0.35,
+        gapY: 0.35,
+        glowPadding: 0.2,
+        infoOffsetY: 0.4,
+        infoWidth: 90,
+        textScale: 1,
+    },
+    grid: {
+        width: 0.55,
+        height: 0.78,
+        gapX: 0.32,
+        gapY: 0.32,
+        glowPadding: 0.14,
+        infoOffsetY: 0.28,
+        infoWidth: 80,
+        textScale: 0.85,
+    },
+}
+
+function getCardMetrics(layoutMode: 'classic' | 'grid'): CardMetrics {
+    return CARD_METRICS[layoutMode]
+}
+
+function getCodename(member: TeamGarageMember): string {
+    if (member.codename) return member.codename
+    const trimmed = member.name.trim()
+    if (!trimmed) return 'OPERATIVE'
+    const initials = trimmed
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part[0].toUpperCase())
+        .join('')
+    return initials || trimmed.toUpperCase()
+}
+
+function getLayoutScale(count: number): number {
+    if (count > 24) return 0.6
+    if (count > 18) return 0.7
+    if (count > 12) return 0.8
+    if (count > 8) return 0.9
+    return 1
+}
+
+function calculateCardPositions(count: number, metrics: CardMetrics): [number, number, number][] {
+    if (count <= 0) return []
+    const columns = Math.min(6, Math.max(3, Math.ceil(Math.sqrt(count))))
+    const rows = Math.ceil(count / columns)
+    const totalWidth = columns * metrics.width + (columns - 1) * metrics.gapX
+    const totalHeight = rows * metrics.height + (rows - 1) * metrics.gapY
+    const startX = -totalWidth / 2 + metrics.width / 2
+    const startY = totalHeight / 2 - metrics.height / 2
+    const positions: [number, number, number][] = []
+
+    for (let i = 0; i < count; i += 1) {
+        const row = Math.floor(i / columns)
+        const col = i % columns
+        const x = startX + col * (metrics.width + metrics.gapX)
+        const y = startY - row * (metrics.height + metrics.gapY)
+        const z = row * -0.12
+        positions.push([x, y, z])
+    }
+
+    return positions
+}
 
 // ================================
 // HOLOGRAPHIC CARD SHADER (PREMIUM)
@@ -217,16 +329,20 @@ const HolographicCardMaterial = {
 // ================================
 
 interface HolographicCard3DProps {
-    member: TeamMember
+    member: TeamGarageMember
     color: string
     position: [number, number, number]
     index: number
+    metrics: CardMetrics
 }
 
-function HolographicCard3D({ member, color, position, index }: HolographicCard3DProps) {
+function HolographicCard3D({ member, color, position, index, metrics }: HolographicCard3DProps) {
     const meshRef = useRef<THREE.Mesh>(null)
     const materialRef = useRef<THREE.ShaderMaterial>(null)
     const [hovered, setHovered] = useState(false)
+    const codename = getCodename(member)
+    const { width, height, glowPadding, infoOffsetY, infoWidth, textScale } = metrics
+    const nameClassName = width < 0.7 ? 'text-[10px]' : 'text-xs'
 
     // Clone uniforms for each card
     const uniforms = useMemo(() => ({
@@ -258,7 +374,7 @@ function HolographicCard3D({ member, color, position, index }: HolographicCard3D
                     onPointerEnter={() => setHovered(true)}
                     onPointerLeave={() => setHovered(false)}
                 >
-                    <planeGeometry args={[0.8, 1.1]} />
+                    <planeGeometry args={[width, height]} />
                     <shaderMaterial
                         ref={materialRef}
                         transparent
@@ -271,21 +387,21 @@ function HolographicCard3D({ member, color, position, index }: HolographicCard3D
 
                 {/* Member info overlay */}
                 <Html
-                    position={[0, -0.4, 0.01]}
+                    position={[0, -infoOffsetY, 0.01]}
                     center
-                    style={{ pointerEvents: 'none', width: 120 }}
+                    style={{ pointerEvents: 'none', width: infoWidth, transform: `scale(${textScale})`, transformOrigin: 'center' }}
                 >
-                    <div className="text-center">
+                    <div className="text-center" style={{ maxWidth: '100%' }}>
                         <p
-                            className="text-[8px] font-mono tracking-widest mb-0.5"
+                            className="text-[8px] font-mono tracking-widest mb-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
                             style={{ color, textShadow: `0 0 10px ${color}` }}
                         >
-              // {member.codename}
+              // {codename}
                         </p>
-                        <p className="text-white text-xs font-display">
+                        <p className={`text-white font-display leading-tight text-center break-words ${nameClassName}`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word', hyphens: 'auto' }}>
                             {member.name}
                         </p>
-                        <p className="text-white/50 text-[8px]">
+                        <p className="text-white/50 text-[8px] text-center leading-tight break-words" style={{ wordBreak: 'break-word', overflowWrap: 'break-word', hyphens: 'auto' }}>
                             {member.role}
                         </p>
                     </div>
@@ -293,7 +409,7 @@ function HolographicCard3D({ member, color, position, index }: HolographicCard3D
 
                 {/* Glow plane behind card */}
                 <mesh position={[0, 0, -0.1]}>
-                    <planeGeometry args={[1, 1.3]} />
+                    <planeGeometry args={[width + glowPadding, height + glowPadding]} />
                     <meshBasicMaterial
                         color={color}
                         transparent
@@ -308,6 +424,53 @@ function HolographicCard3D({ member, color, position, index }: HolographicCard3D
 // ================================
 // BAY DECORATIONS
 // ================================
+
+function LeadsBayDecor({ color }: { color: string }) {
+    const groupRef = useRef<THREE.Group>(null)
+    const glowColor = color === '#FFFFFF' ? '#E6E6E6' : color
+
+    useFrame(({ clock }) => {
+        if (groupRef.current) {
+            groupRef.current.rotation.y = clock.elapsedTime * 0.08
+        }
+    })
+
+    return (
+        <group ref={groupRef}>
+            <mesh position={[0, 0.55, -0.4]}>
+                <cylinderGeometry args={[0.35, 0.45, 0.2, 32]} />
+                <meshStandardMaterial
+                    color={glowColor}
+                    emissive={glowColor}
+                    emissiveIntensity={0.35}
+                    transparent
+                    opacity={0.7}
+                />
+            </mesh>
+            <mesh position={[0, 0.85, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.5, 0.03, 12, 48]} />
+                <meshStandardMaterial
+                    color={glowColor}
+                    emissive={glowColor}
+                    emissiveIntensity={0.6}
+                    transparent
+                    opacity={0.7}
+                />
+            </mesh>
+            <Float speed={1.2} floatIntensity={0.2}>
+                <mesh position={[0, 1.2, -0.4]}>
+                    <octahedronGeometry args={[0.12, 0]} />
+                    <meshStandardMaterial
+                        color={glowColor}
+                        emissive={glowColor}
+                        emissiveIntensity={0.8}
+                        wireframe
+                    />
+                </mesh>
+            </Float>
+        </group>
+    )
+}
 
 function TechOpsBayDecor({ color }: { color: string }) {
     const groupRef = useRef<THREE.Group>(null)
@@ -427,14 +590,27 @@ interface TeamBayProps {
     bay: BayData
     isActive: boolean
     onClick: () => void
+    layoutMode: 'classic' | 'grid'
 }
 
-function TeamBay({ bay, isActive, onClick }: TeamBayProps) {
+function TeamBay({ bay, isActive, onClick, layoutMode }: TeamBayProps) {
     const groupRef = useRef<THREE.Group>(null)
+    const useClassicLayout = layoutMode === 'classic' && bay.members.length <= 2
+    const cardMetrics = useMemo(() => getCardMetrics(layoutMode), [layoutMode])
+    const cardPositions = useMemo(() => {
+        if (useClassicLayout) {
+            return bay.members.map((_, i) => ([(i - 0.5) * 1, 0, 0.5] as [number, number, number]))
+        }
+        return calculateCardPositions(bay.members.length, cardMetrics)
+    }, [bay.members.length, bay.members, cardMetrics, useClassicLayout])
+    const layoutScale = useMemo(() => (useClassicLayout ? 1 : getLayoutScale(bay.members.length)), [bay.members.length, useClassicLayout])
+    const layoutPosition: [number, number, number] = useClassicLayout ? [0, 0, 0] : [0, -0.25, 0.6]
+    const platformRadius = layoutMode === 'grid' ? 0.9 : 1.1
 
     // Render bay-specific decorations
     const renderDecor = () => {
         switch (bay.id) {
+            case 'leads': return <LeadsBayDecor color={bay.color} />
             case 'techops': return <TechOpsBayDecor color={bay.color} />
             case 'design': return <DesignBayDecor color={bay.color} />
             case 'media': return <MediaBayDecor color={bay.color} />
@@ -450,7 +626,7 @@ function TeamBay({ bay, isActive, onClick }: TeamBayProps) {
                 rotation={[-Math.PI / 2, 0, 0]}
                 onClick={onClick}
             >
-                <circleGeometry args={[1.2, 32]} />
+                <circleGeometry args={[platformRadius, 32]} />
                 <meshStandardMaterial
                     color={bay.color}
                     emissive={bay.color}
@@ -464,15 +640,20 @@ function TeamBay({ bay, isActive, onClick }: TeamBayProps) {
             {renderDecor()}
 
             {/* Team member cards (only show when active) */}
-            {isActive && bay.members.map((member, i) => (
-                <HolographicCard3D
-                    key={member.id}
-                    member={member}
-                    color={bay.color}
-                    position={[(i - 0.5) * 1, 0, 0.5]}
-                    index={i}
-                />
-            ))}
+            {isActive && bay.members.length > 0 && (
+                <group scale={layoutScale} position={layoutPosition}>
+                    {bay.members.map((member, i) => (
+                        <HolographicCard3D
+                            key={member.id}
+                            member={member}
+                            color={bay.color}
+                            position={cardPositions[i]}
+                            index={i}
+                            metrics={cardMetrics}
+                        />
+                    ))}
+                </group>
+            )}
 
             {/* Bay label */}
             <Html position={[0, -1.5, 0]} center>
@@ -480,7 +661,7 @@ function TeamBay({ bay, isActive, onClick }: TeamBayProps) {
                     onClick={onClick}
                     className="px-4 py-1 font-mono text-xs tracking-widest transition-all"
                     style={{
-                        color: isActive ? bay.color : 'rgba(var(--foreground), 0.4)',
+                        color: bay.color,
                         textShadow: isActive ? `0 0 20px ${bay.color}` : 'none',
                         background: isActive ? `${bay.color}20` : 'transparent',
                         border: `1px solid ${isActive ? bay.color : 'transparent'}`,
@@ -500,20 +681,23 @@ function TeamBay({ bay, isActive, onClick }: TeamBayProps) {
 
 interface CameraControllerProps {
     activeBay: BayId | null
+    baysData: BayData[]
+    overviewZ: number
+    focusZ: number
 }
 
-function CameraController({ activeBay }: CameraControllerProps) {
+function CameraController({ activeBay, baysData, overviewZ, focusZ }: CameraControllerProps) {
     const { camera } = useThree()
 
     useFrame(() => {
         const activeBayData = baysData.find(b => b.id === activeBay)
 
         let targetX = 0
-        let targetZ = 6
+        let targetZ = overviewZ
 
         if (activeBayData) {
             targetX = activeBayData.position[0]
-            targetZ = 3
+            targetZ = focusZ
         }
 
         // Smooth camera movement
@@ -533,10 +717,14 @@ interface SceneProps {
     activeBay: BayId | null
     onSelectBay: (id: BayId) => void
     isDark: boolean
+    baysData: BayData[]
+    layoutMode: 'classic' | 'grid'
+    overviewZ: number
+    focusZ: number
 }
 
-function Scene({ activeBay, onSelectBay, isDark }: SceneProps) {
-    const bgColor = isDark ? '#050505' : '#FAF6E8'
+function Scene({ activeBay, onSelectBay, isDark, baysData, layoutMode, overviewZ, focusZ }: SceneProps) {
+    const bgColor = isDark ? '#050505' : '#FAFAFA'
     return (
         <>
             {/* Background */}
@@ -544,7 +732,7 @@ function Scene({ activeBay, onSelectBay, isDark }: SceneProps) {
             <fog attach="fog" args={[bgColor, 5, 15]} />
 
             {/* Camera controller */}
-            <CameraController activeBay={activeBay} />
+            <CameraController activeBay={activeBay} baysData={baysData} overviewZ={overviewZ} focusZ={focusZ} />
 
             {/* Team bays */}
             {baysData.map(bay => (
@@ -553,6 +741,7 @@ function Scene({ activeBay, onSelectBay, isDark }: SceneProps) {
                     bay={bay}
                     isActive={activeBay === bay.id}
                     onClick={() => onSelectBay(bay.id)}
+                    layoutMode={layoutMode}
                 />
             ))}
 
@@ -581,9 +770,10 @@ function Scene({ activeBay, onSelectBay, isDark }: SceneProps) {
 
 interface UIOverlayProps {
     activeBay: BayId | null
+    baysData: BayData[]
 }
 
-function UIOverlay({ activeBay }: UIOverlayProps) {
+function UIOverlay({ activeBay, baysData }: UIOverlayProps) {
     const bayData = baysData.find(b => b.id === activeBay)
 
     return (
@@ -619,11 +809,12 @@ function UIOverlay({ activeBay }: UIOverlayProps) {
 // LOADER
 // ================================
 
-function Loader() {
+function Loader({ colors }: { colors: string[] }) {
+    const palette = colors.length > 0 ? colors : ['#4285F4', '#EA4335', '#FBBC04', '#34A853']
     return (
         <Html center>
             <div className="flex gap-2">
-                {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
+                {palette.map((color, i) => (
                     <div
                         key={color}
                         className="w-3 h-3 rounded-full animate-pulse"
@@ -639,21 +830,50 @@ function Loader() {
 // MAIN COMPONENT
 // ================================
 
-export function TeamGarage3D() {
+interface TeamGarage3DProps {
+    membersByBay?: TeamGarageMembersByBay
+    layoutMode?: 'classic' | 'grid'
+    bayMeta?: TeamGarageBayMeta[]
+    cameraConfig?: TeamGarageCameraConfig
+}
+
+export function TeamGarage3D({ membersByBay, layoutMode, bayMeta, cameraConfig }: TeamGarage3DProps) {
     const [activeBay, setActiveBay] = useState<BayId | null>(null)
     const { theme } = useTheme()
+    const resolvedBayMeta = useMemo(() => bayMeta ?? DEFAULT_BAY_META, [bayMeta])
+    const baysData = useMemo(() => resolveBaysData(resolvedBayMeta, membersByBay), [resolvedBayMeta, membersByBay])
+    const loaderColors = useMemo(() => baysData.map((bay) => bay.color), [baysData])
+    const resolvedLayoutMode = layoutMode ?? 'classic'
+    const resolvedCameraConfig = useMemo(() => ({
+        overviewZ: 6,
+        overviewY: 1,
+        focusZ: 3,
+        fov: 50,
+        ...cameraConfig,
+    }), [cameraConfig])
 
     return (
         <div className="relative w-full h-screen bg-background transition-colors duration-300">
-            <UIOverlay activeBay={activeBay} />
+            <UIOverlay activeBay={activeBay} baysData={baysData} />
 
             <Canvas
-                camera={{ position: [0, 1, 6], fov: 50 }}
+                camera={{
+                    position: [0, resolvedCameraConfig.overviewY, resolvedCameraConfig.overviewZ],
+                    fov: resolvedCameraConfig.fov,
+                }}
                 dpr={[1, 2]}
                 gl={{ antialias: true }}
             >
-                <Suspense fallback={<Loader />}>
-                    <Scene activeBay={activeBay} onSelectBay={setActiveBay} isDark={theme === 'dark'} />
+                <Suspense fallback={<Loader colors={loaderColors} />}>
+                    <Scene
+                        activeBay={activeBay}
+                        onSelectBay={setActiveBay}
+                        isDark={theme === 'dark'}
+                        baysData={baysData}
+                        layoutMode={resolvedLayoutMode}
+                        overviewZ={resolvedCameraConfig.overviewZ}
+                        focusZ={resolvedCameraConfig.focusZ}
+                    />
                 </Suspense>
             </Canvas>
 

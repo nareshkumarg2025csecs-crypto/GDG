@@ -52,8 +52,8 @@ const GalleryGrid = ({ items, onItemClick }: GalleryGridProps) => {
                 <div
                     className="gallery-item group relative aspect-[4/5] w-full overflow-hidden rounded-xl cursor-pointer transition-colors duration-300"
                     style={{
-                        backgroundColor: theme === 'light' ? 'rgb(var(--creme-200))' : '#171717',
-                        borderColor: theme === 'light' ? 'rgb(var(--creme-300))' : 'rgba(255,255,255,0.1)'
+                        backgroundColor: theme === 'light' ? 'rgb(var(--surface-200))' : '#171717',
+                        borderColor: theme === 'light' ? 'rgb(var(--surface-300))' : 'rgba(255,255,255,0.1)'
                     }}
                     key={item.id}
                     onClick={() => onItemClick(item)}
@@ -71,7 +71,7 @@ const GalleryGrid = ({ items, onItemClick }: GalleryGridProps) => {
                     <div className="absolute inset-0 opacity-80"
                         style={{
                             background: theme === 'light'
-                                ? 'linear-gradient(to top, rgb(var(--creme-200)), transparent)'
+                                ? 'linear-gradient(to top, rgb(var(--surface-200)), transparent)'
                                 : 'linear-gradient(to top, #050505, transparent)'
                         }}
                     />
@@ -83,8 +83,8 @@ const GalleryGrid = ({ items, onItemClick }: GalleryGridProps) => {
                                 className="inline-block px-2 py-1 text-[10px] font-mono uppercase tracking-widest rounded backdrop-blur-md"
                                 style={{
                                     color: theme === 'light' ? 'rgb(var(--text-primary-raw))' : '#4285F4',
-                                    background: theme === 'light' ? 'rgb(var(--creme-300))' : '#4285F41A',
-                                    border: theme === 'light' ? '1px solid rgb(var(--creme-300))' : '1px solid rgba(66,133,244,0.2)'
+                                    background: theme === 'light' ? 'rgb(var(--surface-300))' : '#4285F41A',
+                                    border: theme === 'light' ? '1px solid rgb(var(--surface-300))' : '1px solid rgba(66,133,244,0.2)'
                                 }}
                             >
                                 {item.category}
