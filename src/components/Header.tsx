@@ -10,7 +10,6 @@ import { useEasterEggStore } from '@/store/easterEggStore';
 
 const SECTIONS = [
   { id: 'home', name: 'Home', href: '/', color: '#4285F4' },
-  { id: 'about', name: 'About', href: '#about', color: '#EA4335' },
   { id: 'events', name: 'Events', href: '#events', color: '#FBBC04' },
   { id: 'gallery', name: 'Gallery', href: '/gallery', color: '#FBBC04' },
   { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
@@ -231,20 +230,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           {/* Spacer for mobile layout to push CTA to right */}
           <div className="flex-grow md:hidden" />
 
-          {/* Theme Toggle Button */}
-          <motion.button
-            onClick={toggleTheme}
-            whileHover={{ scale: 1.1, rotate: 180 }}
-            whileTap={{ scale: 0.9 }}
-            className={`p-2 rounded-full backdrop-blur-md transition-colors ${theme === 'light' ? 'bg-black/5 hover:bg-black/10' : 'bg-white/10 hover:bg-white/20'}`}
-            aria-label="Toggle theme"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-5 h-5 text-yellow-300" />
-            ) : (
-              <Moon className="w-5 h-5 text-slate-700" />
-            )}
-          </motion.button>
+
 
           {/* CTA Button */}
           <motion.a

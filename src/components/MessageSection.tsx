@@ -76,6 +76,7 @@ const MessageSection = () => {
             clipPath: 'inset(0 0 0% 0)',
             duration: 0.8,
             ease: 'power3.out',
+            force3D: true, // Forces GPU acceleration via transform3d
             scrollTrigger: {
               trigger: stickyRef.current,
               start: `top+=${i * 70}px center`,
@@ -177,7 +178,7 @@ const MessageSection = () => {
         {/* Main Content */}
         <div className="container mx-auto px-6 relative z-10 max-w-6xl">
           {/* Eyebrow */}
-          <div ref={(el) => setLineRef(el, 0)} className="text-center mb-6" style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 0)} className="text-center mb-6 will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <p
               className="section-eyebrow"
               style={{ color: '#4285F4', textShadow: isDark ? '0 0 30px #4285F4' : 'none' }}
@@ -187,7 +188,7 @@ const MessageSection = () => {
           </div>
 
           {/* Headline: line 1 */}
-          <div ref={(el) => setLineRef(el, 1)} className="overflow-visible" style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 1)} className="overflow-visible will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <h2
               className="font-display text-center leading-tight"
               style={{ fontSize: 'clamp(2.2rem, 6vw, 5.5rem)', color: isDark ? '#ffffff' : '#171717' }}
@@ -206,7 +207,7 @@ const MessageSection = () => {
           </div>
 
           {/* Headline: line 2 */}
-          <div ref={(el) => setLineRef(el, 2)} className="overflow-visible" style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 2)} className="overflow-visible will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <h2
               className="font-display text-center leading-tight"
               style={{ fontSize: 'clamp(2.2rem, 6vw, 5.5rem)', color: isDark ? '#ffffff' : '#171717' }}
@@ -233,7 +234,7 @@ const MessageSection = () => {
           </div>
 
           {/* Headline: line 3 */}
-          <div ref={(el) => setLineRef(el, 3)} className="overflow-visible" style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 3)} className="overflow-visible will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <h2
               className="font-display text-center leading-tight"
               style={{ fontSize: 'clamp(2.2rem, 6vw, 5.5rem)', color: isDark ? '#ffffff' : '#171717' }}
@@ -252,7 +253,7 @@ const MessageSection = () => {
           </div>
 
           {/* Google gradient line */}
-          <div ref={(el) => setLineRef(el, 4)} style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 4)} className="will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <motion.div
               initial={{ scaleX: 0, opacity: 0 }}
               whileInView={{ scaleX: 1, opacity: 1 }}
@@ -267,7 +268,7 @@ const MessageSection = () => {
           </div>
 
           {/* Stat counters – stitched below the headline */}
-          <div ref={(el) => setLineRef(el, 5)} style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 5)} className="will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <div className="mt-10 flex flex-wrap justify-center gap-6 md:gap-10">
               {STATS.map((stat, i) => (
                 <motion.div
@@ -297,7 +298,7 @@ const MessageSection = () => {
           </div>
 
           {/* Technology tag cloud */}
-          <div ref={(el) => setLineRef(el, 6)} style={{ opacity: 0 }}>
+          <div ref={(el) => setLineRef(el, 6)} className="will-change-transform" style={{ opacity: 0, transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
             <div className="mt-8 flex flex-wrap justify-center gap-2">
               {COMMUNITY_TAGS.map((tag, i) => {
                 const colors = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];

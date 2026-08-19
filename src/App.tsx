@@ -10,11 +10,15 @@ import Index from "./pages/Index";
 import Gallery from "./pages/Gallery";
 import TeamPage from "./pages/TeamPage";
 import NotFound from "./pages/NotFound";
+import { useLenis } from "@/lib/scroll";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
+const App = () => {
+  useLenis();
+  
+  return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <TooltipProvider>
         <EasterEggProvider>
@@ -38,7 +42,8 @@ const App = () => (
       </TooltipProvider>
     </ThemeProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;
 

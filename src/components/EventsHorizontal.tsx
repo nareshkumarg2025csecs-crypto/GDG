@@ -52,7 +52,7 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
 
   return (
     <div
-      className="event-card flex-shrink-0 w-[300px] md:w-[380px] h-[440px] md:h-[520px] mx-3 md:mx-6 rounded-2xl relative overflow-hidden group transition-all duration-500 hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+      className="event-card flex-shrink-0 w-[300px] md:w-[380px] h-[440px] md:h-[520px] mx-3 md:mx-6 rounded-2xl relative overflow-hidden group transition-all duration-500 hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 will-change-transform"
       data-physics
       data-cursor="media"
       role="article"
@@ -60,6 +60,7 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
       style={{
         border: `1px solid ${event.color}35`,
         boxShadow: `0 4px 40px ${event.color}10`,
+        transform: 'translateZ(0)',
         // @ts-ignore
         '--tw-ring-color': event.color,
       }}
@@ -160,7 +161,7 @@ export function EventsHorizontal() {
         scrollTrigger: {
           trigger: sectionRef.current,
           pin: true,
-          scrub: 1.2,
+          scrub: true,
           end: '+=3200',
           invalidateOnRefresh: true,
         },
@@ -173,7 +174,7 @@ export function EventsHorizontal() {
           trigger: sectionRef.current,
           start: 'top top',
           end: '+=3200',
-          scrub: 1.2,
+          scrub: true,
         },
       });
     }, sectionRef); // <-- scope to this component only

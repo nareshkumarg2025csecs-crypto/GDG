@@ -1,6 +1,7 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import Lenis from 'lenis';
 
 // Register GSAP plugins
 gsap.registerPlugin(ScrollTrigger);
@@ -20,12 +21,13 @@ const scrollState: SmoothScrollState = {
     targetY: 0,
 };
 
+let lenisInstance: Lenis | null = null;
+
 /**
- * Initialize smooth scroll behavior using CSS and GSAP
- * This is a lightweight alternative to Lenis that works without additional packages
+ * Initialize smooth scroll behavior using Lenis
  */
 export function initSmoothScroll(): void {
-    if (scrollState.isEnabled) return;
+    if (lenisInstance) return;
 
     // Check for reduced motion preference
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -33,36 +35,34 @@ export function initSmoothScroll(): void {
 
     scrollState.isEnabled = true;
 
-    // Apply smooth scroll CSS
-    document.documentElement.style.scrollBehavior = 'smooth';
+    // Remove legacy smooth scroll css if present
+    document.documentElement.style.scrollBehavior = 'auto';
 
-    // Track scroll velocity for effects
-    let lastScrollY = window.scrollY;
-    let lastTime = performance.now();
+    lenisInstance = new Lenis({
+        duration: 1.2,
+        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+        orientation: 'vertical',
+        gestureOrientation: 'vertical',
+        smoothWheel: true,
+        wheelMultiplier: 1,
+        smoothTouch: false,
+        touchMultiplier: 2,
+        infinite: false,
+    });
 
-    const updateVelocity = () => {
-        const currentTime = performance.now();
-        const deltaTime = currentTime - lastTime;
-        const deltaY = window.scrollY - lastScrollY;
-
-        scrollState.velocity = deltaY / Math.max(deltaTime, 1) * 16; // Normalize to ~60fps
+    lenisInstance.on('scroll', (e: any) => {
         scrollState.currentY = window.scrollY;
-
-        lastScrollY = window.scrollY;
-        lastTime = currentTime;
-
-        // Decay velocity
-        scrollState.velocity *= 0.95;
-
-        requestAnimationFrame(updateVelocity);
-    };
-
-    requestAnimationFrame(updateVelocity);
-
-    // Update ScrollTrigger on scroll
-    window.addEventListener('scroll', () => {
+        scrollState.velocity = e.velocity * 10; // Normalize velocity roughly to previous values
         ScrollTrigger.update();
-    }, { passive: true });
+    });
+
+    gsap.ticker.add((time) => {
+        if (lenisInstance) {
+            lenisInstance.raf(time * 1000);
+        }
+    });
+
+    gsap.ticker.lagSmoothing(0);
 }
 
 /**
@@ -76,6 +76,10 @@ export function getScrollVelocity(): number {
  * Destroy smooth scroll
  */
 export function destroySmoothScroll(): void {
+    if (lenisInstance) {
+        lenisInstance.destroy();
+        lenisInstance = null;
+    }
     scrollState.isEnabled = false;
     document.documentElement.style.scrollBehavior = '';
 }
@@ -103,7 +107,7 @@ export function useLenis(callback?: (state: SmoothScrollState) => void) {
         }
 
         return () => {
-            // Don't destroy on unmount as it's global
+            // We keep Lenis running globally, but we could add cleanup if needed
         };
     }, []);
 
@@ -190,13 +194,16 @@ export function scrollToElement(selector: string, offset: number = 0) {
     const element = document.querySelector(selector);
     if (!element) return;
 
-    const top = element.getBoundingClientRect().top + window.scrollY + offset;
-
-    gsap.to(window, {
-        scrollTo: { y: top, autoKill: false },
-        duration: 1,
-        ease: 'power2.inOut',
-    });
+    if (lenisInstance) {
+        lenisInstance.scrollTo(element, { offset });
+    } else {
+        const top = element.getBoundingClientRect().top + window.scrollY + offset;
+        gsap.to(window, {
+            scrollTo: { y: top, autoKill: false },
+            duration: 1,
+            ease: 'power2.inOut',
+        });
+    }
 }
 
 export default {
