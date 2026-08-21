@@ -1,0 +1,131 @@
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { toast } from '@/hooks/use-toast';
+import { type UserRole } from '@/services/authService';
+
+export const AuthCallback: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const { syncGoogleOAuth } = useAuth();
+
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleAuthCallback = async () => {
+      try {
+        // 1. Check for errors in search parameters or hash
+        const searchError = searchParams.get('error_description') || searchParams.get('error');
+        if (searchError) {
+          throw new Error(searchError);
+        }
+
+        // 2. Parse hash params (Supabase returns tokens in the URL hash fragment)
+        const hash = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
+        const hashParams = new URLSearchParams(hash);
+
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const providerToken = hashParams.get('provider_token') || undefined;
+        const providerRefreshToken = hashParams.get('provider_refresh_token') || undefined;
+
+        // Determine requested role from query or hash
+        const roleParam = (searchParams.get('role') || hashParams.get('role') || 'student') as UserRole;
+        const adminCodeParam = searchParams.get('admin_code') || undefined;
+
+        if (!accessToken) {
+          // If neither hash nor search tokens are found
+          const queryCode = searchParams.get('code');
+          if (!queryCode) {
+            throw new Error('No authentication token received from identity provider.');
+          }
+          // If code flow, message user to login
+          throw new Error('OAuth authorization code flow requires direct server callback.');
+        }
+
+        // 3. Sync profile with backend API
+        const syncResponse = await syncGoogleOAuth(
+          {
+            provider_token: providerToken,
+            provider_refresh_token: providerRefreshToken,
+            role: roleParam,
+            admin_code: adminCodeParam,
+          },
+          accessToken
+        );
+
+        setStatus('success');
+        toast({
+          title: `Welcome, ${syncResponse.profile.full_name || syncResponse.profile.email}!`,
+          description: 'Successfully authenticated with Google.',
+        });
+
+        // Redirect to homepage after brief delay for smooth transition
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 1200);
+      } catch (err: any) {
+        console.error('Google OAuth callback error:', err);
+        setStatus('error');
+        setErrorMessage(err.message || 'Failed to complete Google authentication.');
+      }
+    };
+
+    handleAuthCallback();
+  }, [location, searchParams, syncGoogleOAuth, navigate]);
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-google-blue/30 relative">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md p-8 rounded-2xl border bg-card text-card-foreground shadow-2xl text-center backdrop-blur-xl"
+      >
+        {status === 'loading' && (
+          <div className="space-y-4 py-6">
+            <div className="w-12 h-12 border-4 border-google-blue/30 border-t-google-blue rounded-full animate-spin mx-auto" />
+            <h2 className="text-xl font-bold font-sans">Connecting your Google Account</h2>
+            <p className="text-sm text-muted-foreground">
+              Verifying credentials and setting up your GDG profile...
+            </p>
+          </div>
+        )}
+
+        {status === 'success' && (
+          <div className="space-y-4 py-6">
+            <div className="w-12 h-12 rounded-full bg-google-green/10 text-google-green flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold font-sans text-foreground">Authentication Complete!</h2>
+            <p className="text-sm text-muted-foreground">Redirecting you to the GDG portal...</p>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="space-y-5 py-4">
+            <div className="w-12 h-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold font-sans text-destructive">Authentication Failed</h2>
+            <p className="text-sm text-muted-foreground">{errorMessage}</p>
+            <div className="pt-2">
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Return to Sign In</span>
+              </Link>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+};
+
+export default AuthCallback;

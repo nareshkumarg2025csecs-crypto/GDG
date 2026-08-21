@@ -1,0 +1,189 @@
+const { supabase, supabaseAdmin } = require('../config/supabase');
+const GoogleCalendarService = require('../services/googleCalendarService');
+
+/**
+ * POST /api/events/:eventId/calendar-reminder
+ * Authenticated: Add an event reminder to the user's Google Calendar.
+ *
+ * BRANCHING LOGIC:
+ * 1. Checks whether the requesting user already has a linked Google identity / Google tokens.
+ * 2. If LINKED: creates the event directly in Google Calendar and confirms success.
+ * 3. If NOT LINKED (e.g. signed up with email/password only): returns a structured response
+ *    instructing the frontend to prompt "Connect Google Calendar" first.
+ */
+const createEventReminder = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const userId = req.user.id;
+
+    // 1. Verify event exists
+    const { data: event, error: eventErr } = await supabaseAdmin
+      .from('events')
+      .select('*')
+      .eq('id', eventId)
+      .single();
+
+    if (eventErr || !event) {
+      return res.status(404).json({
+        error: 'Event not found.',
+      });
+    }
+
+    // 2. Check if user has a linked Google identity and access token
+    const { isLinked, tokenData } = await GoogleCalendarService.checkUserGoogleLink(userId);
+
+    if (!isLinked || !tokenData || !tokenData.access_token) {
+      // User is authenticated via email+password without Google calendar link
+      return res.status(200).json({
+        connected: false,
+        action_required: 'CONNECT_GOOGLE_CALENDAR',
+        message:
+          'Google Calendar is not connected. Please connect your Google account first to enable calendar reminders.',
+        connect_endpoint: '/api/auth/google/link',
+      });
+    }
+
+    // 3. Obtain valid / refreshed access token
+    const validAccessToken = await GoogleCalendarService.getValidAccessToken(userId);
+
+    if (!validAccessToken) {
+      return res.status(200).json({
+        connected: false,
+        action_required: 'RECONNECT_GOOGLE_CALENDAR',
+        message: 'Google Calendar authorization expired. Please reconnect your Google account.',
+        connect_endpoint: '/api/auth/google/link',
+      });
+    }
+
+    // 4. Create event in user's primary Google Calendar
+    try {
+      const calendarEvent = await GoogleCalendarService.insertCalendarEvent(validAccessToken, event);
+
+      return res.status(200).json({
+        success: true,
+        connected: true,
+        message: 'Event successfully added to your Google Calendar!',
+        event_title: event.title,
+        calendar_event_id: calendarEvent.id,
+        calendar_event_link: calendarEvent.htmlLink,
+      });
+    } catch (calError) {
+      console.error('Google Calendar insertion error:', calError);
+      return res.status(502).json({
+        error: 'Failed to insert event into Google Calendar.',
+        details: calError.message,
+      });
+    }
+  } catch (error) {
+    console.error('createEventReminder error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while creating calendar reminder.',
+    });
+  }
+};
+
+/**
+ * GET /api/auth/google/link
+ * Authenticated: Returns the Google OAuth URL with Calendar scopes for linking to an existing account.
+ */
+const getGoogleLinkUrl = async (req, res) => {
+  try {
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const redirectUrl = `${clientUrl}/auth/callback?link_identity=true`;
+
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider: 'google',
+      options: {
+        scopes: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+        redirectTo: redirectUrl,
+      },
+    });
+
+    if (error) {
+      return res.status(400).json({
+        error: 'Failed to generate Google linking URL.',
+        details: error.message,
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Google identity linking initiated.',
+      url: data?.url,
+      provider: 'google',
+      scopes: [
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/calendar',
+      ],
+    });
+  } catch (error) {
+    console.error('getGoogleLinkUrl error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while generating Google link URL.',
+    });
+  }
+};
+
+/**
+ * POST /api/auth/google/tokens
+ * Authenticated: Store or update Google OAuth tokens obtained after OAuth linking/login.
+ */
+const saveGoogleTokens = async (req, res) => {
+  try {
+    const { access_token, refresh_token, expires_in } = req.body;
+
+    if (!access_token) {
+      return res.status(400).json({
+        error: 'Validation error: access_token is required.',
+      });
+    }
+
+    const saved = await GoogleCalendarService.saveUserTokens(req.user.id, {
+      access_token,
+      refresh_token,
+      expires_in,
+    });
+
+    return res.status(200).json({
+      message: 'Google Calendar tokens saved and linked successfully.',
+      expires_at: saved.expires_at,
+    });
+  } catch (error) {
+    console.error('saveGoogleTokens error:', error);
+    return res.status(500).json({
+      error: 'Failed to save Google tokens.',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/auth/google/status
+ * Authenticated: Check whether the current user has linked Google Calendar.
+ */
+const getGoogleLinkStatus = async (req, res) => {
+  try {
+    const { isLinked, tokenData } = await GoogleCalendarService.checkUserGoogleLink(req.user.id);
+
+    return res.status(200).json({
+      connected: isLinked && Boolean(tokenData?.access_token),
+      has_refresh_token: Boolean(tokenData?.refresh_token),
+      expires_at: tokenData?.expires_at || null,
+    });
+  } catch (error) {
+    console.error('getGoogleLinkStatus error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while checking Google link status.',
+    });
+  }
+};
+
+module.exports = {
+  createEventReminder,
+  getGoogleLinkUrl,
+  saveGoogleTokens,
+  getGoogleLinkStatus,
+};

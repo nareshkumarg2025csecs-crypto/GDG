@@ -8,6 +8,8 @@ import { EasterEggProvider } from "@/components/easter-eggs/EasterEggProvider";
 import CustomCursor from "@/components/CustomCursor";
 import Index from "./pages/Index";
 import TeamPage from "./pages/TeamPage";
+import AuthPage from "./pages/AuthPage";
+import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import { useLenis } from "@/lib/scroll";
 
@@ -31,6 +33,11 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/team" element={<TeamPage />} />
+                <Route path="/login" element={<AuthPage defaultMode="login" />} />
+                <Route path="/signup" element={<AuthPage defaultMode="signup" />} />
+                <Route path="/auth/login" element={<AuthPage defaultMode="login" />} />
+                <Route path="/auth/signup" element={<AuthPage defaultMode="signup" />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

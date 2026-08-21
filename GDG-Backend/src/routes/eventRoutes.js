@@ -1,0 +1,51 @@
+const express = require('express');
+const { requireAuth, requireRole } = require('../middleware/auth');
+const {
+  createEvent,
+  listEvents,
+  getEventById,
+  updateEvent,
+  deleteEvent,
+} = require('../controllers/eventController');
+const { createEventReminder } = require('../controllers/calendarController');
+const { getFormsByEvent } = require('../controllers/formController');
+const {
+  validateCreateEvent,
+  validateUpdateEvent,
+} = require('../middleware/validator');
+
+const router = express.Router();
+
+// Event Routes (Authenticated)
+router.get('/', requireAuth, listEvents);
+router.get('/:id', requireAuth, getEventById);
+router.get('/:eventId/forms', requireAuth, getFormsByEvent);
+
+// Admin-only Event Management (strictly audited: requireAuth + requireRole('admin'))
+router.post(
+  '/',
+  requireAuth,
+  requireRole('admin'),
+  validateCreateEvent,
+  createEvent
+);
+
+router.put(
+  '/:id',
+  requireAuth,
+  requireRole('admin'),
+  validateUpdateEvent,
+  updateEvent
+);
+
+router.delete(
+  '/:id',
+  requireAuth,
+  requireRole('admin'),
+  deleteEvent
+);
+
+// Google Calendar Event Reminder Route
+router.post('/:eventId/calendar-reminder', requireAuth, createEventReminder);
+
+module.exports = router;

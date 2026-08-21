@@ -1,8 +1,9 @@
 import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence } from 'framer-motion';
-import { Menu, X, ExternalLink, Calendar, Sun, Moon } from 'lucide-react';
+import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield } from 'lucide-react';
 import { useState, useRef, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { useEasterEggStore } from '@/store/easterEggStore';
 
@@ -105,6 +106,16 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+  const navigate = useNavigate();
+  const { isAuthenticated, profile, role, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    toast({
+      title: 'Logged Out',
+      description: 'You have been successfully signed out.',
+    });
+  };
 
   // Update active section based on route
   useMemo(() => {
@@ -183,7 +194,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           }}
         >
           <motion.a
-            href="#"
+            href="/"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             className="flex items-center gap-2 px-3 py-2 mr-2"
@@ -227,7 +238,54 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           {/* Spacer for mobile layout to push CTA to right */}
           <div className="flex-grow md:hidden" />
 
-
+          {/* Auth Action / User Profile Pill */}
+          {isAuthenticated && profile ? (
+            <div className="flex items-center gap-1 sm:gap-1.5 mr-1">
+              <div
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-all"
+                style={{
+                  background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+                }}
+              >
+                {role === 'admin' ? (
+                  <Shield className="w-3.5 h-3.5 text-google-red shrink-0" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                )}
+                <span className="max-w-[70px] sm:max-w-[110px] truncate text-foreground">
+                  {profile.full_name || profile.email.split('@')[0]}
+                </span>
+                <span
+                  className="hidden xs:inline-block px-1.5 py-0.2 text-[9px] sm:text-[10px] rounded uppercase font-mono font-bold"
+                  style={{
+                    backgroundColor: role === 'admin' ? 'rgba(234, 67, 53, 0.15)' : 'rgba(66, 133, 244, 0.15)',
+                    color: role === 'admin' ? '#EA4335' : '#4285F4',
+                  }}
+                >
+                  {role}
+                </span>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleLogout}
+                title="Log Out"
+                className="flex items-center justify-center p-1.5 sm:p-2 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                aria-label="Log Out"
+              >
+                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </motion.button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 mr-1 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-surface-200 transition-colors"
+            >
+              <LogIn className="w-3.5 h-3.5 text-google-blue" />
+              <span>Sign In</span>
+            </Link>
+          )}
 
           {/* CTA Button */}
           <motion.a
@@ -326,6 +384,57 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </span>
                     </motion.a>
                   ))}
+
+                  {/* Auth Link in Mobile Nav */}
+                  <motion.div
+                    initial={{ x: -50, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    exit={{ x: -50, opacity: 0 }}
+                    transition={{ delay: 0.35, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                    className="pt-4 mt-2 border-t border-white/10"
+                  >
+                    {isAuthenticated && profile ? (
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-3 py-2">
+                          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">
+                            {role === 'admin' ? <Shield className="w-5 h-5 text-google-red" /> : <User className="w-5 h-5 text-google-blue" />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-white">{profile.full_name || profile.email}</p>
+                            <p className="text-xs text-white/50 uppercase font-mono">{role} Account</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            handleLogout();
+                            setMenuOpen(false);
+                          }}
+                          className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-destructive/20 text-destructive border border-destructive/30 text-sm font-semibold hover:bg-destructive/30 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Log Out</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3">
+                        <Link
+                          to="/login"
+                          onClick={() => setMenuOpen(false)}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold border border-white/15 transition-all"
+                        >
+                          <LogIn className="w-4 h-4 text-google-blue" />
+                          <span>Sign In</span>
+                        </Link>
+                        <Link
+                          to="/signup"
+                          onClick={() => setMenuOpen(false)}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all"
+                        >
+                          <span>Sign Up</span>
+                        </Link>
+                      </div>
+                    )}
+                  </motion.div>
                 </nav>
 
                 {/* Social & Contact */}

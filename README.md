@@ -1,73 +1,125 @@
-# Welcome to your Lovable project
+# GDG College Club Platform
 
-## Project info
+Modern, full-stack community platform for the Google Developer Group (GDG) student club, featuring dynamic 3D visuals, event showcases, member profiles, and authentication with role-based access control (Student & Admin) via Email/Password and Google OAuth.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+---
 
-## How can I edit this code?
+## Quick Start
 
-There are several ways of editing your application.
+### 1. Prerequisites
+- **Node.js**: v18 or later
+- **npm** or **bun**
+- A **Supabase** project instance
+- A **Google Cloud Console** OAuth 2.0 Client (for Google Sign-in)
 
-**Use Lovable**
+---
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### 2. Running Locally
 
-Changes made via Lovable will be committed automatically to this repo.
+Open two terminal windows to run the frontend and backend concurrently:
 
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+#### Terminal 1: Backend Server
+```bash
+cd GDG-Backend
+npm install
 npm run dev
 ```
+> Defaults to `http://localhost:5000` (Health check: `http://localhost:5000/api/health`)
 
-**Edit a file directly in GitHub**
+#### Terminal 2: Frontend Client
+```bash
+# In the project root directory
+npm install --legacy-peer-deps
+npm run dev
+```
+> Frontend will launch at `http://localhost:8080` (or `http://localhost:8081`)
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## Authentication & Role Access Guide
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Accessing Auth Pages
+- **Sign In**: [`/login`](http://localhost:8080/login) or via the **"Sign In"** button in the header navbar.
+- **Sign Up**: [`/signup`](http://localhost:8080/signup) or click **"Create Account"** from the login page.
+- **OAuth Callback**: `/auth/callback` handles the identity token exchange and profile synchronization.
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+### Roles & Permissions
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+The platform strictly enforces role segregation between **Students** and **Administrators**:
 
-## How can I deploy this project?
+| Feature / Role | Student Member | Club Administrator |
+| :--- | :--- | :--- |
+| **Signup Endpoint** | `POST /api/auth/student/signup` | `POST /api/auth/admin/signup` |
+| **Login Endpoint** | `POST /api/auth/student/login` | `POST /api/auth/admin/login` |
+| **Required Fields (Signup)** | `Full Name`, `Email`, `Password` | `Full Name`, `Email`, `Password`, **`Admin Verification Code`** |
+| **Google OAuth** | One-click instant login | Requires entering the **Admin Verification Code** |
+| **Security Lockout** | 5 failed attempts = 15m lockout | 3 failed attempts = 30m lockout |
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+> [!IMPORTANT]
+> ### What is the Admin Verification Code (`ADMIN_SIGNUP_CODE`)?
+> The **Admin Verification Code** is a secret key configured in the backend environment (`GDG-Backend/.env`). It ensures that only authorized club leads and coordinators can register as Administrators or link an Admin Google account.
+>
+> **Where is it set?**
+> In `GDG-Backend/.env`:
+> ```env
+> ADMIN_SIGNUP_CODE=your-secure-admin-signup-secret-code
+> ```
+> To create an Admin account through the UI, toggle to the **Admin** tab on the signup page and enter the exact code configured in your backend `.env`.
 
-## Can I connect a custom domain to my Lovable project?
+---
 
-Yes, you can!
+## Environment Variables
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### Frontend (`.env`)
+Create a `.env` file in the root directory (see `.env.example`):
+```env
+# URL where the backend Express API is running
+VITE_API_URL=http://localhost:5000
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+### Backend (`GDG-Backend/.env`)
+Create a `.env` file in the `GDG-Backend` directory (see `GDG-Backend/.env.example`):
+```env
+PORT=5000
+NODE_ENV=development
+CLIENT_URL=http://localhost:8080
+
+# Secret Key required for Admin registration & Admin Google OAuth
+ADMIN_SIGNUP_CODE=your-secure-admin-signup-secret-code
+
+# Supabase Credentials (Project Settings -> API)
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_ANON_KEY=<your-supabase-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-supabase-service-role-key>
+
+# Google OAuth Credentials (Optional / for direct token refreshes)
+GOOGLE_CLIENT_ID=<your-google-client-id>.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+```
+
+---
+
+## Supabase & Google Cloud OAuth Setup
+
+### 1. Supabase Dashboard (`https://supabase.com/dashboard`)
+1. **URL Configuration** (`Authentication -> URL Configuration`):
+   - **Site URL**: `http://localhost:8080`
+   - **Redirect URLs**: Add `http://localhost:8080/auth/callback`, `http://localhost:8081/auth/callback`, and `http://localhost:*/auth/callback*`.
+2. **Enable Google Provider** (`Authentication -> Providers -> Google`):
+   - Enable **Google**, paste your **Google Client ID** and **Client Secret**.
+   - Copy the Supabase **Callback URL** (format: `https://<project-ref>.supabase.co/auth/v1/callback`).
+3. **Database Migration**:
+   - Run the SQL script from `GDG-Backend/supabase/schema.sql` in the Supabase SQL Editor to create the `profiles` table and security policies.
+
+### 2. Google Cloud Console (`https://console.cloud.google.com`)
+1. In **APIs & Services > Credentials**, edit your **OAuth 2.0 Client ID**.
+2. **Authorized JavaScript origins**: Add `http://localhost:8080`, `http://localhost:8081`, `http://localhost:5000`.
+3. **Authorized redirect URIs**: Paste the Supabase Callback URL (`https://<project-ref>.supabase.co/auth/v1/callback`).
+
+---
+
+## Tech Stack
+- **Frontend**: Vite, React 18, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion, Zustand
+- **Backend**: Node.js, Express, Supabase Auth & Database (PostgreSQL), Helmet, Rate-Limiters

@@ -1,0 +1,123 @@
+import { apiRequest } from '@/lib/api';
+
+export type UserRole = 'student' | 'admin';
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name?: string;
+  role: UserRole;
+  details?: Record<string, any>;
+  locked_until?: string | null;
+  failed_login_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AuthResponse {
+  message: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  user?: {
+    id: string;
+    email: string;
+  };
+  profile: UserProfile;
+}
+
+export interface StudentSignupData {
+  email: string;
+  password: string;
+  full_name: string;
+  details?: Record<string, any>;
+}
+
+export interface AdminSignupData {
+  email: string;
+  password: string;
+  full_name: string;
+  admin_code: string;
+  details?: Record<string, any>;
+}
+
+export interface LoginData {
+  email: string;
+  password: string;
+}
+
+export interface GoogleUrlResponse {
+  message: string;
+  url: string;
+  provider: string;
+  role_requested: string;
+  scopes: string[];
+}
+
+export interface GoogleSyncResponse {
+  message: string;
+  profile: UserProfile;
+  google_tokens_saved: boolean;
+}
+
+export const authService = {
+  async studentSignup(data: StudentSignupData): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/student/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async adminSignup(data: AdminSignupData): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/admin/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async studentLogin(data: LoginData): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/student/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async adminLogin(data: LoginData): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/admin/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async logout(token?: string | null): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+      token,
+    });
+  },
+
+  async getGoogleOAuthUrl(role: UserRole = 'student', adminCode?: string): Promise<GoogleUrlResponse> {
+    const params = new URLSearchParams({ role });
+    if (role === 'admin' && adminCode) {
+      params.append('admin_code', adminCode);
+    }
+    return apiRequest<GoogleUrlResponse>(`/api/auth/google/url?${params.toString()}`, {
+      method: 'GET',
+    });
+  },
+
+  async syncGoogleProfile(
+    payload: {
+      provider_token?: string;
+      provider_refresh_token?: string;
+      role?: UserRole;
+      admin_code?: string;
+    },
+    token: string
+  ): Promise<GoogleSyncResponse> {
+    return apiRequest<GoogleSyncResponse>('/api/auth/google/sync-profile', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(payload),
+    });
+  },
+};
