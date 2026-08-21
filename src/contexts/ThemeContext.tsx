@@ -1,32 +1,49 @@
-import { createContext, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
 
 interface ThemeContextType {
     theme: Theme;
     toggleTheme: () => void;
+    setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-    // Permanently lock the theme to 'dark'
-    const theme: Theme = 'dark';
+    const [theme, setThemeState] = useState<Theme>(() => {
+        // Retrieve persisted theme or default to 'dark'
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('theme') as Theme | null;
+            if (saved === 'light' || saved === 'dark') {
+                return saved;
+            }
+        }
+        return 'dark';
+    });
 
     useEffect(() => {
         const root = window.document.documentElement;
-        root.classList.remove('light');
-        root.classList.add('dark');
-        
-        // Remove any local storage theme persistence
-        localStorage.removeItem('theme');
-    }, []);
+        if (theme === 'dark') {
+            root.classList.add('dark');
+            root.classList.remove('light');
+        } else {
+            root.classList.remove('dark');
+            root.classList.add('light');
+        }
+        localStorage.setItem('theme', theme);
+    }, [theme]);
 
-    // toggleTheme is now a no-op
-    const toggleTheme = () => {};
+    const toggleTheme = () => {
+        setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    };
+
+    const setTheme = (newTheme: Theme) => {
+        setThemeState(newTheme);
+    };
 
     return (
-        <ThemeContext.Provider value={{ theme, toggleTheme }}>
+        <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
             {children}
         </ThemeContext.Provider>
     );

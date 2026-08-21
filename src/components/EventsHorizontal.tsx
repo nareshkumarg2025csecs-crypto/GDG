@@ -7,10 +7,13 @@
  * Mobile: native horizontal scroll with scroll-snap fallback.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useTheme } from '@/contexts/ThemeContext';
+import { eventService } from '@/services/eventService';
+import { formatEventDate, stripMarkdown } from '@/lib/formUtils';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -19,12 +22,14 @@ gsap.registerPlugin(ScrollTrigger);
 // ================================
 
 interface EventItem {
-  id: number;
+  id: string | number;
+  eventId?: string;
   title: string;
   type: string;
   date: string;
   color: string;
   description: string;
+  bannerUrl?: string;
   colorB?: string;
   descriptionColor?: string;
 }
@@ -45,40 +50,50 @@ const events: EventItem[] = [
 // ================================
 
 function EventCard({ event, index, isDark }: { event: EventItem; index: number; isDark: boolean }) {
-  const descColor = isDark
-    ? 'rgba(255,255,255,0.55)'
-    : event.descriptionColor || 'rgba(255,255,255,0.7)';
-  const titleColor = isDark ? '#ffffff' : '#ffffff';
-
-  return (
+  const cardContent = (
     <div
-      className="event-card flex-shrink-0 w-[300px] md:w-[380px] h-[440px] md:h-[520px] mx-3 md:mx-6 rounded-2xl relative overflow-hidden group transition-all duration-500 hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 will-change-transform"
+      className="event-card flex-shrink-0 w-[300px] md:w-[380px] h-[440px] md:h-[520px] mx-3 md:mx-6 rounded-3xl relative overflow-hidden group transition-all duration-500 hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 will-change-transform cursor-pointer"
       data-physics
       data-cursor="media"
       role="article"
       tabIndex={0}
       style={{
         border: `1px solid ${event.color}35`,
-        boxShadow: `0 4px 40px ${event.color}10`,
+        boxShadow: `0 4px 40px ${event.color}15`,
         transform: 'translateZ(0)',
         // @ts-ignore
         '--tw-ring-color': event.color,
       }}
     >
-      {/* Poster gradient top — gradient mesh */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: isDark
-            ? `radial-gradient(circle at 30% 20%, ${event.color}70 0%, ${event.colorB || '#000'}cc 55%, #050505 100%)`
-            : `radial-gradient(circle at 30% 20%, ${event.color}90 0%, ${event.colorB || '#1a1a2e'}dd 55%, #111 100%)`,
-        }}
-      />
+      {/* Banner Backdrop (if present) or Poster mesh gradient */}
+      {event.bannerUrl ? (
+        <div className="absolute inset-0 bg-black">
+          <img
+            src={event.bannerUrl}
+            alt={event.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-65"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          {/* Heavy gradient scrim ensuring text at bottom is ALWAYS 100% crisp & readable */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-black/30" />
+        </div>
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{
+            background: isDark
+              ? `radial-gradient(circle at 30% 20%, ${event.color}70 0%, ${event.colorB || '#000'}cc 55%, #050505 100%)`
+              : `radial-gradient(circle at 30% 20%, ${event.color}90 0%, ${event.colorB || '#1a1a2e'}dd 55%, #111 100%)`,
+          }}
+        />
+      )}
 
       {/* Hover border glow */}
       <div
-        className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-400"
-        style={{ boxShadow: `inset 0 0 0 1px ${event.color}60, 0 0 50px ${event.color}25` }}
+        className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-400"
+        style={{ boxShadow: `inset 0 0 0 1px ${event.color}80, 0 0 50px ${event.color}30` }}
       />
 
       {/* Large background number */}
@@ -90,34 +105,39 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
       </div>
 
       {/* Card content */}
-      <div className="relative z-10 h-full flex flex-col p-6 md:p-8">
+      <div className="relative z-10 h-full flex flex-col p-5 md:p-7 justify-between">
         {/* Type badge */}
         <div
-          className="inline-flex w-fit items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest mb-auto"
-          style={{ background: `${event.color}25`, color: event.color, border: `1px solid ${event.color}45` }}
+          className="inline-flex w-fit items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest backdrop-blur-md"
+          style={{
+            background: 'rgba(0, 0, 0, 0.65)',
+            color: event.color,
+            border: `1px solid ${event.color}60`,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          }}
         >
           {event.type}
         </div>
 
-        {/* Bottom content block */}
-        <div className="mt-auto">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em] mb-2" style={{ color: event.color }}>
+        {/* Bottom content block with backdrop protection */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-black/85 backdrop-blur-md border border-white/15 shadow-2xl space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: event.color }}>
             {event.date}
           </p>
 
           <h3
-            className="font-display leading-tight mb-3"
-            style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.4rem)', color: titleColor }}
+            className="font-display leading-tight line-clamp-2 text-white drop-shadow-sm"
+            style={{ fontSize: 'clamp(1.4rem, 3vw, 2rem)' }}
           >
             {event.title}
           </h3>
 
-          <p className="text-xs md:text-sm leading-relaxed" style={{ color: descColor }}>
+          <p className="text-xs md:text-sm leading-relaxed line-clamp-2 text-white/80 font-normal">
             {event.description}
           </p>
 
           {/* Expanding accent line on hover */}
-          <div className="mt-5 h-[1px] bg-white/10 relative overflow-hidden rounded">
+          <div className="mt-3 h-[1.5px] bg-white/15 relative overflow-hidden rounded">
             <div
               className="absolute inset-y-0 left-0 w-0 group-hover:w-full transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
               style={{ backgroundColor: event.color }}
@@ -127,6 +147,12 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
       </div>
     </div>
   );
+
+  if (event.eventId) {
+    return <Link to={`/events/${event.eventId}`}>{cardContent}</Link>;
+  }
+
+  return <Link to="/events">{cardContent}</Link>;
 }
 
 // ================================
@@ -140,9 +166,50 @@ export function EventsHorizontal() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const themeEvents = events.map(e =>
+  const [liveEvents, setLiveEvents] = useState<EventItem[]>(events);
+
+  // Fetch live published events from backend
+  useEffect(() => {
+    const fetchLiveEvents = async () => {
+      try {
+        const { events: fetched } = await eventService.listEvents();
+        const published = (fetched || []).filter(
+          (e) => e.details?.status === 'published' || e.details?.published === true
+        );
+
+        if (published.length > 0) {
+          const colors = ['#4285F4', '#34A853', '#EA4335', '#FBBC04'];
+          const mapped: EventItem[] = published.map((e, idx) => {
+            const details = e.details || {};
+            const col = details.theme_color || colors[idx % colors.length];
+            return {
+              id: e.id,
+              eventId: e.id,
+              title: e.title,
+              type: details.category || 'Workshop',
+              date: formatEventDate(details.startTime || details.start_time),
+              color: col,
+              bannerUrl: details.banner_url || details.coverImage || details.cover_image,
+              description: stripMarkdown(
+                details.description ||
+                (details.custom_sections && details.custom_sections[0]?.content) ||
+                'Join this Google Developer Group community session.'
+              ),
+            };
+          });
+          setLiveEvents(mapped);
+        }
+      } catch {
+        // Fallback to initial events
+      }
+    };
+
+    fetchLiveEvents();
+  }, []);
+
+  const themeEvents = liveEvents.map((e) =>
     theme === 'light'
-      ? { ...e, descriptionColor: 'rgba(255,255,255,0.65)' }
+      ? { ...e, descriptionColor: 'rgba(255,255,255,0.75)' }
       : { ...e }
   );
 
@@ -180,7 +247,7 @@ export function EventsHorizontal() {
     }, sectionRef); // <-- scope to this component only
 
     return () => ctx.revert(); // cleans ONLY this component's triggers
-  }, []);
+  }, [liveEvents]);
 
   return (
     <section

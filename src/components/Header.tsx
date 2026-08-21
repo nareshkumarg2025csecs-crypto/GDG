@@ -1,6 +1,6 @@
 import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence } from 'framer-motion';
-import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield } from 'lucide-react';
-import { useState, useRef, useMemo } from 'react';
+import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check } from 'lucide-react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,7 +11,7 @@ import { useEasterEggStore } from '@/store/easterEggStore';
 
 const SECTIONS = [
   { id: 'home', name: 'Home', href: '/', color: '#4285F4' },
-  { id: 'events', name: 'Events', href: '#events', color: '#FBBC04' },
+  { id: 'events', name: 'Events', href: '/events', color: '#FBBC04' },
   { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
 ];
 
@@ -97,10 +97,12 @@ const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, t
 
 const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isHidden, setIsHidden] = useState(false);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
   const logoTapHistoryRef = useRef<number[]>([]);
   const { scrollY } = useScroll();
   const location = useLocation();
@@ -110,6 +112,8 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const { isAuthenticated, profile, role, logout } = useAuth();
 
   const handleLogout = async () => {
+    setProfileDropdownOpen(false);
+    setMenuOpen(false);
     await logout();
     toast({
       title: 'Logged Out',
@@ -117,15 +121,40 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
     });
   };
 
+  // Close profile dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target as Node)
+      ) {
+        setProfileDropdownOpen(false);
+      }
+    };
+    if (profileDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [profileDropdownOpen]);
+
   // Update active section based on route
   useMemo(() => {
-    if (location.pathname === '/') {
+    if (location.pathname.startsWith('/admin')) {
+      setActiveSection('admin');
+    } else if (location.pathname.startsWith('/events')) {
+      setActiveSection('events');
+    } else if (location.pathname.startsWith('/team')) {
+      setActiveSection('team');
+    } else if (location.pathname === '/') {
       setActiveSection('home');
     }
-  }, [location]);
+  }, [location.pathname]);
 
   // Determine active color based on state
   const activeColor = useMemo(() => {
+    if (activeSection === 'admin') return '#EA4335';
     return SECTIONS.find(s => s.id === activeSection)?.color || '#4285F4';
   }, [activeSection]);
 
@@ -177,18 +206,18 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           className="relative flex items-center gap-1 pl-2 pr-2 py-2 rounded-full border transition-all duration-300"
           style={{
             background: theme === 'light'
-              ? 'rgba(255, 255, 255, 0.88)'
-              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(5, 5, 5, 0.75)',
+              ? 'rgba(255, 255, 255, 0.92)'
+              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(15, 15, 15, 0.85)',
             backdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
             WebkitBackdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
             borderColor: theme === 'light'
-              ? 'rgba(226, 226, 222, 0.6)'
-              : isTransparentState ? 'transparent' : 'rgba(255,255,255,0.08)',
+              ? 'rgba(226, 226, 222, 0.8)'
+              : isTransparentState ? 'transparent' : 'rgba(255,255,255,0.12)',
             boxShadow: theme === 'light'
-              ? '0 4px 24px -4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8)'
+              ? '0 4px 24px -4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8)'
               : isTransparentState
                 ? 'none'
-                : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 80px ${activeColor}15`,
+                : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 80px ${activeColor}15`,
             width: 'auto',
             maxWidth: '95vw'
           }}
@@ -202,7 +231,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             data-easter-trigger="logo"
             data-no-leet
           >
-            <span className="font-sans text-xl font-bold tracking-tight" style={{ color: theme === 'light' ? '#1F1F1F' : 'white' }}>GDG</span>
+            <span className="font-sans text-xl font-bold tracking-tight text-foreground">GDG</span>
             <div className="flex gap-0.5">
               {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
                 <motion.div
@@ -218,7 +247,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
           {/* Desktop Nav Items - Hidden on Mobile */}
           <div className="hidden md:flex items-center gap-1">
-            <div className="w-px h-6 mr-2" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+            <div className="w-px h-6 mr-2 border-r border-border" />
             {SECTIONS.map((section) => (
               <MagneticNavItem
                 key={section.id}
@@ -232,94 +261,167 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 {section.name}
               </MagneticNavItem>
             ))}
-            <div className="w-px h-6 mx-2" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+            {role === 'admin' && (
+              <MagneticNavItem
+                href="/admin/events"
+                isActive={activeSection === 'admin'}
+                color="#EA4335"
+                onClick={() => setActiveSection('admin')}
+                scrolled={scrolled}
+                transparent={transparent}
+              >
+                Admin Events
+              </MagneticNavItem>
+            )}
+            <div className="w-px h-6 mx-2 border-r border-border" />
           </div>
 
-          {/* Spacer for mobile layout to push CTA to right */}
+          {/* Spacer for mobile layout */}
           <div className="flex-grow md:hidden" />
 
-          {/* Auth Action / User Profile Pill */}
+          {/* User Profile Button with Dropdown (Desktop & Responsive) */}
           {isAuthenticated && profile ? (
-            <div className="flex items-center gap-1 sm:gap-1.5 mr-1">
-              <div
-                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-all"
-                style={{
-                  background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-                }}
+            <div className="relative" ref={profileDropdownRef}>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setProfileDropdownOpen((prev) => !prev)}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm"
+                title="User Profile & Settings"
               >
                 {role === 'admin' ? (
                   <Shield className="w-3.5 h-3.5 text-google-red shrink-0" />
                 ) : (
                   <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
                 )}
-                <span className="max-w-[70px] sm:max-w-[110px] truncate text-foreground">
+                <span className="max-w-[70px] sm:max-w-[110px] truncate text-foreground font-medium">
                   {profile.full_name || profile.email.split('@')[0]}
                 </span>
-                <span
-                  className="hidden xs:inline-block px-1.5 py-0.2 text-[9px] sm:text-[10px] rounded uppercase font-mono font-bold"
-                  style={{
-                    backgroundColor: role === 'admin' ? 'rgba(234, 67, 53, 0.15)' : 'rgba(66, 133, 244, 0.15)',
-                    color: role === 'admin' ? '#EA4335' : '#4285F4',
-                  }}
-                >
-                  {role}
-                </span>
-              </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleLogout}
-                title="Log Out"
-                className="flex items-center justify-center p-1.5 sm:p-2 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                aria-label="Log Out"
-              >
-                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
+                    profileDropdownOpen ? 'rotate-180' : ''
+                  }`}
+                />
               </motion.button>
+
+              {/* Profile Dropdown Menu */}
+              <AnimatePresence>
+                {profileDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 mt-2 w-64 rounded-2xl border border-border bg-card text-card-foreground shadow-2xl p-2 z-50 space-y-1"
+                  >
+                    {/* User Info Header */}
+                    <div className="p-3 border-b border-border/80">
+                      <p className="text-xs font-bold text-foreground truncate">
+                        {profile.full_name || 'GDG Member'}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground truncate">{profile.email}</p>
+                      <div className="mt-1.5">
+                        <span
+                          className="inline-block px-2 py-0.5 text-[10px] rounded-full uppercase font-mono font-bold"
+                          style={{
+                            backgroundColor:
+                              role === 'admin' ? 'rgba(234, 67, 53, 0.15)' : 'rgba(66, 133, 244, 0.15)',
+                            color: role === 'admin' ? '#EA4335' : '#4285F4',
+                          }}
+                        >
+                          {role} Account
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Option 1: Theme Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleTheme();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {isDark ? (
+                          <Sun className="w-4 h-4 text-google-yellow" />
+                        ) : (
+                          <Moon className="w-4 h-4 text-google-blue" />
+                        )}
+                        <span>Theme Mode</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-muted-foreground uppercase">
+                        {theme}
+                      </span>
+                    </button>
+
+                    {/* Option 2: Logout Option */}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-destructive/10 text-destructive text-xs font-semibold transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Log Out</span>
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           ) : (
-            <Link
-              to="/login"
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 mr-1 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-surface-200 transition-colors"
-            >
-              <LogIn className="w-3.5 h-3.5 text-google-blue" />
-              <span>Sign In</span>
-            </Link>
+            /* Standalone Theme Toggle when logged out */
+            <div className="flex items-center gap-1">
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={toggleTheme}
+                title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode`}
+                className="p-2 rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors"
+                aria-label="Toggle Theme"
+              >
+                {isDark ? (
+                  <Sun className="w-4 h-4 text-google-yellow" />
+                ) : (
+                  <Moon className="w-4 h-4 text-google-blue" />
+                )}
+              </motion.button>
+              <Link
+                to="/login"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5 text-google-blue" />
+                <span>Sign In</span>
+              </Link>
+            </div>
           )}
 
           {/* CTA Button */}
-          <motion.a
-            href="#events"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all"
+          <Link
+            to={role === 'admin' ? '/admin/events' : '/events'}
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ml-1"
             style={{
               background: `linear-gradient(135deg, ${activeColor}, ${activeColor}cc)`,
               boxShadow: `0 4px 20px ${activeColor}40, 0 0 40px ${activeColor}20`,
             }}
           >
             <Calendar className="w-4 h-4 text-white" />
-            <span className="text-white hidden sm:inline">Join</span>
-          </motion.a>
+            <span className="text-white hidden sm:inline">{role === 'admin' ? 'Manage' : 'Events'}</span>
+          </Link>
 
           {/* Mobile Menu Toggle Button */}
           <motion.button
             onClick={() => setMenuOpen(!menuOpen)}
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
-            className="w-10 h-10 ml-2 flex items-center justify-center rounded-full transition-all z-50"
+            className="w-10 h-10 ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground"
             aria-label="Menu"
-            style={{
-              background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(31,31,31,0.06)',
-              color: isDark ? 'rgba(255,255,255,0.7)' : 'rgba(31,31,31,0.7)',
-            }}
           >
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </motion.button>
         </motion.nav>
       </motion.header>
 
-      {/* Full Screen Menu Overlay */}
+      {/* Full Screen Menu Overlay (Responsive) */}
       <AnimatePresence>
         {menuOpen && (
           <motion.div
@@ -327,7 +429,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
-            className="fixed inset-0 z-40 bg-black/95 backdrop-blur-xl"
+            className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl"
           >
             {/* Grid Background */}
             <div
@@ -338,89 +440,137 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
               }}
             />
 
-            {/* Decorative Gradients */}
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 1 }}
-              className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full blur-[100px] pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(66, 133, 244, 0.2) 0%, transparent 70%)' }}
-            />
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 1, delay: 0.2 }}
-              className="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[100px] pointer-events-none"
-              style={{ background: 'radial-gradient(circle, rgba(234, 67, 53, 0.15) 0%, transparent 70%)' }}
-            />
-
-            <div className="h-full flex flex-col pt-32 pb-12 overflow-y-auto container mx-auto px-6 relative z-10">
-              <div className="flex flex-col lg:flex-row justify-between h-full">
+            <div className="h-full flex flex-col pt-28 pb-12 overflow-y-auto container mx-auto px-6 relative z-10">
+              <div className="flex flex-col justify-between h-full space-y-8">
 
                 {/* Navigation Links */}
                 <nav className="flex flex-col gap-2">
                   {SECTIONS.map((item, i) => (
-                    <motion.a
+                    <motion.div
                       key={item.name}
-                      href={item.href}
                       initial={{ x: -50, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       exit={{ x: -50, opacity: 0 }}
                       transition={{ delay: i * 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                      onClick={() => {
-                        setActiveSection(item.id);
-                        setMenuOpen(false);
-                      }}
-                      className="group flex items-baseline gap-6 py-2"
                     >
-                      <span className="text-xs font-mono text-white/40 group-hover:text-white/80 transition-colors">0{i + 1}</span>
-                      <span
-                        className="text-5xl md:text-7xl font-sans font-bold transition-all duration-300 group-hover:translate-x-4"
-                        style={{
-                          color: activeSection === item.id ? item.color : 'rgba(255,255,255,0.5)',
+                      <Link
+                        to={item.href}
+                        onClick={() => {
+                          setActiveSection(item.id);
+                          setMenuOpen(false);
                         }}
+                        className="group flex items-baseline gap-6 py-2"
                       >
-                        {item.name}
-                      </span>
-                    </motion.a>
+                        <span className="text-xs font-mono text-muted-foreground group-hover:text-foreground transition-colors">0{i + 1}</span>
+                        <span
+                          className="text-4xl sm:text-6xl font-sans font-bold transition-all duration-300 group-hover:translate-x-4"
+                          style={{
+                            color: activeSection === item.id ? item.color : 'rgb(var(--foreground))',
+                          }}
+                        >
+                          {item.name}
+                        </span>
+                      </Link>
+                    </motion.div>
                   ))}
 
-                  {/* Auth Link in Mobile Nav */}
-                  <motion.div
-                    initial={{ x: -50, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: -50, opacity: 0 }}
-                    transition={{ delay: 0.35, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                    className="pt-4 mt-2 border-t border-white/10"
-                  >
-                    {isAuthenticated && profile ? (
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-3 py-2">
-                          <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white">
-                            {role === 'admin' ? <Shield className="w-5 h-5 text-google-red" /> : <User className="w-5 h-5 text-google-blue" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-white">{profile.full_name || profile.email}</p>
-                            <p className="text-xs text-white/50 uppercase font-mono">{role} Account</p>
-                          </div>
+                  {role === 'admin' && (
+                    <motion.div
+                      initial={{ x: -50, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: -50, opacity: 0 }}
+                      transition={{ delay: 0.3, duration: 0.5 }}
+                    >
+                      <Link
+                        to="/admin/events"
+                        onClick={() => {
+                          setActiveSection('admin');
+                          setMenuOpen(false);
+                        }}
+                        className="group flex items-baseline gap-6 py-2"
+                      >
+                        <span className="text-xs font-mono text-google-red">04</span>
+                        <span className="text-4xl sm:text-6xl font-sans font-bold text-google-red transition-all duration-300 group-hover:translate-x-4">
+                          Admin Portal
+                        </span>
+                      </Link>
+                    </motion.div>
+                  )}
+                </nav>
+
+                {/* User Profile, Theme Toggle & Auth Actions in Responsive Drawer */}
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 20, opacity: 0 }}
+                  transition={{ delay: 0.35, duration: 0.5 }}
+                  className="pt-6 border-t border-border space-y-4"
+                >
+                  {isAuthenticated && profile ? (
+                    <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground">
+                          {role === 'admin' ? (
+                            <Shield className="w-5 h-5 text-google-red" />
+                          ) : (
+                            <User className="w-5 h-5 text-google-blue" />
+                          )}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-foreground truncate">
+                            {profile.full_name || profile.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground uppercase font-mono">{role} Account</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
+                        {/* Mobile Theme Toggle Button */}
                         <button
-                          onClick={() => {
-                            handleLogout();
-                            setMenuOpen(false);
-                          }}
-                          className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-destructive/20 text-destructive border border-destructive/30 text-sm font-semibold hover:bg-destructive/30 transition-colors"
+                          type="button"
+                          onClick={toggleTheme}
+                          className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                        >
+                          {isDark ? (
+                            <Sun className="w-4 h-4 text-google-yellow" />
+                          ) : (
+                            <Moon className="w-4 h-4 text-google-blue" />
+                          )}
+                          <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
+                        </button>
+
+                        {/* Mobile Logout Button */}
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
                         >
                           <LogOut className="w-4 h-4" />
                           <span>Log Out</span>
                         </button>
                       </div>
-                    ) : (
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Theme Toggle when logged out */}
+                      <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-border bg-card hover:bg-muted text-sm font-semibold text-foreground transition-colors"
+                      >
+                        {isDark ? (
+                          <Sun className="w-4 h-4 text-google-yellow" />
+                        ) : (
+                          <Moon className="w-4 h-4 text-google-blue" />
+                        )}
+                        <span>Switch to {isDark ? 'Light' : 'Dark'} Mode</span>
+                      </button>
+
                       <div className="flex gap-3">
                         <Link
                           to="/login"
                           onClick={() => setMenuOpen(false)}
-                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-semibold border border-white/15 transition-all"
+                          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-card hover:bg-muted text-foreground text-sm font-semibold border border-border transition-all"
                         >
                           <LogIn className="w-4 h-4 text-google-blue" />
                           <span>Sign In</span>
@@ -428,47 +578,13 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                         <Link
                           to="/signup"
                           onClick={() => setMenuOpen(false)}
-                          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all"
+                          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all"
                         >
                           <span>Sign Up</span>
                         </Link>
                       </div>
-                    )}
-                  </motion.div>
-                </nav>
-
-                {/* Social & Contact */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 }}
-                  className="mt-12 lg:mt-0 lg:self-end w-full lg:max-w-xs"
-                >
-                  <p className="text-xs uppercase tracking-widest text-white/40 mb-6 font-mono">Connect</p>
-                  <div className="grid grid-cols-1 gap-3">
-                    {SOCIAL_LINKS.map((social, i) => (
-                      <a
-                        key={social.name}
-                        href={social.href}
-                        className="group flex items-center justify-between p-4 rounded-xl border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 transition-all"
-                      >
-                        <div>
-                          <p className="font-medium text-white">{social.name}</p>
-                          <p className="text-xs text-white/40 group-hover:text-white/60">{social.text}</p>
-                        </div>
-                        <ExternalLink className="w-4 h-4 text-white/30 group-hover:text-white transition-colors" />
-                      </a>
-                    ))}
-                  </div>
-
-                  <div className="mt-8 pt-8 border-t border-white/10">
-                    <a
-                      href="mailto:contact@gdg.community"
-                      className="text-lg font-medium bg-gradient-to-r from-blue-400 via-red-400 to-yellow-400 bg-clip-text text-transparent"
-                    >
-                      contact@gdg.community
-                    </a>
-                  </div>
+                    </div>
+                  )}
                 </motion.div>
               </div>
             </div>

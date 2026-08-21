@@ -107,9 +107,23 @@ CREATE TABLE IF NOT EXISTS public.forms (
     event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     schema JSONB DEFAULT '{}'::jsonb NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE,
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure expires_at column is added if table already existed
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'forms' 
+          AND column_name = 'expires_at'
+    ) THEN
+        ALTER TABLE public.forms ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_forms_event_id ON public.forms(event_id);
 
@@ -135,6 +149,17 @@ CREATE TABLE IF NOT EXISTS public.form_submissions (
     answers JSONB DEFAULT '{}'::jsonb NOT NULL,
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Unique constraint to prevent duplicate submissions per user per form
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_form_submissions_form_user'
+    ) THEN
+        ALTER TABLE public.form_submissions
+        ADD CONSTRAINT uq_form_submissions_form_user UNIQUE (form_id, user_id);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_submissions_form_id ON public.form_submissions(form_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.form_submissions(user_id);

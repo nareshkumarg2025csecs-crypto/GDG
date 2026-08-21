@@ -43,9 +43,9 @@ app.use(
   })
 );
 
-// 3. Request Payload Size Limits (DoS Mitigation)
-app.use(express.json({ limit: '100kb' }));
-app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+// 3. Request Payload Size Limits (Supports high-res Base64 event banners)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // 4. HTTP Parameter Pollution Protection
 app.use(hpp());

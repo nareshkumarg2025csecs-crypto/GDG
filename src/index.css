@@ -80,8 +80,24 @@
     --google-red: 4 90% 58%;
     --google-yellow: 44 98% 50%;
     --google-green: 146 53% 43%;
-    --google-grey: 0 0% 96%;
-    --google-white: 0 0% 9%;
+    --google-grey: 0 0% 12%;
+    --google-white: 0 0% 95%;
+  }
+
+  /* Make datetime-local calendar picker icon always clearly visible and clickable */
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 3px;
+    opacity: 0.85;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) hue-rotate(180deg);
   }
 
   /* DARK MODE OVERRIDES */

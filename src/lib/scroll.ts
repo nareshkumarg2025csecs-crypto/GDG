@@ -86,6 +86,35 @@ export function destroySmoothScroll(): void {
 }
 
 /**
+ * Scroll to top immediately or smoothly (ideal for page transitions)
+ */
+export function scrollToTop(immediate: boolean = true): void {
+    if (lenisInstance) {
+        lenisInstance.scrollTo(0, { immediate });
+    } else {
+        window.scrollTo(0, 0);
+    }
+}
+
+/**
+ * Pause smooth scroll (e.g. when modal is open)
+ */
+export function stopLenis(): void {
+    if (lenisInstance) {
+        lenisInstance.stop();
+    }
+}
+
+/**
+ * Resume smooth scroll (e.g. when modal closes)
+ */
+export function startLenis(): void {
+    if (lenisInstance) {
+        lenisInstance.start();
+    }
+}
+
+/**
  * Custom hook for using smooth scroll in React components
  */
 export function useLenis(callback?: (state: SmoothScrollState) => void) {

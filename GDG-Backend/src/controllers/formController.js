@@ -111,7 +111,7 @@ const validateFormAnswers = (schema, answers) => {
  */
 const createForm = async (req, res) => {
   try {
-    const { event_id, title, schema } = req.body;
+    const { event_id, title, schema, expires_at } = req.body;
 
     if (!event_id || !title) {
       return res.status(400).json({
@@ -132,19 +132,26 @@ const createForm = async (req, res) => {
       });
     }
 
-    const formSchema = schema && typeof schema === 'object' ? schema : {};
+    const formSchema = schema && typeof schema === 'object' ? { ...schema } : {};
+    if (expires_at) {
+      formSchema.expires_at = expires_at;
+    }
+
+    const insertPayload = {
+      event_id,
+      title: title.trim(),
+      schema: formSchema,
+      created_by: req.user.id,
+      created_at: new Date().toISOString(),
+    };
+
+    if (expires_at) {
+      insertPayload.expires_at = expires_at;
+    }
 
     const { data: form, error } = await supabaseAdmin
       .from('forms')
-      .insert([
-        {
-          event_id,
-          title: title.trim(),
-          schema: formSchema,
-          created_by: req.user.id,
-          created_at: new Date().toISOString(),
-        },
-      ])
+      .insert([insertPayload])
       .select()
       .single();
 
@@ -243,16 +250,27 @@ const getFormById = async (req, res) => {
 
 /**
  * PUT /api/forms/:id
- * Admin-only: Update a form schema or title.
+ * Admin-only: Update a form schema, title, or expiration date.
  */
 const updateForm = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, schema } = req.body;
+    const { title, schema, expires_at } = req.body;
 
     const updatePayload = {};
     if (title && typeof title === 'string') updatePayload.title = title.trim();
-    if (schema && typeof schema === 'object') updatePayload.schema = schema;
+    if (schema && typeof schema === 'object') {
+      updatePayload.schema = { ...schema };
+      if (expires_at !== undefined) {
+        updatePayload.schema.expires_at = expires_at;
+      }
+    } else if (expires_at !== undefined) {
+      updatePayload.expires_at = expires_at;
+    }
+
+    if (expires_at !== undefined) {
+      updatePayload.expires_at = expires_at;
+    }
 
     const { data: form, error } = await supabaseAdmin
       .from('forms')
@@ -329,7 +347,8 @@ const deleteForm = async (req, res) => {
 
 /**
  * POST /api/forms/:formId/submissions
- * Authenticated / Students: Submit answers for a form with dynamic schema validation.
+ * Authenticated / Students: Submit answers for a form with dynamic schema validation,
+ * strict server-side deadline enforcement, and duplicate submission prevention.
  */
 const submitForm = async (req, res) => {
   try {
@@ -342,10 +361,10 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 1. Verify form exists and retrieve its dynamic schema
+    // 1. Verify form exists and retrieve its dynamic schema & expiry
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('id, event_id, title, schema')
+      .select('id, event_id, title, schema, expires_at')
       .eq('id', formId)
       .single();
 
@@ -355,7 +374,32 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 2. Validate submitted answers strictly against the form's schema
+    // 2. Server-side Expiration Check (Zero client trust)
+    const expiryTime = form.expires_at || form.schema?.expires_at;
+    if (expiryTime && new Date() > new Date(expiryTime)) {
+      return res.status(410).json({
+        error: 'Registration closed: The deadline to submit this form has passed.',
+        expires_at: expiryTime,
+      });
+    }
+
+    // 3. Server-side Duplicate Prevention Check (Zero client trust)
+    const { data: existingSubmission } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, submitted_at')
+      .eq('form_id', formId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (existingSubmission) {
+      return res.status(409).json({
+        error: 'Conflict: You have already submitted registration for this event.',
+        submission_id: existingSubmission.id,
+        submitted_at: existingSubmission.submitted_at,
+      });
+    }
+
+    // 4. Validate submitted answers strictly against the form's schema
     const validationResult = validateFormAnswers(form.schema, answers);
     if (!validationResult.isValid) {
       return res.status(400).json({
@@ -364,7 +408,7 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 3. Store submission in database
+    // 5. Store submission in database
     const { data: submission, error } = await supabaseAdmin
       .from('form_submissions')
       .insert([
@@ -379,6 +423,13 @@ const submitForm = async (req, res) => {
       .single();
 
     if (error) {
+      // Check if duplicate key violation was caught by unique constraint
+      if (error.code === '23505' || error.message.includes('unique') || error.message.includes('uq_form_submissions')) {
+        return res.status(409).json({
+          error: 'Conflict: You have already submitted registration for this event.',
+        });
+      }
+
       console.error('Submit Form Error:', error);
       return res.status(500).json({
         error: 'Failed to save form submission.',
