@@ -17,7 +17,7 @@ const socialLinks = [
   { name: 'Instagram', icon: Instagram, href: '#', hoverColor: '#E1306C' },
 ];
 
-const navLinks = ['Home', 'Events', 'Core', 'About Us', 'Gallery'];
+const navLinks = ['Home', 'Events', 'Core', 'About Us'];
 
 const Footer = () => {
   const { theme } = useTheme();

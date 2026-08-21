@@ -7,7 +7,6 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { EasterEggProvider } from "@/components/easter-eggs/EasterEggProvider";
 import CustomCursor from "@/components/CustomCursor";
 import Index from "./pages/Index";
-import Gallery from "./pages/Gallery";
 import TeamPage from "./pages/TeamPage";
 import NotFound from "./pages/NotFound";
 import { useLenis } from "@/lib/scroll";
@@ -31,7 +30,6 @@ const App = () => {
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
-                <Route path="/gallery" element={<Gallery />} />
                 <Route path="/team" element={<TeamPage />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />

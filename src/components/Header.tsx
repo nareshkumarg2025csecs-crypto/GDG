@@ -11,7 +11,6 @@ import { useEasterEggStore } from '@/store/easterEggStore';
 const SECTIONS = [
   { id: 'home', name: 'Home', href: '/', color: '#4285F4' },
   { id: 'events', name: 'Events', href: '#events', color: '#FBBC04' },
-  { id: 'gallery', name: 'Gallery', href: '/gallery', color: '#FBBC04' },
   { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
 ];
 
@@ -109,9 +108,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
   // Update active section based on route
   useMemo(() => {
-    if (location.pathname === '/gallery') {
-      setActiveSection('gallery');
-    } else if (location.pathname === '/') {
+    if (location.pathname === '/') {
       setActiveSection('home');
     }
   }, [location]);

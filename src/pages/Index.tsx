@@ -2,7 +2,6 @@ import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
 import MessageSection from '@/components/MessageSection';
 import EventsHorizontal from '@/components/EventsHorizontal';
-import MiniGallery from '@/components/gallery/MiniGallery';
 import TeamSection from '@/components/TeamSection';
 import ResourcesSection from '@/components/ResourcesSection';
 import Footer from '@/components/Footer';
@@ -72,10 +71,7 @@ const Index = () => {
       <GradientBand from="#FBBC04" to="#34A853" />
       <TeamSection />
 
-      <GradientBand from="#34A853" to="#4285F4" flip />
-      <MiniGallery />
-
-      <GradientBand from="#4285F4" to="#EA4335" />
+      <GradientBand from="#34A853" to="#EA4335" flip />
       <ResourcesSection />
 
       <GradientBand from="#34A853" to="#FBBC04" flip />
