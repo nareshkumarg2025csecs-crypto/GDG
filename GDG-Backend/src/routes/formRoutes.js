@@ -8,6 +8,7 @@ const {
   submitForm,
   getFormSubmissions,
   getMySubmissions,
+  updateSubmissionAttendance,
 } = require('../controllers/formController');
 const {
   validateCreateForm,
@@ -28,6 +29,20 @@ router.post(
   requireAuth,
   validateSubmitForm,
   submitForm
+);
+
+// Admin-only Attendance Management
+router.patch(
+  '/submissions/:submissionId/attendance',
+  requireAuth,
+  requireRole('admin'),
+  updateSubmissionAttendance
+);
+router.put(
+  '/submissions/:submissionId/attendance',
+  requireAuth,
+  requireRole('admin'),
+  updateSubmissionAttendance
 );
 
 // Admin-only Form CRUD (strictly audited: requireAuth + requireRole('admin'))

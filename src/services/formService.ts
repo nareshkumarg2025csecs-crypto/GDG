@@ -86,4 +86,17 @@ export const formService = {
       method: 'GET',
     });
   },
+
+  async updateSubmissionAttendance(
+    submissionId: string,
+    attended: boolean
+  ): Promise<{ message: string; submission: FormSubmission }> {
+    return apiRequest<{ message: string; submission: FormSubmission }>(
+      `/api/forms/submissions/${submissionId}/attendance`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ attended }),
+      }
+    );
+  },
 };

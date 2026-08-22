@@ -158,7 +158,7 @@ export const EventDetailPage: React.FC = () => {
 
       if (res.success) {
         toast({
-          title: 'Event Synced to Google Calendar! 📅',
+          title: 'Event Synced to Google Calendar',
           description: res.message || 'Check your primary Google Calendar.',
         });
       }
@@ -183,7 +183,7 @@ export const EventDetailPage: React.FC = () => {
     } else {
       navigator.clipboard.writeText(window.location.href);
       toast({
-        title: 'Link Copied!',
+        title: 'Link Copied',
         description: 'Event link copied to your clipboard.',
       });
     }

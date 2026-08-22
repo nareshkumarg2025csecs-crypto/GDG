@@ -57,7 +57,7 @@ export const AuthCallback: React.FC = () => {
 
           setStatus('success');
           toast({
-            title: 'Google Calendar Linked! 📅',
+            title: 'Google Calendar Linked',
             description: 'Your Google Calendar is connected. Your email login is preserved.',
           });
 

@@ -1,11 +1,12 @@
 import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence } from 'framer-motion';
-import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check } from 'lucide-react';
+import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard } from 'lucide-react';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { useEasterEggStore } from '@/store/easterEggStore';
+import { UserAvatar } from '@/components/common/UserAvatar';
 
 // --- Constants & Data ---
 
@@ -109,7 +110,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
   const navigate = useNavigate();
-  const { isAuthenticated, profile, role, logout } = useAuth();
+  const { user, isAuthenticated, profile, role, logout } = useAuth();
 
   const handleLogout = async () => {
     setProfileDropdownOpen(false);
@@ -143,6 +144,8 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   useMemo(() => {
     if (location.pathname.startsWith('/admin')) {
       setActiveSection('admin');
+    } else if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/profile')) {
+      setActiveSection('dashboard');
     } else if (location.pathname.startsWith('/events')) {
       setActiveSection('events');
     } else if (location.pathname.startsWith('/team')) {
@@ -155,6 +158,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   // Determine active color based on state
   const activeColor = useMemo(() => {
     if (activeSection === 'admin') return '#EA4335';
+    if (activeSection === 'dashboard') return '#4285F4';
     return SECTIONS.find(s => s.id === activeSection)?.color || '#4285F4';
   }, [activeSection]);
 
@@ -261,6 +265,18 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 {section.name}
               </MagneticNavItem>
             ))}
+            {isAuthenticated && (
+              <MagneticNavItem
+                href="/dashboard"
+                isActive={activeSection === 'dashboard'}
+                color="#4285F4"
+                onClick={() => setActiveSection('dashboard')}
+                scrolled={scrolled}
+                transparent={transparent}
+              >
+                Dashboard
+              </MagneticNavItem>
+            )}
             {role === 'admin' && (
               <MagneticNavItem
                 href="/admin/events"
@@ -286,14 +302,20 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => setProfileDropdownOpen((prev) => !prev)}
+                aria-haspopup="menu"
+                aria-expanded={profileDropdownOpen}
+                aria-label="User account profile and settings menu"
                 className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm"
                 title="User Profile & Settings"
               >
-                {role === 'admin' ? (
-                  <Shield className="w-3.5 h-3.5 text-google-red shrink-0" />
-                ) : (
-                  <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                )}
+                <UserAvatar
+                  name={profile.full_name}
+                  email={profile.email}
+                  avatarUrl={profile.details?.avatar_url || profile.details?.picture}
+                  userId={user?.id}
+                  size="xs"
+                  showBorder={false}
+                />
                 <span className="max-w-[70px] sm:max-w-[110px] truncate text-foreground font-medium">
                   {profile.full_name || profile.email.split('@')[0]}
                 </span>
@@ -301,6 +323,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                   className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
                     profileDropdownOpen ? 'rotate-180' : ''
                   }`}
+                  aria-hidden="true"
                 />
               </motion.button>
 
@@ -312,31 +335,54 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
+                    role="menu"
+                    aria-label="User account options"
                     className="absolute right-0 mt-2 w-64 rounded-2xl border border-border bg-card text-card-foreground shadow-2xl p-2 z-50 space-y-1"
                   >
                     {/* User Info Header */}
-                    <div className="p-3 border-b border-border/80">
-                      <p className="text-xs font-bold text-foreground truncate">
-                        {profile.full_name || 'GDG Member'}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground truncate">{profile.email}</p>
-                      <div className="mt-1.5">
-                        <span
-                          className="inline-block px-2 py-0.5 text-[10px] rounded-full uppercase font-mono font-bold"
-                          style={{
-                            backgroundColor:
-                              role === 'admin' ? 'rgba(234, 67, 53, 0.15)' : 'rgba(66, 133, 244, 0.15)',
-                            color: role === 'admin' ? '#EA4335' : '#4285F4',
-                          }}
-                        >
-                          {role} Account
-                        </span>
+                    <div className="p-3 border-b border-border/80 flex items-center gap-3">
+                      <UserAvatar
+                        name={profile.full_name}
+                        email={profile.email}
+                        avatarUrl={profile.details?.avatar_url || profile.details?.picture}
+                        userId={user?.id}
+                        size="md"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate">
+                          {profile.full_name || 'GDG Member'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground truncate">{profile.email}</p>
+                        <div className="mt-1">
+                          <span
+                            className="inline-block px-2 py-0.5 text-[9px] rounded-full uppercase font-mono font-bold"
+                            style={{
+                              backgroundColor:
+                                role === 'admin' ? 'rgba(234, 67, 53, 0.15)' : 'rgba(66, 133, 244, 0.15)',
+                              color: role === 'admin' ? '#EA4335' : '#4285F4',
+                            }}
+                          >
+                            {role} Account
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Option 1: Theme Toggle */}
+                    {/* Option 1: My Dashboard */}
+                    <Link
+                      to="/dashboard"
+                      role="menuitem"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
+                      <span>My Dashboard</span>
+                    </Link>
+
+                    {/* Option 2: Theme Toggle */}
                     <button
                       type="button"
+                      role="menuitem"
                       onClick={() => {
                         toggleTheme();
                       }}
@@ -344,9 +390,9 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     >
                       <div className="flex items-center gap-2.5">
                         {isDark ? (
-                          <Sun className="w-4 h-4 text-google-yellow" />
+                          <Sun className="w-4 h-4 text-google-yellow" aria-hidden="true" />
                         ) : (
-                          <Moon className="w-4 h-4 text-google-blue" />
+                          <Moon className="w-4 h-4 text-google-blue" aria-hidden="true" />
                         )}
                         <span>Theme Mode</span>
                       </div>
@@ -355,13 +401,14 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </span>
                     </button>
 
-                    {/* Option 2: Logout Option */}
+                    {/* Option 3: Logout Option */}
                     <button
                       type="button"
+                      role="menuitem"
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-destructive/10 text-destructive text-xs font-semibold transition-colors"
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="w-4 h-4" aria-hidden="true" />
                       <span>Log Out</span>
                     </button>
                   </motion.div>
@@ -377,19 +424,20 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 onClick={toggleTheme}
                 title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode`}
                 className="p-2 rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors"
-                aria-label="Toggle Theme"
+                aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
               >
                 {isDark ? (
-                  <Sun className="w-4 h-4 text-google-yellow" />
+                  <Sun className="w-4 h-4 text-google-yellow" aria-hidden="true" />
                 ) : (
-                  <Moon className="w-4 h-4 text-google-blue" />
+                  <Moon className="w-4 h-4 text-google-blue" aria-hidden="true" />
                 )}
               </motion.button>
               <Link
                 to="/login"
+                aria-label="Sign In to your account"
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors"
               >
-                <LogIn className="w-3.5 h-3.5 text-google-blue" />
+                <LogIn className="w-3.5 h-3.5 text-google-blue" aria-hidden="true" />
                 <span>Sign In</span>
               </Link>
             </div>
@@ -398,13 +446,14 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           {/* CTA Button */}
           <Link
             to={role === 'admin' ? '/admin/events' : '/events'}
+            aria-label={role === 'admin' ? "Manage GDG events in Admin Portal" : "View GDG Events"}
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ml-1"
             style={{
               background: `linear-gradient(135deg, ${activeColor}, ${activeColor}cc)`,
               boxShadow: `0 4px 20px ${activeColor}40, 0 0 40px ${activeColor}20`,
             }}
           >
-            <Calendar className="w-4 h-4 text-white" />
+            <Calendar className="w-4 h-4 text-white" aria-hidden="true" />
             <span className="text-white hidden sm:inline">{role === 'admin' ? 'Manage' : 'Events'}</span>
           </Link>
 
@@ -414,9 +463,10 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.9 }}
             className="w-10 h-10 ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground"
-            aria-label="Menu"
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={menuOpen}
           >
-            {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {menuOpen ? <X className="w-5 h-5" aria-hidden="true" /> : <Menu className="w-5 h-5" aria-hidden="true" />}
           </motion.button>
         </motion.nav>
       </motion.header>
@@ -474,12 +524,35 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     </motion.div>
                   ))}
 
-                  {role === 'admin' && (
+                  {isAuthenticated && (
                     <motion.div
                       initial={{ x: -50, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       exit={{ x: -50, opacity: 0 }}
                       transition={{ delay: 0.3, duration: 0.5 }}
+                    >
+                      <Link
+                        to="/dashboard"
+                        onClick={() => {
+                          setActiveSection('dashboard');
+                          setMenuOpen(false);
+                        }}
+                        className="group flex items-baseline gap-6 py-2"
+                      >
+                        <span className="text-xs font-mono text-google-blue">04</span>
+                        <span className="text-4xl sm:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
+                          Dashboard
+                        </span>
+                      </Link>
+                    </motion.div>
+                  )}
+
+                  {role === 'admin' && (
+                    <motion.div
+                      initial={{ x: -50, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: -50, opacity: 0 }}
+                      transition={{ delay: 0.35, duration: 0.5 }}
                     >
                       <Link
                         to="/admin/events"
@@ -489,7 +562,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                         }}
                         className="group flex items-baseline gap-6 py-2"
                       >
-                        <span className="text-xs font-mono text-google-red">04</span>
+                        <span className="text-xs font-mono text-google-red">05</span>
                         <span className="text-4xl sm:text-6xl font-sans font-bold text-google-red transition-all duration-300 group-hover:translate-x-4">
                           Admin Portal
                         </span>
@@ -509,13 +582,13 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                   {isAuthenticated && profile ? (
                     <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-foreground">
-                          {role === 'admin' ? (
-                            <Shield className="w-5 h-5 text-google-red" />
-                          ) : (
-                            <User className="w-5 h-5 text-google-blue" />
-                          )}
-                        </div>
+                        <UserAvatar
+                          name={profile.full_name}
+                          email={profile.email}
+                          avatarUrl={profile.details?.avatar_url || profile.details?.picture}
+                          userId={user?.id}
+                          size="md"
+                        />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-foreground truncate">
                             {profile.full_name || profile.email}
@@ -525,25 +598,21 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
-                        {/* Mobile Theme Toggle Button */}
-                        <button
-                          type="button"
-                          onClick={toggleTheme}
-                          className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                        {/* Mobile Dashboard Link */}
+                        <Link
+                          to="/dashboard"
+                          onClick={() => setMenuOpen(false)}
+                          className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-google-blue/10 text-google-blue border border-google-blue/20 text-xs font-semibold hover:bg-google-blue/20 transition-colors"
                         >
-                          {isDark ? (
-                            <Sun className="w-4 h-4 text-google-yellow" />
-                          ) : (
-                            <Moon className="w-4 h-4 text-google-blue" />
-                          )}
-                          <span>{isDark ? 'Light Mode' : 'Dark Mode'}</span>
-                        </button>
+                          <LayoutDashboard className="w-4 h-4" />
+                          <span>Dashboard</span>
+                        </Link>
 
                         {/* Mobile Logout Button */}
                         <button
                           type="button"
                           onClick={handleLogout}
-                          className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                          className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
                         >
                           <LogOut className="w-4 h-4" />
                           <span>Log Out</span>

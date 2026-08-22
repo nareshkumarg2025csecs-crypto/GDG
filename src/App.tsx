@@ -16,6 +16,7 @@ import EventRegistrationPage from "./pages/events/EventRegistrationPage";
 import AdminEventsPage from "./pages/admin/AdminEventsPage";
 import AdminEventEditorPage from "./pages/admin/AdminEventEditorPage";
 import AdminSubmissionsPage from "./pages/admin/AdminSubmissionsPage";
+import StudentDashboardPage from "./pages/dashboard/StudentDashboardPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
@@ -45,6 +46,24 @@ const App = () => {
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/:id" element={<EventDetailPage />} />
                 <Route path="/events/:id/form" element={<EventRegistrationPage />} />
+                
+                {/* Student / User Dashboard Routes */}
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <StudentDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <StudentDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
                 
                 {/* Admin-only Routes */}
                 <Route

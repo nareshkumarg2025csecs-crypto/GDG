@@ -28,6 +28,7 @@ import {
   getEventRegistrationState,
   formatEventDate,
   formatEventTimeRange,
+  stripMarkdown,
 } from '@/lib/formUtils';
 
 const DEFAULT_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
@@ -180,7 +181,7 @@ export const EventsPage: React.FC = () => {
 
       if (res.success) {
         toast({
-          title: 'Added to Google Calendar! 📅',
+          title: 'Added to Google Calendar',
           description: res.message || 'Event is synced with your primary calendar.',
         });
       }
@@ -415,11 +416,13 @@ export const EventsPage: React.FC = () => {
 
                   {/* Body Content */}
                   <div className="p-6 pt-3 space-y-4">
-                    {/* Description snippet */}
+                    {/* Description snippet — strip raw markdown chars for card preview */}
                     <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                      {details.description ||
+                      {stripMarkdown(
+                        details.description ||
                         (details.custom_sections && details.custom_sections[0]?.content) ||
-                        'Join us for this exciting Google Developer Group event.'}
+                        'Join us for this exciting Google Developer Group event.'
+                      )}
                     </p>
 
                     {/* Metadata items */}

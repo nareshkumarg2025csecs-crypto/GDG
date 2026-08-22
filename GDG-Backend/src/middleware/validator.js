@@ -24,7 +24,13 @@ const validateStudentSignup = [
     .normalizeEmail(),
   body('password')
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long'),
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/[A-Za-z]/)
+    .withMessage('Password must contain at least one letter')
+    .matches(/\d/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/)
+    .withMessage('Password must contain at least one symbol or special character'),
   body('full_name')
     .trim()
     .notEmpty()
@@ -46,7 +52,13 @@ const validateAdminSignup = [
     .normalizeEmail(),
   body('password')
     .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long'),
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/[A-Za-z]/)
+    .withMessage('Password must contain at least one letter')
+    .matches(/\d/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/)
+    .withMessage('Password must contain at least one symbol or special character'),
   body('full_name')
     .trim()
     .notEmpty()

@@ -174,7 +174,7 @@ export const EventRegistrationPage: React.FC = () => {
       setIsSuccess(true);
 
       toast({
-        title: 'Registration Confirmed! 🎉',
+        title: 'Registration Confirmed',
         description: `You have successfully registered for "${event?.title}".`,
       });
     } catch (err: any) {
@@ -208,7 +208,7 @@ export const EventRegistrationPage: React.FC = () => {
 
       if (res.success) {
         toast({
-          title: 'Added to Google Calendar! 📅',
+          title: 'Added to Google Calendar',
           description: res.message || 'Check your primary Google Calendar.',
         });
       }

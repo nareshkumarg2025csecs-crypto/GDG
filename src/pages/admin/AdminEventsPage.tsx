@@ -30,6 +30,7 @@ import {
   type EventForm,
   formatEventDate,
   formatEventTimeRange,
+  stripMarkdown,
 } from '@/lib/formUtils';
 
 export const AdminEventsPage: React.FC = () => {
@@ -392,7 +393,7 @@ export const AdminEventsPage: React.FC = () => {
                         {event.title}
                       </h3>
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        {details.description || 'No event description provided.'}
+                        {stripMarkdown(details.description || 'No event description provided.')}
                       </p>
                     </div>
 
@@ -471,14 +472,15 @@ export const AdminEventsPage: React.FC = () => {
                     </button>
 
                     <div className="flex items-center gap-1.5">
-                      {/* View Submissions (if form exists) */}
+                      {/* View Submissions & Mark Attendance (if form exists) */}
                       {attachedForm && (
                         <Link
                           to={`/admin/forms/${attachedForm.id}/submissions`}
-                          title="View Student Submissions"
-                          className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                          title="View Student Submissions & Mark Attendance"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-all shadow-sm"
                         >
-                          <Users className="w-4 h-4" />
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Submissions</span>
                         </Link>
                       )}
 

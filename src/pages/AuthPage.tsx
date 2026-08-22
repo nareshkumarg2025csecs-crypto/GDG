@@ -152,7 +152,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
     if (!password) {
       errors.password = 'Password is required';
     } else if (password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
+      errors.password = 'Password must be at least 6 characters long';
+    } else if (mode === 'signup') {
+      if (!/[A-Za-z]/.test(password)) {
+        errors.password = 'Password must include at least one letter';
+      } else if (!/\d/.test(password)) {
+        errors.password = 'Password must include at least one number';
+      } else if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password)) {
+        errors.password = 'Password must include at least one symbol or special character';
+      }
     }
 
     if (role === 'admin' && mode === 'signup' && !adminCode.trim()) {
@@ -186,7 +194,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
         );
 
         toast({
-          title: `Welcome back, ${response.profile.full_name || response.profile.email}!`,
+          title: `Welcome back, ${response.profile.full_name || response.profile.email}`,
           description: `Logged in as ${response.profile.role === 'admin' ? 'Administrator' : 'Student'}.`,
         });
 
@@ -210,8 +218,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
 
         if (response.access_token) {
           toast({
-            title: 'Account created successfully!',
-            description: `Welcome to GDG, ${response.profile.full_name || response.profile.email}!`,
+            title: 'Account created successfully',
+            description: `Welcome to GDG, ${response.profile.full_name || response.profile.email}.`,
           });
           navigate('/');
         } else {
@@ -386,10 +394,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
               type="button"
               disabled={isGoogleLoading || isSubmitting}
               onClick={handleGoogleClick}
+              aria-label={`Continue with Google as ${role}`}
               className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border/80 bg-background/80 hover:bg-surface-200 hover:border-google-blue/50 text-foreground font-medium text-sm transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group"
             >
               {/* Google 4-color SVG Icon */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   fill="#4285F4"
                   d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
@@ -413,6 +422,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                   : `Continue with Google ${role === 'admin' ? '(Admin)' : ''}`}
               </span>
             </button>
+            <p className="text-[11px] text-muted-foreground text-center mt-2 px-1">
+              Please use your official college email ID (@rajalakshmi.edu.in).
+            </p>
           </div>
 
           {/* Divider */}
@@ -425,23 +437,26 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
           </div>
 
           {/* Email / Password Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" aria-label="Sign in or sign up form">
             {/* Full Name field (Signup only) */}
             {mode === 'signup' && (
               <div>
-                <label className="block text-xs font-semibold text-foreground/80 mb-1.5">
+                <label className="block text-xs font-semibold text-foreground/80 mb-1.5" htmlFor="auth-fullname">
                   Full Name
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
-                    <User className="w-4 h-4" />
+                    <User className="w-4 h-4" aria-hidden="true" />
                   </div>
                   <input
+                    id="auth-fullname"
                     type="text"
                     required
                     placeholder="Alex Rivera"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
+                    aria-label="Full Name"
+                    aria-invalid={Boolean(formErrors.fullName)}
                     className={`w-full pl-9 pr-3 py-2 rounded-xl border bg-background text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 transition-all ${
                       formErrors.fullName
                         ? 'border-destructive focus:ring-destructive/30'
@@ -450,26 +465,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                   />
                 </div>
                 {formErrors.fullName && (
-                  <p className="text-xs text-destructive mt-1">{formErrors.fullName}</p>
+                  <p className="text-xs text-destructive mt-1" role="alert">{formErrors.fullName}</p>
                 )}
               </div>
             )}
 
             {/* Email Field */}
             <div>
-              <label className="block text-xs font-semibold text-foreground/80 mb-1.5">
+              <label className="block text-xs font-semibold text-foreground/80 mb-1.5" htmlFor="auth-email">
                 Email Address
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
-                  <Mail className="w-4 h-4" />
+                  <Mail className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <input
+                  id="auth-email"
                   type="email"
                   required
                   placeholder="alex@college.edu"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  aria-label="Email Address"
+                  aria-invalid={Boolean(formErrors.email)}
                   className={`w-full pl-9 pr-3 py-2 rounded-xl border bg-background text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 transition-all ${
                     formErrors.email
                       ? 'border-destructive focus:ring-destructive/30'
@@ -478,30 +496,33 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                 />
               </div>
               {formErrors.email && (
-                <p className="text-xs text-destructive mt-1">{formErrors.email}</p>
+                <p className="text-xs text-destructive mt-1" role="alert">{formErrors.email}</p>
               )}
             </div>
 
             {/* Password Field */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-foreground/80">
+                <label className="block text-xs font-semibold text-foreground/80" htmlFor="auth-password">
                   Password
                 </label>
                 {mode === 'signup' && (
-                  <span className="text-[11px] text-muted-foreground">Min. 6 characters</span>
+                  <span className="text-[11px] text-muted-foreground">Min. 6 chars + letters, numbers, symbols</span>
                 )}
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
-                  <Lock className="w-4 h-4" />
+                  <Lock className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <input
+                  id="auth-password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-label="Password"
+                  aria-invalid={Boolean(formErrors.password)}
                   className={`w-full pl-9 pr-10 py-2 rounded-xl border bg-background text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 transition-all ${
                     formErrors.password
                       ? 'border-destructive focus:ring-destructive/30'
@@ -511,13 +532,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
                 </button>
               </div>
               {formErrors.password && (
-                <p className="text-xs text-destructive mt-1">{formErrors.password}</p>
+                <p className="text-xs text-destructive mt-1" role="alert">{formErrors.password}</p>
+              )}
+
+              {/* Live Password Requirements Checklist on Signup */}
+              {mode === 'signup' && password.length > 0 && (
+                <div className="mt-2 p-2.5 rounded-lg bg-muted/40 border border-border/60 space-y-1 text-[11px]">
+                  <div className={`flex items-center gap-1.5 ${password.length >= 6 ? 'text-google-green font-medium' : 'text-muted-foreground'}`}>
+                    <span>{password.length >= 6 ? '✓' : '•'}</span>
+                    <span>At least 6 characters</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${/[A-Za-z]/.test(password) ? 'text-google-green font-medium' : 'text-muted-foreground'}`}>
+                    <span>{/[A-Za-z]/.test(password) ? '✓' : '•'}</span>
+                    <span>Contains letters (A-Z / a-z)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${/\d/.test(password) ? 'text-google-green font-medium' : 'text-muted-foreground'}`}>
+                    <span>{/\d/.test(password) ? '✓' : '•'}</span>
+                    <span>Contains numbers (0-9)</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? 'text-google-green font-medium' : 'text-muted-foreground'}`}>
+                    <span>{/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password) ? '✓' : '•'}</span>
+                    <span>Contains symbols / special characters (!@#$...)</span>
+                  </div>
+                </div>
               )}
             </div>
 

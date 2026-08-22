@@ -147,8 +147,22 @@ CREATE TABLE IF NOT EXISTS public.form_submissions (
     form_id UUID NOT NULL REFERENCES public.forms(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     answers JSONB DEFAULT '{}'::jsonb NOT NULL,
+    attended BOOLEAN DEFAULT false NOT NULL,
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Ensure attended column is added if table already existed
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'attended'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN attended BOOLEAN DEFAULT false NOT NULL;
+    END IF;
+END $$;
 
 -- Unique constraint to prevent duplicate submissions per user per form
 DO $$

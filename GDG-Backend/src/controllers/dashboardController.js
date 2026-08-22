@@ -59,8 +59,14 @@ const updateDashboard = async (req, res) => {
     }
 
     if (details && typeof details === 'object' && !Array.isArray(details)) {
-      // Merge with existing details if already present
-      const currentDetails = req.user.profile?.details || {};
+      // Fetch latest existing details from database to merge cleanly
+      const { data: existingProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('details')
+        .eq('id', userId)
+        .single();
+
+      const currentDetails = existingProfile?.details || {};
       updatePayload.details = {
         ...currentDetails,
         ...details,

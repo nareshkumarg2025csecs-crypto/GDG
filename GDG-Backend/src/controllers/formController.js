@@ -464,7 +464,7 @@ const submitForm = async (req, res) => {
 
 /**
  * GET /api/forms/:formId/submissions
- * Admin-only: View all submissions for a form.
+ * Admin-only: View all submissions for a form (including attendance status).
  */
 const getFormSubmissions = async (req, res) => {
   try {
@@ -472,7 +472,7 @@ const getFormSubmissions = async (req, res) => {
 
     const { data: submissions, error } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, submitted_at')
+      .select('id, form_id, user_id, answers, attended, submitted_at')
       .eq('form_id', formId)
       .order('submitted_at', { ascending: false });
 
@@ -486,7 +486,10 @@ const getFormSubmissions = async (req, res) => {
     return res.status(200).json({
       message: 'Form submissions fetched successfully.',
       count: submissions.length,
-      submissions,
+      submissions: submissions.map((s) => ({
+        ...s,
+        attended: Boolean(s.attended),
+      })),
     });
   } catch (error) {
     console.error('getFormSubmissions error:', error);
@@ -504,7 +507,7 @@ const getMySubmissions = async (req, res) => {
   try {
     const { data: submissions, error } = await supabaseAdmin
       .from('form_submissions')
-      .select('*')
+      .select('id, form_id, user_id, answers, attended, submitted_at')
       .eq('user_id', req.user.id)
       .order('submitted_at', { ascending: false });
 
@@ -518,12 +521,68 @@ const getMySubmissions = async (req, res) => {
     return res.status(200).json({
       message: 'User submissions fetched successfully.',
       count: submissions.length,
-      submissions,
+      submissions: submissions.map((s) => ({
+        ...s,
+        attended: Boolean(s.attended),
+      })),
     });
   } catch (error) {
     console.error('getMySubmissions error:', error);
     return res.status(500).json({
       error: 'Internal server error while fetching user submissions.',
+    });
+  }
+};
+
+/**
+ * PATCH /api/forms/submissions/:submissionId/attendance
+ * Admin-only: Toggle/update student attendance for an event registration submission.
+ */
+const updateSubmissionAttendance = async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { attended } = req.body;
+
+    if (typeof attended !== 'boolean') {
+      return res.status(400).json({
+        error: 'Validation error: attended must be a boolean (true/false).',
+      });
+    }
+
+    const { data: submission, error } = await supabaseAdmin
+      .from('form_submissions')
+      .update({ attended })
+      .eq('id', submissionId)
+      .select('id, form_id, user_id, answers, attended, submitted_at')
+      .single();
+
+    if (error || !submission) {
+      return res.status(404).json({
+        error: 'Submission not found or failed to update attendance.',
+      });
+    }
+
+    await logActivity(req, {
+      user_id: req.user.id,
+      action: 'submission_attendance_updated',
+      details: {
+        submission_id: submission.id,
+        user_id: submission.user_id,
+        attended,
+      },
+    });
+
+    return res.status(200).json({
+      message: `Attendance marked as ${attended ? 'Attended' : 'Not Attended'}.`,
+      submission: {
+        ...submission,
+        attended: Boolean(submission.attended),
+      },
+    });
+  } catch (error) {
+    console.error('updateSubmissionAttendance error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while updating attendance.',
     });
   }
 };
@@ -537,5 +596,6 @@ module.exports = {
   submitForm,
   getFormSubmissions,
   getMySubmissions,
+  updateSubmissionAttendance,
   validateFormAnswers,
 };

@@ -11,6 +11,8 @@ import {
   ExternalLink,
   TableProperties,
   ClipboardList,
+  CheckCircle2,
+  Check,
 } from 'lucide-react';
 import { formService } from '@/services/formService';
 import { toast } from '@/hooks/use-toast';
@@ -27,6 +29,7 @@ export const AdminSubmissionsPage: React.FC = () => {
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [updatingAttendanceId, setUpdatingAttendanceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!formId) return;
@@ -57,6 +60,38 @@ export const AdminSubmissionsPage: React.FC = () => {
 
   const fields = form?.schema?.fields || [];
 
+  const handleToggleAttendance = async (submissionId: string, currentStatus: boolean) => {
+    const newStatus = !currentStatus;
+    setUpdatingAttendanceId(submissionId);
+
+    // Optimistic UI update
+    setSubmissions((prev) =>
+      prev.map((s) => (s.id === submissionId ? { ...s, attended: newStatus } : s))
+    );
+
+    try {
+      await formService.updateSubmissionAttendance(submissionId, newStatus);
+      toast({
+        title: newStatus ? 'Marked Attended' : 'Attendance Reset',
+        description: newStatus
+          ? 'Student participation has been marked and verified.'
+          : 'Attendance marked as not attended.',
+      });
+    } catch (err: any) {
+      // Revert optimistic update
+      setSubmissions((prev) =>
+        prev.map((s) => (s.id === submissionId ? { ...s, attended: currentStatus } : s))
+      );
+      toast({
+        title: 'Update failed',
+        description: err.message || 'Could not update attendance status.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingAttendanceId(null);
+    }
+  };
+
   const filteredSubmissions = submissions.filter((sub) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -85,7 +120,7 @@ export const AdminSubmissionsPage: React.FC = () => {
       return;
     }
 
-    const headerRow = ['#', 'Submitted At', ...fields.map((f) => f.label)];
+    const headerRow = ['#', 'Submitted At', 'Attendance Status', ...fields.map((f) => f.label)];
     const rows = filteredSubmissions.map((sub, idx) => {
       const base = [
         String(idx + 1),
@@ -96,6 +131,7 @@ export const AdminSubmissionsPage: React.FC = () => {
           hour: '2-digit',
           minute: '2-digit',
         }),
+        sub.attended ? 'Attended' : 'Not Attended',
       ];
       const fieldVals = fields.map((f) => {
         const val = sub.answers ? sub.answers[f.name || f.id] : '';
@@ -258,7 +294,8 @@ export const AdminSubmissionsPage: React.FC = () => {
                 <thead className="bg-muted/70 text-muted-foreground border-b border-border font-mono text-[11px] uppercase tracking-wider">
                   <tr>
                     <th className="py-3.5 px-4">#</th>
-                    <th className="py-3.5 px-4">Submitted At</th>
+                    <th className="py-3.5 px-4 whitespace-nowrap">Attendance</th>
+                    <th className="py-3.5 px-4 whitespace-nowrap">Submitted At</th>
                     {fields.map((f) => (
                       <th key={f.id} className="py-3.5 px-4 whitespace-nowrap">
                         {f.label}
@@ -270,6 +307,31 @@ export const AdminSubmissionsPage: React.FC = () => {
                   {filteredSubmissions.map((sub, idx) => (
                     <tr key={sub.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-muted-foreground">{idx + 1}</td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <button
+                          type="button"
+                          disabled={updatingAttendanceId === sub.id}
+                          onClick={() => handleToggleAttendance(sub.id, Boolean(sub.attended))}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono transition-all shadow-sm ${
+                            sub.attended
+                              ? 'bg-google-green text-white hover:bg-google-green/90 shadow-google-green/20'
+                              : 'bg-muted hover:bg-muted/80 text-muted-foreground border border-border'
+                          }`}
+                          title="Click to toggle verified attendance status"
+                        >
+                          {sub.attended ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Attended</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2 h-2 rounded-full bg-muted-foreground/50" />
+                              <span>Mark Attendance</span>
+                            </>
+                          )}
+                        </button>
+                      </td>
                       <td className="py-3.5 px-4 whitespace-nowrap text-muted-foreground">
                         {new Date(sub.submitted_at).toLocaleString('en-US', {
                           month: 'short',
