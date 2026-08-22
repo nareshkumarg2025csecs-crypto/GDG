@@ -16,10 +16,10 @@ const {
 
 const router = express.Router();
 
-// Event Routes (Authenticated)
-router.get('/', requireAuth, listEvents);
-router.get('/:id', requireAuth, getEventById);
-router.get('/:eventId/forms', requireAuth, getFormsByEvent);
+// Public Event Routes (no auth required to browse/view events and their forms)
+router.get('/', listEvents);
+router.get('/:id', getEventById);
+router.get('/:eventId/forms', getFormsByEvent);
 
 // Admin-only Event Management (strictly audited: requireAuth + requireRole('admin'))
 router.post(

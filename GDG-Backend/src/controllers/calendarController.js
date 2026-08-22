@@ -85,34 +85,39 @@ const createEventReminder = async (req, res) => {
 /**
  * GET /api/auth/google/link
  * Authenticated: Returns the Google OAuth URL with Calendar scopes for linking to an existing account.
+ *
+ * NOTE: supabase.auth.linkIdentity() is a BROWSER-SIDE SDK method that requires an active
+ * browser session — it cannot be called server-side without a session context.
+ * Instead we construct the Supabase OAuth redirect URL directly.
  */
 const getGoogleLinkUrl = async (req, res) => {
   try {
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const redirectUrl = `${clientUrl}/auth/callback?link_identity=true`;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
 
-    const { data, error } = await supabase.auth.linkIdentity({
-      provider: 'google',
-      options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-        redirectTo: redirectUrl,
-      },
-    });
-
-    if (error) {
-      return res.status(400).json({
-        error: 'Failed to generate Google linking URL.',
-        details: error.message,
-      });
+    if (!supabaseUrl) {
+      return res.status(500).json({ error: 'Server misconfiguration: SUPABASE_URL is not set.' });
     }
 
+    // Build the Supabase Google OAuth redirect URL with calendar scopes.
+    // This works for BOTH email+password users (link_google=true flag) and existing Google users.
+    const redirectTo = encodeURIComponent(`${clientUrl}/auth/callback?link_identity=true`);
+    const scopes = encodeURIComponent(
+      'email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar'
+    );
+
+    // Supabase's authorize endpoint for providers
+    const oauthUrl =
+      `${supabaseUrl}/auth/v1/authorize` +
+      `?provider=google` +
+      `&scopes=${scopes}` +
+      `&access_type=offline` +
+      `&prompt=consent` +
+      `&redirect_to=${redirectTo}`;
+
     return res.status(200).json({
-      message: 'Google identity linking initiated.',
-      url: data?.url,
+      message: 'Google identity linking URL generated.',
+      url: oauthUrl,
       provider: 'google',
       scopes: [
         'https://www.googleapis.com/auth/calendar.events',

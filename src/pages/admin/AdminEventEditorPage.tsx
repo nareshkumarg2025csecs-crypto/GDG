@@ -53,6 +53,84 @@ const GOOGLE_THEME_COLORS = [
   { name: 'Purple Neon', hex: '#A142F4' },
 ];
 
+/**
+ * Interactive Dropdown Options Editor
+ * Allows typing commas naturally without character loss, plus pill tag removal.
+ */
+function SelectOptionsEditor({
+  options = [],
+  onChange,
+}: {
+  options: string[];
+  onChange: (opts: string[]) => void;
+}) {
+  const [textValue, setTextValue] = useState((options || []).join(', '));
+
+  useEffect(() => {
+    setTextValue((options || []).join(', '));
+  }, [options.join(',')]);
+
+  const handleTextChange = (val: string) => {
+    setTextValue(val);
+    const parsed = val
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+    onChange(parsed);
+  };
+
+  const handleRemoveOption = (index: number) => {
+    const next = options.filter((_, i) => i !== index);
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-[11px] font-semibold text-muted-foreground">
+        Dropdown Options (comma-separated or use pills below)
+      </label>
+
+      {/* Option Tags Preview */}
+      {options.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pb-0.5">
+          {options.map((opt, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20"
+            >
+              <span>{opt}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveOption(i)}
+                className="hover:text-destructive text-google-blue/70 transition-colors font-bold text-xs"
+                title="Remove option"
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        type="text"
+        placeholder="Option A, Option B, Option C"
+        value={textValue}
+        onChange={(e) => handleTextChange(e.target.value)}
+        onBlur={() => {
+          const cleaned = textValue
+            .split(',')
+            .map((o) => o.trim())
+            .filter(Boolean);
+          onChange(cleaned);
+          setTextValue(cleaned.join(', '));
+        }}
+        className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
+      />
+    </div>
+  );
+}
+
 export const AdminEventEditorPage: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
@@ -83,6 +161,7 @@ export const AdminEventEditorPage: React.FC = () => {
   const [hasForm, setHasForm] = useState(true);
   const [existingFormId, setExistingFormId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState('');
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(true);
   const [expiresAt, setExpiresAt] = useState('');
   const [sheetsUrl, setSheetsUrl] = useState(''); // Optional Google Sheets URL for auto-logging submissions
   const [formFields, setFormFields] = useState<FormField[]>([
@@ -302,6 +381,12 @@ export const AdminEventEditorPage: React.FC = () => {
               setFormFields(form.schema.fields);
             }
 
+            if (form.schema?.is_open !== undefined) {
+              setIsRegistrationOpen(form.schema.is_open);
+            } else if (details.is_registration_open !== undefined) {
+              setIsRegistrationOpen(details.is_registration_open);
+            }
+
             // Load existing Sheets URL if previously saved
             if (form.schema?.sheets_url) {
               setSheetsUrl(form.schema.sheets_url);
@@ -442,6 +527,7 @@ export const AdminEventEditorPage: React.FC = () => {
         banner_url: bannerUrl.trim() || undefined,
         coverImage: bannerUrl.trim() || undefined,
         theme_color: themeColor,
+        is_registration_open: isRegistrationOpen,
         startTime: new Date(startTime).toISOString(),
         start_time: new Date(startTime).toISOString(),
         endTime: endTime
@@ -472,8 +558,9 @@ export const AdminEventEditorPage: React.FC = () => {
 
       // Handle attached form
       if (hasForm && savedEventId) {
-        const formSchema: FormSchema & { sheets_url?: string } = {
+        const formSchema: FormSchema & { sheets_url?: string; is_open?: boolean } = {
           fields: formFields,
+          is_open: isRegistrationOpen,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
         };
         if (sheetsUrl.trim()) {
@@ -1059,9 +1146,41 @@ export const AdminEventEditorPage: React.FC = () => {
                 <span>Registration Form & Deadline</span>
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Set registration expiry and customize questions. You can delete any question.
+                Set registration expiry, open/close status, and customize questions.
               </p>
             </div>
+          </div>
+
+          {/* Registration Status: Manual Open/Closed Toggle */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-muted/30 border border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    isRegistrationOpen ? 'bg-google-green animate-pulse' : 'bg-destructive'
+                  }`}
+                />
+                <span className="text-xs font-bold uppercase font-mono text-foreground">
+                  Registration Status: {isRegistrationOpen ? 'OPEN' : 'CLOSED (Manual Override)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {isRegistrationOpen
+                  ? 'Students can register until the deadline expires. Click toggle to close immediately.'
+                  : 'Registrations are closed. Students see "Registration Closed" and cannot submit.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRegistrationOpen(!isRegistrationOpen)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 ${
+                isRegistrationOpen
+                  ? 'bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/20'
+                  : 'bg-google-green text-white shadow-google-green/20 hover:bg-google-green/90'
+              }`}
+            >
+              {isRegistrationOpen ? 'Close Registrations' : 'Open Registrations'}
+            </button>
           </div>
 
           {/* Form Expiration Date & Time Picker */}
@@ -1234,25 +1353,10 @@ export const AdminEventEditorPage: React.FC = () => {
                     </div>
 
                     {field.type === 'select' && (
-                      <div>
-                        <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
-                          Options (comma-separated)
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Option A, Option B, Option C"
-                          value={(field.options || []).join(', ')}
-                          onChange={(e) =>
-                            handleUpdateField(idx, {
-                              options: e.target.value
-                                .split(',')
-                                .map((o) => o.trim())
-                                .filter(Boolean),
-                            })
-                          }
-                          className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
-                        />
-                      </div>
+                      <SelectOptionsEditor
+                        options={field.options || []}
+                        onChange={(opts) => handleUpdateField(idx, { options: opts })}
+                      />
                     )}
 
                     <div className="flex items-center gap-2 pt-0.5">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar,
   Clock,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   Layers,
   Image as ImageIcon,
+  X as XIcon,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -43,46 +44,69 @@ export const EventsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
+  const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
+  const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
 
-  // Load published events, attached forms, and student's submissions
+  // Load published events (always — no auth required)
+  // Load forms + submissions only when authenticated
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [eventsRes, subsRes] = await Promise.all([
-        eventService.listEvents(),
-        isAuthenticated
-          ? formService.getMySubmissions().catch(() => ({ submissions: [] }))
-          : Promise.resolve({ submissions: [] }),
-      ]);
-
+      // Always fetch events — public endpoint, no token needed
+      const eventsRes = await eventService.listEvents();
       const allEvents = eventsRes.events || [];
       const publishedEvents = allEvents.filter(
         (e) => e.details?.status === 'published' || e.details?.published === true
       );
       setEvents(publishedEvents);
-      setMySubmissions(subsRes.submissions || []);
 
-      // Fetch attached forms for each published event
-      const formMap: Record<string, EventForm> = {};
-      await Promise.all(
-        publishedEvents.map(async (ev) => {
-          try {
-            const { forms } = await formService.getFormsByEvent(ev.id);
-            if (forms && forms.length > 0) {
-              formMap[ev.id] = forms[0];
+      // Only fetch forms & submissions when user is logged in
+      if (isAuthenticated) {
+        const subsRes = await formService.getMySubmissions().catch(() => ({ submissions: [] }));
+        setMySubmissions(subsRes.submissions || []);
+
+        const formMap: Record<string, EventForm> = {};
+        await Promise.all(
+          publishedEvents.map(async (ev) => {
+            try {
+              const { forms } = await formService.getFormsByEvent(ev.id);
+              if (forms && forms.length > 0) {
+                formMap[ev.id] = forms[0];
+              }
+            } catch {
+              // ignore per-event form failure
             }
-          } catch {
-            // Ignore single form failure
-          }
-        })
-      );
-      setFormsByEvent(formMap);
+          })
+        );
+        setFormsByEvent(formMap);
+      } else {
+        // Fetch forms for each event anonymously (forms endpoint is public)
+        const formMap: Record<string, EventForm> = {};
+        await Promise.all(
+          publishedEvents.map(async (ev) => {
+            try {
+              const { forms } = await formService.getFormsByEvent(ev.id);
+              if (forms && forms.length > 0) formMap[ev.id] = forms[0];
+            } catch {
+              // ignore
+            }
+          })
+        );
+        setFormsByEvent(formMap);
+      }
     } catch (err: any) {
-      toast({
-        title: 'Error loading events',
-        description: err.message || 'Could not fetch events from server.',
-        variant: 'destructive',
-      });
+      // Don't show raw token/auth errors to the user — just fail silently for events
+      const isAuthError =
+        err?.message?.toLowerCase().includes('unauthorized') ||
+        err?.message?.toLowerCase().includes('token') ||
+        err?.status === 401;
+      if (!isAuthError) {
+        toast({
+          title: 'Error loading events',
+          description: 'Could not fetch events. Please try again later.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -143,12 +167,14 @@ export const EventsPage: React.FC = () => {
         res.action_required === 'CONNECT_GOOGLE_CALENDAR' ||
         res.action_required === 'RECONNECT_GOOGLE_CALENDAR'
       ) {
-        toast({
-          title: 'Google Calendar Authorization',
-          description: 'Redirecting to connect your Google Calendar...',
-        });
-        const { url } = await eventService.getGoogleLinkUrl();
-        if (url) window.location.href = url;
+        // Show friendly modal instead of hard redirect
+        try {
+          const linkRes = await eventService.getGoogleLinkUrl();
+          setCalendarConnectUrl(linkRes.url || null);
+        } catch {
+          setCalendarConnectUrl(null);
+        }
+        setShowCalendarConnectModal(true);
         return;
       }
 
@@ -161,7 +187,7 @@ export const EventsPage: React.FC = () => {
     } catch (err: any) {
       toast({
         title: 'Calendar Sync Error',
-        description: err.message || 'Could not sync event.',
+        description: 'Could not sync event. Please try again later.',
         variant: 'destructive',
       });
     } finally {
@@ -274,6 +300,7 @@ export const EventsPage: React.FC = () => {
               const regState = attachedForm
                 ? getEventRegistrationState({
                     isRegistered,
+                    isOpen: attachedForm.schema?.is_open !== false && details.is_registration_open !== false,
                     expiresAt: attachedForm.expires_at || attachedForm.schema?.expires_at,
                   })
                 : 'hidden';
@@ -421,16 +448,22 @@ export const EventsPage: React.FC = () => {
 
                   {/* Footer Actions */}
                   <div className="p-4 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      disabled={calendarProcessingId === event.id}
-                      onClick={() => handleAddToCalendar(event.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                      title="Add to Google Calendar"
-                    >
-                      <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
-                      <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
-                    </button>
+                    {regState !== 'closed' ? (
+                      <button
+                        type="button"
+                        disabled={calendarProcessingId === event.id}
+                        onClick={() => handleAddToCalendar(event.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                        title="Add to Google Calendar"
+                      >
+                        <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
+                        <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
+                        Closed
+                      </span>
+                    )}
 
                     {regState === 'open' && attachedForm ? (
                       <Link
@@ -456,6 +489,75 @@ export const EventsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ── Google Calendar Connect Modal ── */}
+      <AnimatePresence>
+        {showCalendarConnectModal && (
+          <motion.div
+            key="cal-connect-modal-events"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+            onClick={() => setShowCalendarConnectModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 16 }}
+              transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center flex-shrink-0">
+                    <CalendarPlus className="w-5 h-5 text-google-blue" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">Connect Google Account</h3>
+                    <p className="text-xs text-muted-foreground font-mono">For Google Calendar access</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarConnectModal(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors"
+                >
+                  <XIcon className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2 text-sm text-muted-foreground leading-relaxed">
+                <p>Your <span className="font-semibold text-foreground">email &amp; password login is kept</span> — connecting Google only grants calendar access.</p>
+                <p>You'll be redirected to Google to approve calendar permissions. Once done, your login session will be preserved.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                {calendarConnectUrl ? (
+                  <a
+                    href={calendarConnectUrl}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-google-blue text-white text-sm font-bold shadow-md hover:opacity-90 transition-opacity"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    Connect Google Calendar
+                  </a>
+                ) : (
+                  <div className="flex-1 text-xs text-muted-foreground text-center py-2.5 rounded-xl bg-muted border border-border">
+                    Could not generate connect URL. Please try again.
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarConnectModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

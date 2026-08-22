@@ -374,7 +374,13 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 2. Server-side Expiration Check (Zero client trust)
+    // 2. Server-side Manual Closure & Expiration Check (Zero client trust)
+    if (form.schema?.is_open === false) {
+      return res.status(410).json({
+        error: 'Registration closed: Registrations for this event have been closed by the admin.',
+      });
+    }
+
     const expiryTime = form.expires_at || form.schema?.expires_at;
     if (expiryTime && new Date() > new Date(expiryTime)) {
       return res.status(410).json({

@@ -41,6 +41,9 @@ export const EventDetailPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [bannerZoomOpen, setBannerZoomOpen] = useState(false);
+  // Shown when email+password user tries to add to calendar
+  const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
+  const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
 
   // Close lightbox on Escape key
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -63,12 +66,10 @@ export const EventDetailPage: React.FC = () => {
     const loadEventDetails = async () => {
       setIsLoading(true);
       try {
-        const [eventRes, formsRes, subsRes] = await Promise.all([
+        // Event & form are public — no auth token needed
+        const [eventRes, formsRes] = await Promise.all([
           eventService.getEventById(id),
           formService.getFormsByEvent(id).catch(() => ({ forms: [] })),
-          isAuthenticated
-            ? formService.getMySubmissions().catch(() => ({ submissions: [] }))
-            : Promise.resolve({ submissions: [] }),
         ]);
 
         setEvent(eventRes.event);
@@ -76,20 +77,33 @@ export const EventDetailPage: React.FC = () => {
         const attachedForm = formsRes.forms && formsRes.forms.length > 0 ? formsRes.forms[0] : null;
         setForm(attachedForm);
 
-        if (attachedForm) {
-          const userSub = (subsRes.submissions || []).find((s) => s.form_id === attachedForm.id);
-          if (userSub) {
-            setIsRegistered(true);
-            setSubmissionDate(userSub.submitted_at);
+        // Only check registration if user is logged in
+        if (isAuthenticated && attachedForm) {
+          try {
+            const subsRes = await formService.getMySubmissions();
+            const userSub = (subsRes.submissions || []).find((s) => s.form_id === attachedForm.id);
+            if (userSub) {
+              setIsRegistered(true);
+              setSubmissionDate(userSub.submitted_at);
+            }
+          } catch {
+            // Submission check failure is non-critical
           }
         }
       } catch (err: any) {
-        toast({
-          title: 'Event not found',
-          description: err.message || 'Could not retrieve event details.',
-          variant: 'destructive',
-        });
-        navigate('/events');
+        // Suppress raw auth/token errors — just navigate away if truly not found
+        const isAuthError =
+          err?.status === 401 ||
+          err?.message?.toLowerCase().includes('unauthorized') ||
+          err?.message?.toLowerCase().includes('token');
+        if (!isAuthError) {
+          toast({
+            title: 'Event not found',
+            description: 'Could not retrieve event details.',
+            variant: 'destructive',
+          });
+          navigate('/events');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -106,9 +120,10 @@ export const EventDetailPage: React.FC = () => {
     if (!form) return 'hidden';
     return getEventRegistrationState({
       isRegistered,
+      isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
       expiresAt: form.expires_at || form.schema?.expires_at,
     });
-  }, [form, isRegistered]);
+  }, [form, isRegistered, details]);
 
   const handleAddToCalendar = async () => {
     if (!isAuthenticated) {
@@ -130,12 +145,14 @@ export const EventDetailPage: React.FC = () => {
         res.action_required === 'CONNECT_GOOGLE_CALENDAR' ||
         res.action_required === 'RECONNECT_GOOGLE_CALENDAR'
       ) {
-        toast({
-          title: 'Connect Google Calendar',
-          description: 'Redirecting to connect your Google Calendar...',
-        });
-        const { url } = await eventService.getGoogleLinkUrl();
-        if (url) window.location.href = url;
+        // Fetch the connect URL and show a friendly modal instead of hard redirect
+        try {
+          const linkRes = await eventService.getGoogleLinkUrl();
+          setCalendarConnectUrl(linkRes.url || null);
+        } catch {
+          setCalendarConnectUrl(null);
+        }
+        setShowCalendarConnectModal(true);
         return;
       }
 
@@ -148,7 +165,7 @@ export const EventDetailPage: React.FC = () => {
     } catch (err: any) {
       toast({
         title: 'Calendar Sync Failed',
-        description: err.message || 'Could not sync event.',
+        description: 'Could not sync event. Please try again later.',
         variant: 'destructive',
       });
     } finally {
@@ -244,50 +261,62 @@ export const EventDetailPage: React.FC = () => {
                 )}
 
                 {regState === 'closed' && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-yellow/10 text-google-yellow border border-google-yellow/30 font-mono">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-destructive/10 text-destructive border border-destructive/30 font-mono">
                     <Clock className="w-3.5 h-3.5" />
                     <span>Registration Closed</span>
                   </span>
                 )}
               </div>
 
-              <h1 className="text-3xl sm:text-5xl font-bold font-sans tracking-tight text-foreground">
+              <h1 className="text-3xl sm:text-5xl font-bold font-sans tracking-tight leading-tight text-foreground">
                 {event.title}
               </h1>
             </div>
 
             {/* Quick Meta Details Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border/80">
-              <div className="flex items-start gap-3 p-4 rounded-2xl bg-muted/40 border border-border/50">
-                <Calendar className="w-5 h-5 text-google-blue shrink-0 mt-0.5" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 rounded-2xl bg-muted/40 border border-border/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center shrink-0">
+                  <Calendar className="w-5 h-5 text-google-blue" />
+                </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase font-mono font-bold">Date</p>
-                  <p className="text-sm font-semibold mt-0.5">
+                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                    Date
+                  </span>
+                  <span className="text-sm font-semibold">
                     {formatEventDate(details.startTime || details.start_time)}
-                  </p>
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-start gap-3 p-4 rounded-2xl bg-muted/40 border border-border/50">
-                <Clock className="w-5 h-5 text-google-yellow shrink-0 mt-0.5" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-google-yellow/10 border border-google-yellow/20 flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5 text-google-yellow" />
+                </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase font-mono font-bold">Time</p>
-                  <p className="text-sm font-semibold mt-0.5">
+                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                    Time
+                  </span>
+                  <span className="text-sm font-semibold">
                     {formatEventTimeRange(
                       details.startTime || details.start_time,
                       details.endTime || details.end_time
                     )}
-                  </p>
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-start gap-3 p-4 rounded-2xl bg-muted/40 border border-border/50">
-                <MapPin className="w-5 h-5 text-google-red shrink-0 mt-0.5" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-google-red/10 border border-google-red/20 flex items-center justify-center shrink-0">
+                  <MapPin className="w-5 h-5 text-google-red" />
+                </div>
                 <div>
-                  <p className="text-xs text-muted-foreground uppercase font-mono font-bold">Venue</p>
-                  <p className="text-sm font-semibold mt-0.5 truncate">
-                    {details.location || details.venue || 'Campus Auditorium'}
-                  </p>
+                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                    Venue
+                  </span>
+                  <span className="text-sm font-semibold truncate">
+                    {details.location || details.venue || 'Campus Hall'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -295,12 +324,12 @@ export const EventDetailPage: React.FC = () => {
             {/* Custom Sections Added by Admin (No fixed template) */}
             {customSections.length > 0 ? (
               <div className="space-y-6 pt-2">
-                {customSections.map((section) => (
-                  <div key={section.id} className="space-y-3 p-6 rounded-3xl bg-muted/30 border border-border/60">
-                    <h2 className="text-lg font-bold font-sans flex items-center gap-2 text-foreground">
-                      <AlignLeft className="w-4 h-4 text-google-blue" />
-                      <span>{section.title}</span>
-                    </h2>
+                {customSections.map((section, idx) => (
+                  <div key={section.id || idx} className="p-6 sm:p-7 rounded-3xl bg-muted/20 border border-border/60 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-google-blue" />
+                      <h2 className="text-lg font-bold font-sans text-foreground">{section.title}</h2>
+                    </div>
                     {section.type === 'link' ? (
                       <a
                         href={section.url || '#'}
@@ -328,15 +357,22 @@ export const EventDetailPage: React.FC = () => {
 
             {/* Actions Bar */}
             <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-              <button
-                type="button"
-                disabled={isCalendarLoading}
-                onClick={handleAddToCalendar}
-                className="inline-flex items-center justify-center gap-2 py-3 px-5 rounded-2xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
-              >
-                <CalendarPlus className="w-4 h-4 text-google-yellow" />
-                <span>{isCalendarLoading ? 'Connecting Calendar...' : 'Add to Google Calendar'}</span>
-              </button>
+              {regState !== 'closed' ? (
+                <button
+                  type="button"
+                  disabled={isCalendarLoading}
+                  onClick={handleAddToCalendar}
+                  className="inline-flex items-center justify-center gap-2 py-3 px-5 rounded-2xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
+                >
+                  <CalendarPlus className="w-4 h-4 text-google-yellow" />
+                  <span>{isCalendarLoading ? 'Connecting Calendar...' : 'Add to Google Calendar'}</span>
+                </button>
+              ) : (
+                <div className="text-xs font-mono text-muted-foreground flex items-center gap-2 py-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span>Event / Registration is closed</span>
+                </div>
+              )}
 
               {/* Registration CTA */}
               {regState === 'open' && (
@@ -410,6 +446,84 @@ export const EventDetailPage: React.FC = () => {
               className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl object-contain border border-white/10 cursor-zoom-out"
               onClick={(e) => e.stopPropagation()}
             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Google Calendar Connect Modal (for email+password users) ── */}
+      <AnimatePresence>
+        {showCalendarConnectModal && (
+          <motion.div
+            key="cal-connect-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+            onClick={() => setShowCalendarConnectModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 16 }}
+              transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center flex-shrink-0">
+                    <CalendarPlus className="w-5 h-5 text-google-blue" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">Connect Google Account</h3>
+                    <p className="text-xs text-muted-foreground font-mono">For Google Calendar access</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarConnectModal(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors flex-shrink-0"
+                >
+                  <XIcon className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Explanation */}
+              <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Your <span className="font-semibold text-foreground">email & password login is kept</span> — connecting Google only grants calendar access.
+                </p>
+                <p>
+                  You'll be redirected to Google to approve calendar permissions. Once done, you'll return here and your login session will be preserved.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                {calendarConnectUrl ? (
+                  <a
+                    href={calendarConnectUrl}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-google-blue text-white text-sm font-bold shadow-md hover:opacity-90 transition-opacity"
+                  >
+                    <CalendarPlus className="w-4 h-4" />
+                    Connect Google Calendar
+                  </a>
+                ) : (
+                  <div className="flex-1 text-xs text-muted-foreground text-center py-2.5 rounded-xl bg-muted border border-border">
+                    Could not generate connect URL. Please try again.
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCalendarConnectModal(false)}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -83,25 +83,37 @@ export interface FormSubmission {
 /**
  * Computes the unified state of an event's registration action.
  * Priority:
- * 1. Hide registration completely if now > expires_at + 24 hours
- * 2. If registered, show "registered" badge (even if deadline has passed within 24h)
- * 3. If past deadline (within 24h), show "closed" badge
- * 4. Otherwise, show "open" (Register / Fill Form active)
+ * 1. If explicit manual closed state (isOpen === false), return "closed" (or "registered" if already registered)
+ * 2. Hide registration completely if now > expires_at + 24 hours
+ * 3. If registered, show "registered" badge
+ * 4. If past deadline, show "closed" badge
+ * 5. Otherwise, show "open" (Register / Fill Form active)
  */
 export function getEventRegistrationState(params: {
   isRegistered: boolean;
+  isOpen?: boolean | null;
   expiresAt?: string | null;
   now?: Date;
 }): RegistrationState {
-  const { isRegistered, expiresAt, now = new Date() } = params;
+  const { isRegistered, isOpen, expiresAt, now = new Date() } = params;
+
+  // 1. If already registered, always show registered badge
+  if (isRegistered) {
+    return 'registered';
+  }
+
+  // 2. Explicit manual closed toggle set by admin
+  if (isOpen === false) {
+    return 'closed';
+  }
 
   if (!expiresAt) {
-    return isRegistered ? 'registered' : 'open';
+    return 'open';
   }
 
   const expiryDate = new Date(expiresAt);
   if (isNaN(expiryDate.getTime())) {
-    return isRegistered ? 'registered' : 'open';
+    return 'open';
   }
 
   const hideThreshold = new Date(expiryDate.getTime() + 24 * 60 * 60 * 1000);
@@ -109,11 +121,6 @@ export function getEventRegistrationState(params: {
   // If more than 24 hours past expiry, completely hide registration UI
   if (now > hideThreshold) {
     return 'hidden';
-  }
-
-  // If already registered, always show registered badge
-  if (isRegistered) {
-    return 'registered';
   }
 
   // If past expiry (within 24 hours), show closed badge

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/api';
 import { type UserRole } from '@/services/authService';
 
 export const AuthCallback: React.FC = () => {
@@ -33,7 +34,40 @@ export const AuthCallback: React.FC = () => {
         const providerToken = hashParams.get('provider_token') || undefined;
         const providerRefreshToken = hashParams.get('provider_refresh_token') || undefined;
 
-        // Determine requested role from query or hash
+        // Check if this is a Calendar linking flow for an already logged-in account
+        const isLinking =
+          searchParams.get('link_identity') === 'true' ||
+          hashParams.get('link_identity') === 'true';
+
+        if (isLinking) {
+          const googleAccessToken = providerToken || accessToken;
+          if (!googleAccessToken) {
+            throw new Error('No Google token received for calendar linking.');
+          }
+
+          // Save Google tokens for the currently authenticated user without overwriting login session
+          await apiRequest('/api/auth/google/tokens', {
+            method: 'POST',
+            body: JSON.stringify({
+              access_token: googleAccessToken,
+              refresh_token: providerRefreshToken,
+              expires_in: 3600,
+            }),
+          });
+
+          setStatus('success');
+          toast({
+            title: 'Google Calendar Linked! 📅',
+            description: 'Your Google Calendar is connected. Your email login is preserved.',
+          });
+
+          setTimeout(() => {
+            navigate('/events', { replace: true });
+          }, 1200);
+          return;
+        }
+
+        // Determine requested role from query or hash for regular Google OAuth Sign-in/Sign-up
         const roleParam = (searchParams.get('role') || hashParams.get('role') || 'student') as UserRole;
         const adminCodeParam = searchParams.get('admin_code') || undefined;
 
@@ -47,7 +81,7 @@ export const AuthCallback: React.FC = () => {
           throw new Error('OAuth authorization code flow requires direct server callback.');
         }
 
-        // 3. Sync profile with backend API
+        // 3. Sync profile with backend API (only for full Google Login)
         const syncResponse = await syncGoogleOAuth(
           {
             provider_token: providerToken,

@@ -19,8 +19,8 @@ const router = express.Router();
 // User Submissions
 router.get('/submissions/my', requireAuth, getMySubmissions);
 
-// Single Form View
-router.get('/:id', requireAuth, getFormById);
+// Single Form View (public — anyone can see form structure)
+router.get('/:id', getFormById);
 
 // Submit Form (Students / Authenticated)
 router.post(
