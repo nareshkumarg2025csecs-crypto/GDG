@@ -583,6 +583,12 @@ export const AdminEventEditorPage: React.FC = () => {
         } else {
           await formService.createForm(formPayload);
         }
+      } else if (!hasForm && existingFormId) {
+        try {
+          await formService.deleteForm(existingFormId);
+        } catch {
+          // ignore
+        }
       }
 
       toast({
@@ -1139,18 +1145,56 @@ export const AdminEventEditorPage: React.FC = () => {
 
         {/* 3. Form Expiration & Registration Questions Card */}
         <div className="p-6 sm:p-8 rounded-3xl border bg-card text-card-foreground shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/60 pb-4 gap-3">
             <div>
               <h2 className="text-lg font-bold font-sans flex items-center gap-2">
                 <FileText className="w-5 h-5 text-google-yellow" />
-                <span>Registration Form & Deadline</span>
+                <span>Registration Form</span>
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Set registration expiry, open/close status, and customize questions.
+                Include an interactive registration form with custom questions or keep this event informational.
               </p>
+            </div>
+
+            {/* Clear Yes/No Form Toggle */}
+            <div className="flex items-center gap-2 bg-muted/60 p-1 rounded-xl border border-border self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setHasForm(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  hasForm
+                    ? 'bg-google-blue text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Yes (Include Form)
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasForm(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  !hasForm
+                    ? 'bg-muted-foreground/20 text-foreground font-bold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                No (Informational Only)
+              </button>
             </div>
           </div>
 
+          {!hasForm ? (
+            <div className="p-6 rounded-2xl bg-muted/20 border border-dashed border-border text-center space-y-2">
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mx-auto text-muted-foreground">
+                <FileText className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-foreground">No Registration Form Attached</h3>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Students can view full event details, add it to their Google Calendar, and share it via link or QR code, without filling out a form.
+              </p>
+            </div>
+          ) : (
+            <>
           {/* Registration Status: Manual Open/Closed Toggle */}
           <div className="p-4 sm:p-5 rounded-2xl bg-muted/30 border border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -1250,26 +1294,49 @@ export const AdminEventEditorPage: React.FC = () => {
                 <p className="text-[11px] text-muted-foreground mb-2">
                   Paste the shareable URL of a Google Sheet. Every new submission will be auto-appended as a row (requires backend Google Sheets API integration). You can export CSV from the Submissions page as an alternative.
                 </p>
-                <div className="relative">
-                  <TableProperties className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-google-green/60" />
-                  <input
-                    type="url"
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    value={sheetsUrl}
-                    onChange={(e) => setSheetsUrl(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-google-green/30 bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-green/30 focus:border-google-green"
-                  />
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1">
+                    <TableProperties className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-google-green/60" />
+                    <input
+                      type="url"
+                      placeholder="https://docs.google.com/spreadsheets/d/..."
+                      value={sheetsUrl}
+                      onChange={(e) => setSheetsUrl(e.target.value)}
+                      className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-google-green/30 bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-green/30 focus:border-google-green"
+                    />
+                  </div>
+                  {sheetsUrl && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          localStorage.setItem('auth_link_redirect', window.location.pathname);
+                          const { url } = await eventService.getGoogleLinkUrl();
+                          if (url) window.location.href = url;
+                        } catch (err: any) {
+                          toast({ title: 'Error', description: err.message || 'Could not initiate Google connection.', variant: 'destructive' });
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold hover:bg-google-green/20 transition-all shrink-0"
+                      title="Grant Google Sheets write token (login session remains unchanged)"
+                    >
+                      <TableProperties className="w-3.5 h-3.5" />
+                      <span>Authorize Google Account</span>
+                    </button>
+                  )}
                 </div>
                 {sheetsUrl && (
-                  <a
-                    href={sheetsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-google-green hover:underline font-semibold"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Preview Linked Sheet</span>
-                  </a>
+                  <div className="flex items-center gap-3 mt-2">
+                    <a
+                      href={sheetsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-google-green hover:underline font-semibold"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Preview Linked Sheet</span>
+                    </a>
+                  </div>
                 )}
               </div>
             </div>
@@ -1379,6 +1446,8 @@ export const AdminEventEditorPage: React.FC = () => {
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* Bottom Actions Bar with Live Preview */}

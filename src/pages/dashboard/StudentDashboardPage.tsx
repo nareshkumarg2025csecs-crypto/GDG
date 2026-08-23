@@ -17,6 +17,7 @@ import {
   ArrowRight,
   ShieldCheck,
   CalendarPlus,
+  CalendarCheck,
   BookOpen,
   Award,
   Layers,
@@ -35,7 +36,7 @@ import {
   type ClubEvent,
   type EventForm,
   type FormSubmission,
-  formatEventDate,
+  formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
 } from '@/lib/formUtils';
@@ -59,6 +60,7 @@ export const StudentDashboardPage: React.FC = () => {
   // Events & Submissions State
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [mySubmissions, setMySubmissions] = useState<FormSubmission[]>([]);
+  const [addedCalendarEventIds, setAddedCalendarEventIds] = useState<string[]>([]);
   const [formsByEvent, setFormsByEvent] = useState<Record<string, EventForm>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'registered' | 'participated'>('registered');
@@ -95,15 +97,17 @@ export const StudentDashboardPage: React.FC = () => {
         // Fallback to existing auth store profile
       }
 
-      // 2. Fetch events and user's submissions in parallel
-      const [eventsRes, subsRes] = await Promise.all([
+      // 2. Fetch events, user's submissions, and calendar reminders in parallel
+      const [eventsRes, subsRes, calRes] = await Promise.all([
         eventService.listEvents().catch(() => ({ events: [] })),
         formService.getMySubmissions().catch(() => ({ submissions: [] })),
+        eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] })),
       ]);
 
       const fetchedEvents = eventsRes.events || [];
       setEvents(fetchedEvents);
       setMySubmissions(subsRes.submissions || []);
+      setAddedCalendarEventIds(calRes.event_ids || []);
 
       // 3. Fetch forms for events to map submission form_ids to events
       const formMap: Record<string, EventForm> = {};
@@ -742,7 +746,12 @@ export const StudentDashboardPage: React.FC = () => {
                         <div className="space-y-1.5 text-xs text-muted-foreground pt-2 border-t border-border/60">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                            <span>{formatEventDate(details.startTime || details.start_time)}</span>
+                            <span>
+                              {formatEventDateRange(
+                                details.startTime || details.start_time,
+                                details.endTime || details.end_time
+                              )}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
@@ -763,26 +772,41 @@ export const StudentDashboardPage: React.FC = () => {
                       </div>
 
                       {/* Card Footer Actions */}
-                      <div className="p-3.5 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          disabled={calendarProcessingId === event.id}
-                          onClick={() => handleAddToCalendar(event.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                          title="Add to Google Calendar"
-                        >
-                          <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
-                          <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
-                        </button>
+                      {(() => {
+                        const eventEnd = details.endTime || details.end_time;
+                        const isEnded = eventEnd ? new Date() > new Date(eventEnd) : false;
+                        const isAddedToCal = addedCalendarEventIds.includes(event.id) && !isEnded;
 
-                        <Link
-                          to={`/events/${event.id}`}
-                          className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-google-blue/10 text-google-blue hover:bg-google-blue/20 text-xs font-semibold transition-colors"
-                        >
-                          <span>Event Details</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </Link>
-                      </div>
+                        return (
+                          <div className="p-3.5 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
+                            {isAddedToCal ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold">
+                                <CalendarCheck className="w-3.5 h-3.5" />
+                                <span>Added to Cal</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={calendarProcessingId === event.id || isEnded}
+                                onClick={() => handleAddToCalendar(event.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm disabled:opacity-50"
+                                title="Add to Google Calendar"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
+                                <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
+                              </button>
+                            )}
+
+                            <Link
+                              to={`/events/${event.id}`}
+                              className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-google-blue/10 text-google-blue hover:bg-google-blue/20 text-xs font-semibold transition-colors"
+                            >
+                              <span>Event Details</span>
+                              <ArrowRight className="w-3 h-3" />
+                            </Link>
+                          </div>
+                        );
+                      })()}
                     </motion.div>
                   );
                 })}
@@ -877,7 +901,12 @@ export const StudentDashboardPage: React.FC = () => {
                         <div className="space-y-1.5 text-xs text-muted-foreground pt-1">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                            <span>{formatEventDate(details.startTime || details.start_time)}</span>
+                            <span>
+                              {formatEventDateRange(
+                                details.startTime || details.start_time,
+                                details.endTime || details.end_time
+                              )}
+                            </span>
                           </div>
                           {(details.location || details.venue) && (
                             <div className="flex items-center gap-2">

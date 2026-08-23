@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { logActivity } = require('../services/activityLogService');
+const GoogleSheetsService = require('../services/googleSheetsService');
 
 /**
  * Helper function to validate form submission answers against the form's dynamic schema.
@@ -450,6 +451,27 @@ const submitForm = async (req, res) => {
       details: { form_id: formId, event_id: form.event_id, submission_id: submission.id },
     });
 
+    // Google Sheets Sync — fire-and-forget after successful submission
+    if (form.schema?.sheets_url) {
+      setImmediate(async () => {
+        try {
+          const { data: allSubmissions } = await supabaseAdmin
+            .from('form_submissions')
+            .select('id, user_id, answers, attended, submitted_at')
+            .eq('form_id', formId)
+            .order('submitted_at', { ascending: true });
+
+          await GoogleSheetsService.syncSubmissionsToSheet({
+            form,
+            submissions: allSubmissions || [],
+            requestingUserId: req.user.id,
+          });
+        } catch (syncErr) {
+          console.warn('Background Google Sheets sync failed:', syncErr.message);
+        }
+      });
+    }
+
     return res.status(201).json({
       message: 'Form submitted successfully.',
       submission,
@@ -587,6 +609,63 @@ const updateSubmissionAttendance = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/forms/:formId/sync-sheet
+ * Admin-only: Trigger a full on-demand re-sync of all submissions to the linked Google Sheet.
+ */
+const syncSheetForAdmin = async (req, res) => {
+  try {
+    const { formId } = req.params;
+
+    const { data: form, error: formErr } = await supabaseAdmin
+      .from('forms')
+      .select('id, event_id, title, schema, created_by')
+      .eq('id', formId)
+      .single();
+
+    if (formErr || !form) {
+      return res.status(404).json({ error: 'Form not found.' });
+    }
+
+    const sheetsUrl = form.schema?.sheets_url;
+    if (!sheetsUrl) {
+      return res.status(400).json({
+        error: 'This form does not have a Google Sheets URL configured.',
+      });
+    }
+
+    const { data: submissions, error: subErr } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, user_id, answers, attended, submitted_at')
+      .eq('form_id', formId)
+      .order('submitted_at', { ascending: true });
+
+    if (subErr) {
+      return res.status(500).json({ error: 'Failed to fetch submissions for sync.', details: subErr.message });
+    }
+
+    const result = await GoogleSheetsService.syncSubmissionsToSheet({
+      form,
+      submissions: submissions || [],
+      requestingUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return res.status(502).json({ error: result.message });
+    }
+
+    return res.status(200).json({
+      message: result.message,
+      rows_synced: result.rows_synced,
+    });
+  } catch (error) {
+    console.error('syncSheetForAdmin error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while syncing Google Sheet.',
+    });
+  }
+};
+
 module.exports = {
   createForm,
   getFormsByEvent,
@@ -597,5 +676,6 @@ module.exports = {
   getFormSubmissions,
   getMySubmissions,
   updateSubmissionAttendance,
+  syncSheetForAdmin,
   validateFormAnswers,
 };

@@ -57,12 +57,15 @@ export const AuthCallback: React.FC = () => {
 
           setStatus('success');
           toast({
-            title: 'Google Calendar Linked',
-            description: 'Your Google Calendar is connected. Your email login is preserved.',
+            title: 'Google Services Connected',
+            description: 'Google Sheets & Calendar permissions granted. Your login session is preserved.',
           });
 
+          const returnUrl = localStorage.getItem('auth_link_redirect') || '/admin/events';
+          localStorage.removeItem('auth_link_redirect');
+
           setTimeout(() => {
-            navigate('/events', { replace: true });
+            navigate(returnUrl, { replace: true });
           }, 1200);
           return;
         }
@@ -98,9 +101,15 @@ export const AuthCallback: React.FC = () => {
           description: 'Successfully authenticated with Google.',
         });
 
-        // Redirect to homepage after brief delay for smooth transition
+        // Redirect to target event or dashboard/homepage after brief delay
+        const targetUrl =
+          localStorage.getItem('auth_redirect_url') ||
+          searchParams.get('redirect') ||
+          '/';
+        localStorage.removeItem('auth_redirect_url');
+
         setTimeout(() => {
-          navigate('/', { replace: true });
+          navigate(targetUrl, { replace: true });
         }, 1200);
       } catch (err: any) {
         console.error('Google OAuth callback error:', err);

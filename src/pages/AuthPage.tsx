@@ -172,6 +172,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
   };
 
   // Submit Handler
+  const redirectUrl = searchParams.get('redirect') || '/';
+
+  useEffect(() => {
+    if (searchParams.get('redirect')) {
+      localStorage.setItem('auth_redirect_url', searchParams.get('redirect')!);
+    }
+  }, [searchParams]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError(null);
@@ -198,7 +206,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
           description: `Logged in as ${response.profile.role === 'admin' ? 'Administrator' : 'Student'}.`,
         });
 
-        navigate('/');
+        localStorage.removeItem('auth_redirect_url');
+        navigate(redirectUrl);
       } else {
         const response = await signup(
           role === 'admin'
@@ -221,7 +230,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
             title: 'Account created successfully',
             description: `Welcome to GDG, ${response.profile.full_name || response.profile.email}.`,
           });
-          navigate('/');
+          localStorage.removeItem('auth_redirect_url');
+          navigate(redirectUrl);
         } else {
           setServerSuccess(
             response.message || 'Registration successful. Please check your email to verify your account.'

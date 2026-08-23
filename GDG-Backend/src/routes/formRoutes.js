@@ -9,6 +9,7 @@ const {
   getFormSubmissions,
   getMySubmissions,
   updateSubmissionAttendance,
+  syncSheetForAdmin,
 } = require('../controllers/formController');
 const {
   validateCreateForm,
@@ -43,6 +44,14 @@ router.put(
   requireAuth,
   requireRole('admin'),
   updateSubmissionAttendance
+);
+
+// Admin-only Sheets On-Demand Sync
+router.post(
+  '/:formId/sync-sheet',
+  requireAuth,
+  requireRole('admin'),
+  syncSheetForAdmin
 );
 
 // Admin-only Form CRUD (strictly audited: requireAuth + requireRole('admin'))

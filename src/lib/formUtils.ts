@@ -149,6 +149,49 @@ export function formatEventDate(isoDate?: string | null): string {
 }
 
 /**
+ * Formats a start/end date pair smartly:
+ * - Same calendar day → shows single date (e.g. "Sat, Aug 23, 2026")
+ * - Different calendar days → shows "From [date] to [date]"
+ */
+export function formatEventDateRange(
+  startIso?: string | null,
+  endIso?: string | null
+): string {
+  if (!startIso) return 'Date TBA';
+  try {
+    const start = new Date(startIso);
+    if (isNaN(start.getTime())) return 'Date TBA';
+
+    const formatOpts: Intl.DateTimeFormatOptions = {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    };
+
+    const startStr = start.toLocaleDateString('en-US', formatOpts);
+
+    if (!endIso) return startStr;
+
+    const end = new Date(endIso);
+    if (isNaN(end.getTime())) return startStr;
+
+    // Compare calendar day (year+month+day)
+    const sameDay =
+      start.getFullYear() === end.getFullYear() &&
+      start.getMonth() === end.getMonth() &&
+      start.getDate() === end.getDate();
+
+    if (sameDay) return startStr;
+
+    const endStr = end.toLocaleDateString('en-US', formatOpts);
+    return `From ${startStr} to ${endStr}`;
+  } catch {
+    return 'Date TBA';
+  }
+}
+
+/**
  * Formats start and end times into a readable range (e.g. "10:00 AM - 12:30 PM").
  */
 export function formatEventTimeRange(startIso?: string | null, endIso?: string | null): string {

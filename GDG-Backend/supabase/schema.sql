@@ -266,3 +266,49 @@ CREATE POLICY "Admins can view activity logs"
 
 -- Note: No client-side INSERT policy exists on activity_logs.
 -- All logs are written server-side exclusively via the Supabase Service Role client.
+
+
+-- ==============================================================================
+-- 10. User Calendar Events Table (Server-Side Persistence for Added to Calendar)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.user_calendar_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    calendar_event_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Unique constraint to prevent duplicate calendar additions per user per event
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_user_calendar_events_user_event'
+    ) THEN
+        ALTER TABLE public.user_calendar_events
+        ADD CONSTRAINT uq_user_calendar_events_user_event UNIQUE (user_id, event_id);
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_user_calendar_events_user_id ON public.user_calendar_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_calendar_events_event_id ON public.user_calendar_events(event_id);
+
+-- Enable RLS on user_calendar_events
+ALTER TABLE public.user_calendar_events ENABLE ROW LEVEL SECURITY;
+
+-- Users can view their own calendar additions
+DROP POLICY IF EXISTS "Users can view own calendar additions" ON public.user_calendar_events;
+CREATE POLICY "Users can view own calendar additions"
+    ON public.user_calendar_events
+    FOR SELECT
+    TO authenticated
+    USING (auth.uid() = user_id);
+
+-- Users can insert their own calendar additions
+DROP POLICY IF EXISTS "Users can insert own calendar additions" ON public.user_calendar_events;
+CREATE POLICY "Users can insert own calendar additions"
+    ON public.user_calendar_events
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
+

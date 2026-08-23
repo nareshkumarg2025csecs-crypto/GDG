@@ -29,6 +29,7 @@ import {
   type ClubEvent,
   type EventForm,
   formatEventDate,
+  formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
 } from '@/lib/formUtils';
@@ -401,7 +402,12 @@ export const AdminEventsPage: React.FC = () => {
                     <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/60">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                        <span>{formatEventDate(details.startTime || details.start_time)}</span>
+                        <span>
+                          {formatEventDateRange(
+                            details.startTime || details.start_time,
+                            details.endTime || details.end_time
+                          )}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />

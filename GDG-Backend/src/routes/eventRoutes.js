@@ -7,7 +7,7 @@ const {
   updateEvent,
   deleteEvent,
 } = require('../controllers/eventController');
-const { createEventReminder } = require('../controllers/calendarController');
+const { createEventReminder, getMyCalendarEvents } = require('../controllers/calendarController');
 const { getFormsByEvent } = require('../controllers/formController');
 const {
   validateCreateEvent,
@@ -15,6 +15,9 @@ const {
 } = require('../middleware/validator');
 
 const router = express.Router();
+
+// Authenticated Calendar Reminder Query (must be before /:id)
+router.get('/calendar-reminders/me', requireAuth, getMyCalendarEvents);
 
 // Public Event Routes (no auth required to browse/view events and their forms)
 router.get('/', listEvents);

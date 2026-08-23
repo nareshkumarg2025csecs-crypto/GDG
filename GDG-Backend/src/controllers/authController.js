@@ -429,7 +429,7 @@ const getGoogleOAuthUrl = async (req, res) => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
+        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
@@ -450,6 +450,8 @@ const getGoogleOAuthUrl = async (req, res) => {
       provider: 'google',
       role_requested: role || 'student',
       scopes: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/calendar',
       ],

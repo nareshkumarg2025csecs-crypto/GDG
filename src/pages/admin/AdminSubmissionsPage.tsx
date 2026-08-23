@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   ArrowLeft,
@@ -13,8 +13,14 @@ import {
   ClipboardList,
   CheckCircle2,
   Check,
+  RefreshCw,
+  X,
+  Key,
+  ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 import { formService } from '@/services/formService';
+import { eventService } from '@/services/eventService';
 import { toast } from '@/hooks/use-toast';
 import {
   type EventForm,
@@ -30,6 +36,9 @@ export const AdminSubmissionsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingAttendanceId, setUpdatingAttendanceId] = useState<string | null>(null);
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
   useEffect(() => {
     if (!formId) return;
@@ -113,7 +122,7 @@ export const AdminSubmissionsPage: React.FC = () => {
     toast({ title: 'JSON exported', description: 'Submissions saved as JSON.' });
   };
 
-  // ── Export as CSV (opens cleanly in Google Sheets / Excel) ─────────────────
+  // ── Export as CSV (opens cleanly in Google Sheets / Excel with text formatting) ──
   const exportToCsv = () => {
     if (submissions.length === 0) {
       toast({ title: 'No data', description: 'There are no submissions to export.' });
@@ -142,8 +151,28 @@ export const AdminSubmissionsPage: React.FC = () => {
       return [...base, ...fieldVals];
     });
 
-    const escape = (cell: string) => `"${cell.replace(/"/g, '""')}"`;
-    const csv = [headerRow, ...rows].map((r) => r.map(escape).join(',')).join('\r\n');
+    // Format cell: force phone numbers, IDs, and long numeric values as text formulas ="..."
+    // so that Excel does NOT convert them into scientific notation (e.g. 9.87654E+9)
+    const escape = (cell: string, colIdx?: number) => {
+      const trimmed = cell.trim();
+      // Match phone numbers / numeric-looking values with 7 or more digits or leading plus
+      const isNumericLike = /^\+?[0-9]{7,}$/.test(trimmed);
+      const field = colIdx !== undefined && colIdx >= 3 ? fields[colIdx - 3] : null;
+      const isPhoneOrIdField =
+        field && /phone|mobile|contact|roll|reg|id|num/i.test(field.name || field.label);
+
+      if (isNumericLike || (isPhoneOrIdField && /^[0-9+ -]+$/.test(trimmed))) {
+        // Excel formula text representation: ="value"
+        return `="""${trimmed.replace(/"/g, '""""')}"""`;
+      }
+      return `"${cell.replace(/"/g, '""')}"`;
+    };
+
+    const csv = [
+      headerRow.map((h) => `"${h.replace(/"/g, '""')}"`).join(','),
+      ...rows.map((r) => r.map((cell, cIdx) => escape(cell, cIdx)).join(',')),
+    ].join('\r\n');
+
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel compat
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -153,7 +182,59 @@ export const AdminSubmissionsPage: React.FC = () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    toast({ title: 'CSV exported', description: 'Open the .csv file in Google Sheets or Excel.' });
+    toast({ title: 'CSV exported', description: 'Phone numbers and IDs formatted as full text.' });
+  };
+
+  // ── On-Demand Sync with Google Sheet ─────────────────────────────────────────
+  const handleSyncSheet = async () => {
+    if (!formId) return;
+    setIsSyncingSheet(true);
+    try {
+      const res = await eventService.syncSheetForAdmin(formId);
+      toast({
+        title: 'Google Sheet Synced',
+        description: res.message || `Successfully synced ${submissions.length} rows to the sheet.`,
+      });
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (
+        errMsg.toLowerCase().includes('authorization') ||
+        errMsg.toLowerCase().includes('connect') ||
+        errMsg.toLowerCase().includes('permission') ||
+        err?.status === 502
+      ) {
+        setShowConnectModal(true);
+      } else {
+        toast({
+          title: 'Sync Failed',
+          description: errMsg || 'Could not sync submissions to Google Sheet.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  // ── Authorize Google Sheets (Token only, doesn't change login) ───────────────
+  const handleAuthorizeGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      localStorage.setItem('auth_link_redirect', window.location.pathname);
+      const { url } = await eventService.getGoogleLinkUrl();
+      if (url) {
+        window.location.href = url;
+      } else {
+        throw new Error('No Google link URL generated.');
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Authorization Error',
+        description: err.message || 'Could not start Google authorization.',
+        variant: 'destructive',
+      });
+      setIsConnectingGoogle(false);
+    }
   };
 
   // ── Sheets link from form schema ───────────────────────────────────────────
@@ -207,18 +288,31 @@ export const AdminSubmissionsPage: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
-            {/* Google Sheets Link (if admin set one) */}
+            {/* Google Sheets Link & Sync (if admin set one) */}
             {sheetsLink && (
-              <a
-                href={sheetsLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-google-green/40 bg-google-green/10 text-google-green text-xs sm:text-sm font-semibold shadow-sm hover:bg-google-green/20 transition-all"
-              >
-                <TableProperties className="w-4 h-4" />
-                <span>Open Google Sheet</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+              <>
+                <button
+                  type="button"
+                  disabled={isSyncingSheet}
+                  onClick={handleSyncSheet}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-google-green/40 bg-google-green/10 text-google-green text-xs sm:text-sm font-semibold shadow-sm hover:bg-google-green/20 disabled:opacity-50 transition-all"
+                  title="Sync current submissions to Google Sheet"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncingSheet ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingSheet ? 'Syncing...' : 'Sync Sheet'}</span>
+                </button>
+
+                <a
+                  href={sheetsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-card text-foreground text-xs sm:text-sm font-semibold shadow-sm hover:bg-muted transition-all"
+                >
+                  <TableProperties className="w-4 h-4 text-google-green" />
+                  <span>Open Sheet</span>
+                  <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                </a>
+              </>
             )}
 
             {/* Export CSV → Google Sheets compatible */}
@@ -364,6 +458,82 @@ export const AdminSubmissionsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ── Google Sheets Authorization Modal (Token Only) ── */}
+      <AnimatePresence>
+        {showConnectModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+            onClick={() => setShowConnectModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0, y: 16 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.94, opacity: 0, y: 16 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-google-green/10 border border-google-green/20 flex items-center justify-center flex-shrink-0">
+                    <TableProperties className="w-6 h-6 text-google-green" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">Authorize Google Sheets</h3>
+                    <p className="text-xs text-muted-foreground font-mono">Token Access Only</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConnectModal(false)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Explainer */}
+              <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2.5 text-xs text-muted-foreground leading-relaxed">
+                <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
+                  <ShieldCheck className="w-4 h-4 text-google-green" />
+                  <span>No login change — token access only</span>
+                </div>
+                <p>
+                  Google requires write permissions to append attendee rows directly into your spreadsheet.
+                </p>
+                <p>
+                  Clicking below opens Google's consent screen. Once approved, you will return straight back to this page and your admin login will remain active.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                <button
+                  type="button"
+                  disabled={isConnectingGoogle}
+                  onClick={handleAuthorizeGoogle}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-google-green hover:bg-google-green/90 text-white text-xs sm:text-sm font-bold shadow-md transition-all disabled:opacity-50"
+                >
+                  <Key className="w-4 h-4" />
+                  <span>{isConnectingGoogle ? 'Connecting...' : 'Authorize Google Sheets'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowConnectModal(false)}
+                  className="px-4 py-3 rounded-xl border border-border text-xs sm:text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

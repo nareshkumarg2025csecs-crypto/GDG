@@ -5,12 +5,13 @@ import {
   Calendar,
   Clock,
   MapPin,
-  Users,
   CheckCircle2,
   CalendarPlus,
+  CalendarCheck,
   ArrowLeft,
   FileText,
   Share2,
+  QrCode,
   Sparkles,
   AlignLeft,
   ZoomIn,
@@ -21,11 +22,12 @@ import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { EventQrModal } from '@/components/EventQrModal';
 import {
   type ClubEvent,
   type EventForm,
   getEventRegistrationState,
-  formatEventDate,
+  formatEventDateRange,
   formatEventTimeRange,
 } from '@/lib/formUtils';
 
@@ -40,7 +42,9 @@ export const EventDetailPage: React.FC = () => {
   const [submissionDate, setSubmissionDate] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [calendarAdded, setCalendarAdded] = useState(false);
   const [bannerZoomOpen, setBannerZoomOpen] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   // Shown when email+password user tries to add to calendar
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
@@ -77,17 +81,27 @@ export const EventDetailPage: React.FC = () => {
         const attachedForm = formsRes.forms && formsRes.forms.length > 0 ? formsRes.forms[0] : null;
         setForm(attachedForm);
 
-        // Only check registration if user is logged in
-        if (isAuthenticated && attachedForm) {
+        // Only check registration and calendar state if user is logged in
+        if (isAuthenticated) {
+          // Check calendar-added state
           try {
-            const subsRes = await formService.getMySubmissions();
-            const userSub = (subsRes.submissions || []).find((s) => s.form_id === attachedForm.id);
-            if (userSub) {
-              setIsRegistered(true);
-              setSubmissionDate(userSub.submitted_at);
-            }
+            const calRes = await eventService.getMyCalendarEvents();
+            setCalendarAdded((calRes.event_ids || []).includes(id!));
           } catch {
-            // Submission check failure is non-critical
+            // non-critical
+          }
+
+          if (attachedForm) {
+            try {
+              const subsRes = await formService.getMySubmissions();
+              const userSub = (subsRes.submissions || []).find((s) => s.form_id === attachedForm.id);
+              if (userSub) {
+                setIsRegistered(true);
+                setSubmissionDate(userSub.submitted_at);
+              }
+            } catch {
+              // Submission check failure is non-critical
+            }
           }
         }
       } catch (err: any) {
@@ -145,7 +159,6 @@ export const EventDetailPage: React.FC = () => {
         res.action_required === 'CONNECT_GOOGLE_CALENDAR' ||
         res.action_required === 'RECONNECT_GOOGLE_CALENDAR'
       ) {
-        // Fetch the connect URL and show a friendly modal instead of hard redirect
         try {
           const linkRes = await eventService.getGoogleLinkUrl();
           setCalendarConnectUrl(linkRes.url || null);
@@ -157,6 +170,7 @@ export const EventDetailPage: React.FC = () => {
       }
 
       if (res.success) {
+        setCalendarAdded(true);
         toast({
           title: 'Event Synced to Google Calendar',
           description: res.message || 'Check your primary Google Calendar.',
@@ -177,17 +191,28 @@ export const EventDetailPage: React.FC = () => {
     if (navigator.share) {
       navigator.share({
         title: event?.title || 'GDG Event',
-        text: details.description || 'Check out this event by GDG!',
+        text: 'Check out this event!',
         url: window.location.href,
       });
     } else {
       navigator.clipboard.writeText(window.location.href);
-      toast({
-        title: 'Link Copied',
-        description: 'Event link copied to your clipboard.',
-      });
+      toast({ title: 'Link Copied', description: 'Event link copied to your clipboard.' });
     }
   };
+
+  // Determine if event has already ended
+  const eventEndTime = useMemo(() => {
+    const et = details?.endTime || details?.end_time;
+    if (!et) return null;
+    return new Date(et);
+  }, [details]);
+  const eventEnded = useMemo(() => {
+    if (!eventEndTime) return false;
+    return new Date() > eventEndTime;
+  }, [eventEndTime]);
+
+  // Show Added to Calendar badge only while event hasn't ended
+  const showCalendarAddedBadge = calendarAdded && !eventEnded;
 
   if (isLoading || !event) {
     return (
@@ -213,14 +238,25 @@ export const EventDetailPage: React.FC = () => {
             <span>Back to All Events</span>
           </Link>
 
-          <button
-            type="button"
-            onClick={handleShare}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-border text-xs font-semibold hover:bg-muted transition-colors"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Share Event</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowQrModal(true)}
+              aria-label="Share as QR Code"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border text-xs font-semibold hover:bg-muted transition-colors"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Share QR</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleShare}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-border text-xs font-semibold hover:bg-muted transition-colors"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Share</span>
+            </button>
+          </div>
         </div>
 
         {/* Main Event Card */}
@@ -284,7 +320,10 @@ export const EventDetailPage: React.FC = () => {
                     Date
                   </span>
                   <span className="text-sm font-semibold">
-                    {formatEventDate(details.startTime || details.start_time)}
+                    {formatEventDateRange(
+                      details.startTime || details.start_time,
+                      details.endTime || details.end_time
+                    )}
                   </span>
                 </div>
               </div>
@@ -357,7 +396,18 @@ export const EventDetailPage: React.FC = () => {
 
             {/* Actions Bar */}
             <div className="pt-6 border-t border-border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-              {regState !== 'closed' ? (
+              {/* Calendar action: show Added badge or button */}
+              {showCalendarAddedBadge ? (
+                <div className="inline-flex items-center gap-2 py-3 px-5 rounded-2xl border border-google-green/30 bg-google-green/10 text-google-green text-sm font-semibold">
+                  <CalendarCheck className="w-4 h-4" aria-hidden="true" />
+                  <span>Added to Calendar</span>
+                </div>
+              ) : eventEnded ? (
+                <div className="text-xs font-mono text-muted-foreground flex items-center gap-2 py-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span>Event has ended</span>
+                </div>
+              ) : regState !== 'closed' ? (
                 <button
                   type="button"
                   disabled={isCalendarLoading}
@@ -370,33 +420,48 @@ export const EventDetailPage: React.FC = () => {
               ) : (
                 <div className="text-xs font-mono text-muted-foreground flex items-center gap-2 py-2">
                   <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span>Event / Registration is closed</span>
+                  <span>Registration is closed</span>
                 </div>
               )}
 
-              {/* Registration CTA */}
-              {regState === 'open' && (
-                <Link
-                  to={`/events/${id}/form`}
-                  className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
-                  style={{
-                    background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
-                    boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
-                  }}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Fill Registration Form</span>
-                </Link>
+              {/* Registration CTA — only shown if event has a form */}
+              {form && regState === 'open' && (
+                isAuthenticated ? (
+                  <Link
+                    to={`/events/${id}/form`}
+                    className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                    style={{
+                      background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
+                      boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
+                    }}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Fill Registration Form</span>
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/events/${id}/form`)}`)}
+                    className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                    style={{
+                      background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
+                      boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
+                    }}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Sign in to Register</span>
+                  </button>
+                )
               )}
 
-              {regState === 'registered' && (
+              {form && regState === 'registered' && (
                 <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-google-green/10 text-google-green border border-google-green/30 text-sm font-semibold font-mono">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>You are Registered</span>
                 </div>
               )}
 
-              {regState === 'closed' && (
+              {form && regState === 'closed' && !eventEnded && (
                 <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-google-yellow/10 text-google-yellow border border-google-yellow/30 text-sm font-semibold font-mono">
                   <Clock className="w-4 h-4" />
                   <span>Registration Closed</span>
@@ -406,6 +471,14 @@ export const EventDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* QR Modal */}
+      <EventQrModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        eventTitle={event?.title || 'Event'}
+        eventUrl={window.location.href}
+      />
 
       {/* ── Full-screen Image Lightbox ── */}
       <AnimatePresence>
@@ -419,7 +492,6 @@ export const EventDetailPage: React.FC = () => {
             className="fixed inset-0 z-[999] flex items-center justify-center bg-black/95 backdrop-blur-lg p-4"
             onClick={() => setBannerZoomOpen(false)}
           >
-            {/* Close button */}
             <button
               type="button"
               onClick={() => setBannerZoomOpen(false)}
@@ -428,13 +500,9 @@ export const EventDetailPage: React.FC = () => {
             >
               <XIcon className="w-5 h-5" />
             </button>
-
-            {/* Caption */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-xs font-mono bg-black/50 px-4 py-2 rounded-full backdrop-blur-sm border border-white/10">
               Press <kbd className="bg-white/10 rounded px-1.5 py-0.5 font-bold">Esc</kbd> or click anywhere to close
             </div>
-
-            {/* Zoomed image */}
             <motion.img
               key="lightbox-img"
               initial={{ scale: 0.92, opacity: 0 }}
@@ -450,7 +518,7 @@ export const EventDetailPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* ── Google Calendar Connect Modal (for email+password users) ── */}
+      {/* ── Google Calendar Connect Modal ── */}
       <AnimatePresence>
         {showCalendarConnectModal && (
           <motion.div
@@ -470,7 +538,6 @@ export const EventDetailPage: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
             >
-              {/* Header */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center flex-shrink-0">
@@ -489,18 +556,14 @@ export const EventDetailPage: React.FC = () => {
                   <XIcon className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Explanation */}
               <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2 text-sm text-muted-foreground leading-relaxed">
                 <p>
-                  Your <span className="font-semibold text-foreground">email & password login is kept</span> — connecting Google only grants calendar access.
+                  Your <span className="font-semibold text-foreground">email &amp; password login is kept</span> — connecting Google only grants calendar access.
                 </p>
                 <p>
-                  You'll be redirected to Google to approve calendar permissions. Once done, you'll return here and your login session will be preserved.
+                  You'll be redirected to Google to approve calendar permissions. Once done, you'll return here.
                 </p>
               </div>
-
-              {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-3">
                 {calendarConnectUrl ? (
                   <a
@@ -532,3 +595,4 @@ export const EventDetailPage: React.FC = () => {
 };
 
 export default EventDetailPage;
+

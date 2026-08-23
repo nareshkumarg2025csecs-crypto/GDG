@@ -92,4 +92,18 @@ export const eventService = {
       method: 'GET',
     });
   },
+
+  async getMyCalendarEvents(): Promise<{ event_ids: string[]; count: number }> {
+    return apiRequest<{ event_ids: string[]; count: number }>(
+      '/api/events/calendar-reminders/me',
+      { method: 'GET' }
+    );
+  },
+
+  async syncSheetForAdmin(formId: string): Promise<{ message: string; rows_synced: number }> {
+    return apiRequest<{ message: string; rows_synced: number }>(
+      `/api/forms/${formId}/sync-sheet`,
+      { method: 'POST' }
+    );
+  },
 };

@@ -471,13 +471,8 @@ export const EventRegistrationPage: React.FC = () => {
                     <input
                       type="number"
                       placeholder={field.placeholder || ''}
-                      value={answers[field.name] || ''}
-                      onChange={(e) =>
-                        handleAnswerChange(
-                          field.name,
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
+                      value={answers[field.name] !== undefined ? answers[field.name] : ''}
+                      onChange={(e) => handleAnswerChange(field.name, e.target.value)}
                       className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
                         fieldError
                           ? 'border-destructive focus:ring-destructive/30'

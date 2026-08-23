@@ -8,12 +8,14 @@ import {
   Search,
   CheckCircle2,
   CalendarPlus,
+  CalendarCheck,
   ArrowRight,
   ArrowLeft,
   Home,
   Sparkles,
   Layers,
   Image as ImageIcon,
+  QrCode,
   X as XIcon,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
@@ -21,12 +23,13 @@ import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/hooks/use-toast';
+import { EventQrModal } from '@/components/EventQrModal';
 import {
   type ClubEvent,
   type EventForm,
   type FormSubmission,
   getEventRegistrationState,
-  formatEventDate,
+  formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
 } from '@/lib/formUtils';
@@ -41,12 +44,14 @@ export const EventsPage: React.FC = () => {
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [formsByEvent, setFormsByEvent] = useState<Record<string, EventForm>>({});
   const [mySubmissions, setMySubmissions] = useState<FormSubmission[]>([]);
+  const [addedCalendarEventIds, setAddedCalendarEventIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
+  const [qrModalEvent, setQrModalEvent] = useState<{ title: string; url: string } | null>(null);
 
   // Load published events (always — no auth required)
   // Load forms + submissions only when authenticated
@@ -63,8 +68,16 @@ export const EventsPage: React.FC = () => {
 
       // Only fetch forms & submissions when user is logged in
       if (isAuthenticated) {
-        const subsRes = await formService.getMySubmissions().catch(() => ({ submissions: [] }));
-        setMySubmissions(subsRes.submissions || []);
+        try {
+          const [subsRes, calRes] = await Promise.all([
+            formService.getMySubmissions().catch(() => ({ submissions: [] })),
+            eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] })),
+          ]);
+          setMySubmissions(subsRes.submissions || []);
+          setAddedCalendarEventIds(calRes.event_ids || []);
+        } catch {
+          // ignore
+        }
 
         const formMap: Record<string, EventForm> = {};
         await Promise.all(
@@ -180,9 +193,10 @@ export const EventsPage: React.FC = () => {
       }
 
       if (res.success) {
+        setAddedCalendarEventIds((prev) => [...prev, eventId]);
         toast({
-          title: 'Added to Google Calendar',
-          description: res.message || 'Event is synced with your primary calendar.',
+          title: 'Event Synced to Google Calendar',
+          description: res.message || 'Check your primary Google Calendar.',
         });
       }
     } catch (err: any) {
@@ -390,14 +404,14 @@ export const EventsPage: React.FC = () => {
                           {details.category || 'Workshop'}
                         </span>
 
-                        {regState === 'registered' && (
+                        {attachedForm && regState === 'registered' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>Registered</span>
                           </span>
                         )}
 
-                        {regState === 'closed' && (
+                        {attachedForm && regState === 'closed' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-yellow/10 text-google-yellow border border-google-yellow/30 font-mono">
                             <Clock className="w-3 h-3" />
                             <span>Closed</span>
@@ -429,7 +443,12 @@ export const EventsPage: React.FC = () => {
                     <div className="space-y-1.5 text-xs text-muted-foreground pt-2 border-t border-border/60">
                       <div className="flex items-center gap-2">
                         <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                        <span>{formatEventDate(details.startTime || details.start_time)}</span>
+                        <span>
+                          {formatEventDateRange(
+                            details.startTime || details.start_time,
+                            details.endTime || details.end_time
+                          )}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
@@ -450,42 +469,89 @@ export const EventsPage: React.FC = () => {
                   </div>
 
                   {/* Footer Actions */}
-                  <div className="p-4 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                    {regState !== 'closed' ? (
-                      <button
-                        type="button"
-                        disabled={calendarProcessingId === event.id}
-                        onClick={() => handleAddToCalendar(event.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                        title="Add to Google Calendar"
-                      >
-                        <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
-                        <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
-                      </button>
-                    ) : (
-                      <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
-                        Closed
-                      </span>
-                    )}
+                  {(() => {
+                    const eventEnd = details.endTime || details.end_time;
+                    const isEnded = eventEnd ? new Date() > new Date(eventEnd) : false;
+                    const isAddedToCal = addedCalendarEventIds.includes(event.id) && !isEnded;
 
-                    {regState === 'open' && attachedForm ? (
-                      <Link
-                        to={`/events/${event.id}/form`}
-                        className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
-                      >
-                        <span>Register</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    ) : (
-                      <Link
-                        to={`/events/${event.id}`}
-                        className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
-                      >
-                        <span>Details</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    )}
-                  </div>
+                    return (
+                      <div className="p-4 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          {isAddedToCal ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold">
+                              <CalendarCheck className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Added</span>
+                            </span>
+                          ) : isEnded ? (
+                            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
+                              Ended
+                            </span>
+                          ) : regState !== 'closed' ? (
+                            <button
+                              type="button"
+                              disabled={calendarProcessingId === event.id}
+                              onClick={() => handleAddToCalendar(event.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                              title="Add to Google Calendar"
+                            >
+                              <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
+                              <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
+                            </button>
+                          ) : (
+                            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
+                              Closed
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setQrModalEvent({
+                                title: event.title,
+                                url: `${window.location.origin}/events/${event.id}`,
+                              })
+                            }
+                            className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Share as QR Code"
+                            aria-label="Share as QR Code"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {attachedForm && regState === 'open' ? (
+                          isAuthenticated ? (
+                            <Link
+                              to={`/events/${event.id}/form`}
+                              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
+                            >
+                              <span>Register</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                navigate(`/login?redirect=${encodeURIComponent(`/events/${event.id}/form`)}`)
+                              }
+                              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
+                            >
+                              <span>Register</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          )
+                        ) : (
+                          <Link
+                            to={`/events/${event.id}`}
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                          >
+                            <span>Details</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </motion.div>
               );
             })}
@@ -561,6 +627,16 @@ export const EventsPage: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* QR Code Share Modal */}
+      {qrModalEvent && (
+        <EventQrModal
+          isOpen={Boolean(qrModalEvent)}
+          onClose={() => setQrModalEvent(null)}
+          eventTitle={qrModalEvent.title}
+          eventUrl={qrModalEvent.url}
+        />
+      )}
     </div>
   );
 };

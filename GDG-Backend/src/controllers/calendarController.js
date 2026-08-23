@@ -59,10 +59,27 @@ const createEventReminder = async (req, res) => {
     try {
       const calendarEvent = await GoogleCalendarService.insertCalendarEvent(validAccessToken, event);
 
+      // 5. Persist server-side added state in user_calendar_events table
+      try {
+        await supabaseAdmin
+          .from('user_calendar_events')
+          .upsert(
+            {
+              user_id: userId,
+              event_id: eventId,
+              calendar_event_id: calendarEvent.id || null,
+              created_at: new Date().toISOString(),
+            },
+            { onConflict: 'user_id,event_id' }
+          );
+      } catch (dbErr) {
+        console.warn('Could not persist user_calendar_events record:', dbErr.message);
+      }
+
       return res.status(200).json({
         success: true,
         connected: true,
-        message: 'Event successfully added to your Google Calendar!',
+        message: 'Event successfully added to your Google Calendar.',
         event_title: event.title,
         calendar_event_id: calendarEvent.id,
         calendar_event_link: calendarEvent.htmlLink,
@@ -100,10 +117,10 @@ const getGoogleLinkUrl = async (req, res) => {
     }
 
     // Build the Supabase Google OAuth redirect URL with calendar scopes.
-    // This works for BOTH email+password users (link_google=true flag) and existing Google users.
+    // This works for BOTH email+password users (link_identity=true flag) and existing Google users.
     const redirectTo = encodeURIComponent(`${clientUrl}/auth/callback?link_identity=true`);
     const scopes = encodeURIComponent(
-      'email profile https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar'
+      'email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar'
     );
 
     // Supabase's authorize endpoint for providers
@@ -120,6 +137,8 @@ const getGoogleLinkUrl = async (req, res) => {
       url: oauthUrl,
       provider: 'google',
       scopes: [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/calendar',
       ],
@@ -186,9 +205,47 @@ const getGoogleLinkStatus = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/events/calendar-reminders/me
+ * Authenticated: Return the list of event IDs the current user has added to their Google Calendar.
+ */
+const getMyCalendarEvents = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const { data: records, error } = await supabaseAdmin
+      .from('user_calendar_events')
+      .select('event_id, calendar_event_id, created_at')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('getMyCalendarEvents error:', error);
+      return res.status(500).json({
+        error: 'Failed to retrieve calendar reminders.',
+        details: error.message,
+      });
+    }
+
+    const eventIds = (records || []).map((r) => r.event_id);
+
+    return res.status(200).json({
+      message: 'Calendar reminders retrieved successfully.',
+      event_ids: eventIds,
+      count: eventIds.length,
+      records: records || [],
+    });
+  } catch (error) {
+    console.error('getMyCalendarEvents error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while retrieving calendar reminders.',
+    });
+  }
+};
+
 module.exports = {
   createEventReminder,
   getGoogleLinkUrl,
   saveGoogleTokens,
   getGoogleLinkStatus,
+  getMyCalendarEvents,
 };
