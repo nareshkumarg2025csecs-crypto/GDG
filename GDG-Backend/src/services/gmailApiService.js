@@ -3,7 +3,7 @@ const MailComposer = require('nodemailer/lib/mail-composer');
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email';
 
 // In-memory token cache to minimize OAuth exchange roundtrips
 let cachedAccessToken = null;
@@ -15,7 +15,7 @@ let tokenExpiresAt = 0;
  */
 class GmailApiService {
   /**
-   * Generates a Google OAuth authorization URL specifically requesting the gmail.send scope.
+   * Generates a Google OAuth authorization URL specifically requesting the gmail.send and userinfo.email scopes.
    *
    * @param {string} redirectUri
    * @returns {string}
@@ -74,11 +74,38 @@ class GmailApiService {
   }
 
   /**
+   * Saves a new refresh token to the database and memory.
+   */
+  static async saveRefreshToken(refreshToken, email = null) {
+    if (!refreshToken) return;
+
+    // Reset memory cache
+    cachedAccessToken = null;
+    tokenExpiresAt = 0;
+    process.env.GMAIL_REFRESH_TOKEN = refreshToken;
+
+    try {
+      await supabaseAdmin
+        .from('gmail_service_tokens')
+        .upsert({
+          id: 'default',
+          refresh_token: refreshToken,
+          email: email || process.env.EMAIL_ID || null,
+          updated_at: new Date().toISOString(),
+        });
+      console.log('[GmailApiService] Refresh token saved to gmail_service_tokens table');
+    } catch (dbErr) {
+      console.warn('[GmailApiService] Could not save to gmail_service_tokens table:', dbErr.message);
+    }
+  }
+
+  /**
    * Resolves a valid Google OAuth2 access token for the sending account.
    * Checks:
    * 1. In-memory cached token if still valid
-   * 2. GMAIL_REFRESH_TOKEN or GOOGLE_REFRESH_TOKEN in .env
-   * 3. user_google_tokens table in Supabase
+   * 2. gmail_service_tokens table in Supabase
+   * 3. GMAIL_REFRESH_TOKEN or GOOGLE_REFRESH_TOKEN in .env
+   * 4. user_google_tokens table in Supabase
    *
    * @returns {Promise<string|null>}
    */
@@ -96,12 +123,32 @@ class GmailApiService {
     }
 
     // Check refresh token sources
-    let refreshToken =
-      process.env.GMAIL_REFRESH_TOKEN ||
-      process.env.GOOGLE_REFRESH_TOKEN ||
-      '';
+    let refreshToken = '';
 
-    // If not in .env, check user_google_tokens table for any stored refresh token
+    // 1. Check dedicated service tokens table
+    try {
+      const { data: serviceToken } = await supabaseAdmin
+        .from('gmail_service_tokens')
+        .select('refresh_token')
+        .eq('id', 'default')
+        .maybeSingle();
+
+      if (serviceToken?.refresh_token) {
+        refreshToken = serviceToken.refresh_token;
+      }
+    } catch {
+      // Table might not exist yet
+    }
+
+    // 2. Check process.env
+    if (!refreshToken) {
+      refreshToken =
+        process.env.GMAIL_REFRESH_TOKEN ||
+        process.env.GOOGLE_REFRESH_TOKEN ||
+        '';
+    }
+
+    // 3. Fallback to user_google_tokens table for any stored refresh token
     if (!refreshToken) {
       try {
         const { data: tokenRecord } = await supabaseAdmin
@@ -153,13 +200,123 @@ class GmailApiService {
   }
 
   /**
+   * Performs an actual live verification of the Gmail OAuth token with Google servers.
+   * Returns alive, expired, rate_limited, or not_configured.
+   *
+   * @returns {Promise<{ status: 'alive'|'expired'|'rate_limited'|'not_configured', email?: string, scope?: string, expiresIn?: number, message: string }>}
+   */
+  static async checkRealStatus() {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return {
+        status: 'not_configured',
+        message: 'Google Client ID or Client Secret is missing from environment.',
+      };
+    }
+
+    let refreshToken = '';
+    let serviceToken = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('gmail_service_tokens')
+        .select('refresh_token, email, updated_at')
+        .eq('id', 'default')
+        .maybeSingle();
+
+      if (data?.refresh_token) {
+        serviceToken = data;
+        refreshToken = data.refresh_token;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!refreshToken) {
+      refreshToken = process.env.GMAIL_REFRESH_TOKEN || process.env.GOOGLE_REFRESH_TOKEN || '';
+    }
+
+    if (!refreshToken) {
+      return {
+        status: 'not_configured',
+        message: 'No Gmail refresh token is configured.',
+      };
+    }
+
+    // Force fresh validation or use valid access token
+    const accessToken = await this.getValidAccessToken();
+    if (!accessToken) {
+      return {
+        status: 'expired',
+        message: 'Gmail refresh token has expired or was revoked by Google.',
+      };
+    }
+
+    // Hit Google tokeninfo API to verify live validity
+    try {
+      const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${accessToken}`);
+      const infoData = await infoRes.json();
+
+      if (!infoRes.ok || infoData.error) {
+        return {
+          status: 'expired',
+          message: infoData.error_description || infoData.error || 'Token validation failed with Google.',
+        };
+      }
+
+      // Check if gmail.send scope is granted
+      const scopeStr = infoData.scope || '';
+      const hasGmailSend = scopeStr.includes('gmail.send');
+      const expiresInSec = Number(infoData.expires_in) || 3600;
+      const accessMins = Math.max(1, Math.floor(expiresInSec / 60));
+
+      // Real expiration timing calculation:
+      // 1. Live Google Access Token: expires in `accessMins` minutes (auto-renewed by backend refresh token)
+      // 2. Google OAuth Refresh Token: For Google Cloud apps in "Testing" status, Google expires refresh tokens after 7 days
+      let daysLeft = null;
+      let expirationTiming = `Live Access: auto-refreshes in ${accessMins}m`;
+
+      if (serviceToken?.updated_at) {
+        const authDate = new Date(serviceToken.updated_at);
+        if (!isNaN(authDate.getTime())) {
+          const daysPassed = (Date.now() - authDate.getTime()) / (1000 * 60 * 60 * 24);
+          daysLeft = Math.max(0, Math.ceil(7 - daysPassed));
+          expirationTiming = `Expires in ~${daysLeft}d (Test Token) • Session renews in ${accessMins}m`;
+        }
+      }
+
+      return {
+        status: 'alive',
+        isRealCheck: true,
+        email: infoData.email || process.env.EMAIL_ID || process.env.GOOGLE_SENDER_EMAIL || 'Configured Sender',
+        expiresIn: expiresInSec,
+        sessionMinsLeft: accessMins,
+        testModeDaysLeft: daysLeft,
+        authorizedAt: serviceToken?.updated_at || null,
+        expirationTiming,
+        scope: scopeStr,
+        hasGmailSend,
+        message: hasGmailSend
+          ? `Verified live with Google OAuth. Access token valid for ${accessMins}m (auto-refreshes via stored refresh token).`
+          : 'Token is valid but missing gmail.send permission.',
+      };
+    } catch (err) {
+      return {
+        status: 'expired',
+        message: `Failed to contact Google OAuth API: ${err.message}`,
+      };
+    }
+  }
+
+  /**
    * Checks whether Gmail API credentials (Client ID, Client Secret, Refresh Token) are fully configured.
    *
    * @returns {Promise<boolean>}
    */
   static async isConfigured() {
-    const token = await this.getValidAccessToken();
-    return Boolean(token);
+    const status = await this.checkRealStatus();
+    return status.status === 'alive';
   }
 
   /**

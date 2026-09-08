@@ -34,6 +34,8 @@ import {
   formatEventTimeRange,
   stripMarkdown,
 } from '@/lib/formUtils';
+import { GmailAuthCard } from '@/components/admin/GmailAuthCard';
+
 
 export const AdminEventsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -84,7 +86,19 @@ export const AdminEventsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    // Check if returning from Google OAuth consent flow
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail_auth') === 'success') {
+      toast({
+        title: 'Gmail API Connected Successfully',
+        description: 'The refresh token was updated and queued confirmation emails are being sent.',
+      });
+      // Clean up the URL query
+      navigate('/admin/events', { replace: true });
+    }
   }, []);
+
 
   // Filter events based on search query and status
   const filteredEvents = useMemo(() => {
@@ -228,6 +242,9 @@ export const AdminEventsPage: React.FC = () => {
             </Link>
           </div>
         </div>
+
+        {/* Gmail API OAuth Health & Queue Management Card */}
+        <GmailAuthCard onQueueUpdated={loadData} />
 
         {/* Quick Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

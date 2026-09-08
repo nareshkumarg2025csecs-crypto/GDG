@@ -9,6 +9,8 @@ const {
   syncGoogleProfile,
   getGmailOAuthUrl,
   handleGmailOAuthCallback,
+  getGmailStatus,
+  drainGmailQueue,
   validateAdminCode,
 } = require('../controllers/authController');
 const {
@@ -16,7 +18,7 @@ const {
   saveGoogleTokens,
   getGoogleLinkStatus,
 } = require('../controllers/calendarController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   adminLoginLimiter,
   studentLoginLimiter,
@@ -80,8 +82,11 @@ router.get('/google/link', requireAuth, getGoogleLinkUrl);
 router.post('/google/tokens', requireAuth, saveGoogleTokens);
 router.get('/google/status', requireAuth, getGoogleLinkStatus);
 
-// Official Gmail REST API Authorization (Scope: https://www.googleapis.com/auth/gmail.send)
+// Official Gmail REST API Authorization & Live Health Monitoring
 router.get('/google/gmail-auth-url', getGmailOAuthUrl);
 router.get('/google/gmail-callback', handleGmailOAuthCallback);
+router.get('/google/gmail-status', requireAuth, requireRole('admin'), getGmailStatus);
+router.post('/google/gmail-drain-queue', requireAuth, requireRole('admin'), drainGmailQueue);
 
 module.exports = router;
+

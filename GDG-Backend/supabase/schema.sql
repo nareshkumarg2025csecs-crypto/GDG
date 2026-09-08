@@ -330,3 +330,74 @@ CREATE POLICY "Users can insert own calendar additions"
     TO authenticated
     WITH CHECK (auth.uid() = user_id);
 
+
+-- ==============================================================================
+-- 11. Gmail Service Tokens Table (System-wide OAuth2 Refresh Token for Gmail API)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.gmail_service_tokens (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    refresh_token TEXT NOT NULL,
+    email TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on gmail_service_tokens (Server-side service role only)
+ALTER TABLE public.gmail_service_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can view gmail service tokens" ON public.gmail_service_tokens;
+CREATE POLICY "Admins can view gmail service tokens"
+    ON public.gmail_service_tokens
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+        )
+    );
+
+
+-- ==============================================================================
+-- 12. Email Queue Table (Fault-tolerant Async Staging for Registration Emails)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.email_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    to_email TEXT NOT NULL,
+    attendee_name TEXT,
+    subject TEXT NOT NULL,
+    html TEXT NOT NULL,
+    text TEXT,
+    ticket_id TEXT,
+    event_id UUID REFERENCES public.events(id) ON DELETE CASCADE,
+    form_id UUID REFERENCES public.forms(id) ON DELETE CASCADE,
+    submission_id UUID REFERENCES public.form_submissions(id) ON DELETE CASCADE,
+    attachments JSONB DEFAULT '[]'::jsonb,
+    headers JSONB DEFAULT '{}'::jsonb,
+    status TEXT DEFAULT 'pending' NOT NULL CHECK (status IN ('pending', 'processing', 'sent', 'failed')),
+    attempts INT DEFAULT 0 NOT NULL,
+    last_error TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    sent_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_queue_status ON public.email_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_email_queue_event_id ON public.email_queue(event_id);
+CREATE INDEX IF NOT EXISTS idx_email_queue_submission_id ON public.email_queue(submission_id);
+
+-- Enable RLS on email_queue
+ALTER TABLE public.email_queue ENABLE ROW LEVEL SECURITY;
+
+-- Admins can view and monitor email queue
+DROP POLICY IF EXISTS "Admins can view email queue" ON public.email_queue;
+CREATE POLICY "Admins can view email queue"
+    ON public.email_queue
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+        )
+    );
+
+

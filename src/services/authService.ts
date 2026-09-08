@@ -127,4 +127,54 @@ export const authService = {
       body: JSON.stringify(payload),
     });
   },
+
+  async getGmailStatus(token?: string | null): Promise<GmailStatusResponse> {
+    return apiRequest<GmailStatusResponse>('/api/auth/google/gmail-status', {
+      method: 'GET',
+      token,
+    });
+  },
+
+  async getGmailAuthUrl(): Promise<GmailAuthUrlResponse> {
+    return apiRequest<GmailAuthUrlResponse>('/api/auth/google/gmail-auth-url', {
+      method: 'GET',
+    });
+  },
+
+  async drainGmailQueue(token?: string | null): Promise<{ message: string; result: any }> {
+    return apiRequest<{ message: string; result: any }>('/api/auth/google/gmail-drain-queue', {
+      method: 'POST',
+      token,
+    });
+  },
 };
+
+export interface GmailStatusResponse {
+  message: string;
+  status: 'alive' | 'expired' | 'rate_limited' | 'not_configured' | 'error';
+  email?: string;
+  expiresIn?: number;
+  sessionMinsLeft?: number;
+  testModeDaysLeft?: number | null;
+  authorizedAt?: string | null;
+  isRealCheck?: boolean;
+  expirationTiming?: string;
+  scope?: string;
+  hasGmailSend?: boolean;
+  queue: {
+    pending: number;
+    sent: number;
+    failed: number;
+    total: number;
+    lastQueuedAt?: string | null;
+  };
+}
+
+
+export interface GmailAuthUrlResponse {
+  message: string;
+  auth_url: string;
+  scope: string;
+  redirect_uri: string;
+}
+

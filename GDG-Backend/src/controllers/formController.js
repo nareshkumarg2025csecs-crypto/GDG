@@ -571,8 +571,24 @@ const submitForm = async (req, res) => {
             })
             .eq('id', submission.id);
           console.log(`[submitForm] Database updated with email_sent=true for submission ${submission.id} (${ticketId})`);
+        } else if (emailResult && emailResult.queued) {
+          console.log(`[submitForm] Registration email safely queued for submission ${submission.id} (${ticketId})`);
+          await supabaseAdmin
+            .from('form_submissions')
+            .update({
+              ticket_id: ticketId,
+              email_sent: false,
+              answers: {
+                ...submissionAnswers,
+                ticket_id: ticketId,
+                email_queued: true,
+                email_queue_id: emailResult.queueId,
+              },
+            })
+            .eq('id', submission.id);
         }
       }
+
     } catch (emailErr) {
       console.warn('[submitForm] Automated email dispatch failed (non-blocking):', emailErr.message);
     }

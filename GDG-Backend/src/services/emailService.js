@@ -1,5 +1,192 @@
 const QRCode = require('qrcode');
 const GmailApiService = require('./gmailApiService');
+const EmailQueueService = require('./emailQueueService');
+
+/**
+ * Replaces dynamic variables in custom email drafts.
+ */
+function interpolateVariables(template, vars) {
+  if (!template) return '';
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
+    const lowerKey = key.toLowerCase();
+    if (vars[lowerKey] !== undefined && vars[lowerKey] !== null) {
+      return vars[lowerKey];
+    }
+    return match;
+  });
+}
+
+/**
+ * Builds a clean, responsive HTML wrapper for custom email drafts.
+ */
+function buildCustomHtmlEmail({
+  customBody,
+  eventTitle,
+  ticketId,
+  attendeeName,
+  eventDateFormatted,
+  eventTimeFormatted,
+  eventVenue,
+  digitalPassLink,
+  includeQr = true,
+}) {
+  const qrSection = includeQr ? `
+    <!-- Digital Pass QR Card -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+        Official Digital Event Pass
+      </div>
+      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
+        ${ticketId}
+      </div>
+      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
+        <img
+          src="cid:ticket-qr-code"
+          alt="Ticket QR - ${ticketId}"
+          width="160"
+          height="160"
+          style="display: block; width: 160px; height: 160px; border: 0; outline: none; border-radius: 8px; margin: 0 auto;"
+        />
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
+        📱 Present this QR pass at the venue entrance desk for verification.
+      </div>
+    </div>
+    <!-- /Digital Pass QR Card -->
+  ` : '';
+
+  let trimmed = (customBody || '').trim();
+
+  // 1. If explicit {{qr_code}} placeholder is provided, replace it directly in that exact location
+  if (/\{\{\s*qr_code\s*\}\}/i.test(trimmed)) {
+    trimmed = trimmed.replace(/\{\{\s*qr_code\s*\}\}/gi, qrSection);
+  } else if (!includeQr) {
+    // 2. If QR is disabled, strip any existing QR card from template
+    trimmed = trimmed
+      .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, '')
+      .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, '');
+  } else {
+    // 3. QR is enabled: check if the template already has a QR pass card
+    const alreadyHasQrCard =
+      trimmed.includes('<!-- Digital Pass QR Card -->') ||
+      trimmed.includes('Official Digital Event Pass') ||
+      trimmed.includes('cid:ticket-qr-code') ||
+      trimmed.includes('create-qr-code');
+
+    if (!alreadyHasQrCard) {
+      // Insert in the same spot as default email (before notice, CTA, or footer)
+      if (trimmed.includes('<!-- Important Notice')) {
+        trimmed = trimmed.replace('<!-- Important Notice', `${qrSection}\n\n    <!-- Important Notice`);
+      } else if (trimmed.includes('<!-- Call to Action')) {
+        trimmed = trimmed.replace('<!-- Call to Action', `${qrSection}\n\n    <!-- Call to Action`);
+      } else if (trimmed.includes('<!-- Footer')) {
+        trimmed = trimmed.replace('<!-- Footer', `${qrSection}\n\n  <!-- Footer`);
+      } else if (trimmed.includes('</div>\n  </div>')) {
+        trimmed = trimmed.replace('</div>\n  </div>', `${qrSection}\n  </div>\n  </div>`);
+      } else if (trimmed.includes('</body>')) {
+        trimmed = trimmed.replace('</body>', `${qrSection}\n</body>`);
+      } else {
+        trimmed = `${trimmed}\n${qrSection}`;
+      }
+    } else {
+      // Already has QR card: replace external preview QR image URL with cid:ticket-qr-code for reliable inline email delivery
+      trimmed = trimmed.replace(
+        /https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/gi,
+        'cid:ticket-qr-code'
+      );
+    }
+  }
+
+  // Check if trimmed is already a full email document or complete styled card (like DEFAULT_EMAIL_HTML_DRAFT)
+  const isFullDoc = trimmed.toLowerCase().includes('<html') || trimmed.toLowerCase().startsWith('<!doctype');
+  if (isFullDoc) {
+    return trimmed;
+  }
+
+  const isCardContainer =
+    trimmed.includes('max-width: 600px') ||
+    trimmed.includes('Registration Confirmed') ||
+    trimmed.startsWith('<div style="font-family:');
+
+  if (isCardContainer) {
+    // Wrap cleanly in standard email HTML doctype and body without nested double tables or duplicate QR
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${eventTitle}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  ${trimmed}
+</body>
+</html>`;
+  }
+
+  // If custom HTML snippet/elements are provided, preserve all HTML tags
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(trimmed);
+  const formattedBody = hasHtmlTags
+    ? trimmed
+    : trimmed.split('\n\n').map(p => `<p style="margin: 0 0 16px 0; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`).join('');
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${eventTitle}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f1f5f9; padding: 24px 12px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
+          <!-- Top Accent Bar -->
+          <tr>
+            <td style="background: linear-gradient(90deg, #4285F4, #EA4335, #FBBC04, #34A853); height: 5px; font-size: 0; line-height: 0;">&nbsp;</td>
+          </tr>
+          <!-- Header -->
+          <tr>
+            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #f1f5f9;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td>
+                    <span style="font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+                      <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
+                    </span>
+                  </td>
+                  <td align="right">
+                    <span style="font-size: 12px; font-weight: 600; color: #64748b; background: #f1f5f9; padding: 4px 12px; border-radius: 50px;">
+                      Registration Update
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 32px; font-size: 15px; line-height: 1.6; color: #334155;">
+              ${formattedBody}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 12px; color: #94a3b8;">
+              <p style="margin: 0 0 4px 0;">Google Developer Groups (GDG) On Campus</p>
+              <p style="margin: 0;">Need help? Reply directly to this email or reach out to your campus leads.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+}
+
 
 /**
  * Formats a date string into readable wall-clock representation.
@@ -140,39 +327,61 @@ const EmailService = {
       const eventLink = `${clientUrl}/events/${event?.id || ''}`;
       const digitalPassLink = `${clientUrl}/events/${event?.id || ''}/register?ticket=${encodeURIComponent(rawTicketId)}`;
 
-      // Build structured QR text encoding all fields
-      const qrLines = [
-        'GDG EVENT TICKET',
-        '==============================',
-        `Event: ${eventTitle}`,
-        `Ticket ID: ${ticketId}`,
-        `Name: ${attendeeName || 'Attendee'}`,
-        `Email: ${to}`,
-      ];
-
-      // Append custom form answers
+      // Submission answers and form fields definition
       const answers = submission?.answers || {};
       const fields = form?.schema?.fields || [];
-      fields.forEach((field) => {
-        if (field.name !== 'email' && field.name !== 'full_name' && field.name !== 'ticket_id' && field.name !== 'email_sent') {
-          const val = answers[field.name];
-          if (val !== undefined && val !== null && val !== '') {
-            qrLines.push(`${field.label || field.name}: ${val}`);
+
+      // Build structured QR text encoding all fields (Default vs Manual Config)
+      let fullQrText = '';
+      const qrConfig = form?.schema?.qr_config || {};
+
+      if (qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()) {
+        const qrVars = {
+          name: attendeeName || 'Attendee',
+          email: to,
+          event_title: rawEventTitle,
+          ticket_id: rawTicketId,
+          venue: eventDetails.location || eventDetails.venue || 'Campus Venue / TBA',
+          date: formatEmailDate(eventDetails.startTime || eventDetails.start_time),
+          time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
+          ticket_link: digitalPassLink,
+          event_link: eventLink,
+          ...answers,
+        };
+        fullQrText = interpolateVariables(qrConfig.content, qrVars);
+      } else {
+        const qrLines = [
+          'GDG EVENT TICKET',
+          '==============================',
+          `Event: ${eventTitle}`,
+          `Ticket ID: ${ticketId}`,
+          `Name: ${attendeeName || 'Attendee'}`,
+          `Email: ${to}`,
+        ];
+
+        // Append custom form answers
+        fields.forEach((field) => {
+          if (field.name !== 'email' && field.name !== 'full_name' && field.name !== 'ticket_id' && field.name !== 'email_sent') {
+            const val = answers[field.name];
+            if (val !== undefined && val !== null && val !== '') {
+              qrLines.push(`${field.label || field.name}: ${val}`);
+            }
           }
-        }
-      });
+        });
 
-      qrLines.push('------------------------------');
-      qrLines.push(`Date: ${eventDateFormatted}`);
-      qrLines.push(`Time: ${eventTimeFormatted}`);
-      qrLines.push(`Venue: ${eventVenue}`);
-      qrLines.push(`Registered: ${new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US')}`);
-      qrLines.push('==============================');
-      qrLines.push('Google Developer Groups (GDG) On Campus');
-      qrLines.push('Present this QR pass at check-in desk.');
+        qrLines.push('------------------------------');
+        qrLines.push(`Date: ${eventDateFormatted}`);
+        qrLines.push(`Time: ${eventTimeFormatted}`);
+        qrLines.push(`Venue: ${eventVenue}`);
+        qrLines.push(`Registered: ${new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US')}`);
+        qrLines.push('==============================');
+        qrLines.push('Google Developer Groups (GDG) On Campus');
+        qrLines.push('Present this QR pass at check-in desk.');
+        fullQrText = qrLines.join('\n');
+      }
 
-      const fullQrText = qrLines.join('\n');
       const qrBuffer = await QRCode.toBuffer(fullQrText, {
+
         width: 320,
         margin: 2,
         errorCorrectionLevel: 'M',
@@ -437,6 +646,49 @@ const EmailService = {
 </html>
       `;
 
+      // Check for Custom Email Draft Configuration
+      const emailConfig = form?.schema?.email_config || {};
+      const isCustomMode = emailConfig.mode === 'custom' && (emailConfig.subject || emailConfig.html || emailConfig.body);
+
+      let finalHtml = htmlContent;
+      let finalSubject = `Registration Confirmed: ${eventTitle} (Ticket ${ticketId})`;
+      let finalText = `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your digital pass and QR code online: ${digitalPassLink}\n\nGDG On Campus`;
+
+      if (isCustomMode) {
+        const customVars = {
+          name: attendeeName || 'Attendee',
+          email: to,
+          event_title: rawEventTitle,
+          ticket_id: rawTicketId,
+          venue: eventDetails.location || eventDetails.venue || 'Campus Venue / TBA',
+          date: formatEmailDate(eventDetails.startTime || eventDetails.start_time),
+          time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
+          ticket_link: digitalPassLink,
+          event_link: eventLink,
+        };
+
+        if (emailConfig.subject) {
+          finalSubject = interpolateVariables(emailConfig.subject, customVars);
+        }
+
+        const rawBody = emailConfig.html || emailConfig.body || '';
+        const populatedBody = interpolateVariables(rawBody, customVars);
+
+        finalHtml = buildCustomHtmlEmail({
+          customBody: populatedBody,
+          eventTitle,
+          ticketId,
+          attendeeName: safeAttendeeName,
+          eventDateFormatted,
+          eventTimeFormatted,
+          eventVenue,
+          digitalPassLink,
+          includeQr: emailConfig.include_qr !== false,
+        });
+
+        finalText = `${populatedBody.replace(/<[^>]+>/g, '')}\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nVenue: ${eventVenue}\nPass: ${digitalPassLink}`;
+      }
+
       // 1. Primary Dispatch Method: Official Google Gmail REST API (Scope: https://www.googleapis.com/auth/gmail.send)
       const gmailAttachments = [
         {
@@ -448,14 +700,11 @@ const EmailService = {
         },
       ];
 
-      const emailSubject = `Registration Confirmed: ${eventTitle} (Ticket ${ticketId})`;
-      const emailText = `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your digital pass and QR code online: ${digitalPassLink}\n\nGDG On Campus`;
-
       const gmailApiResult = await GmailApiService.sendMail({
         to,
-        subject: emailSubject,
-        html: htmlContent,
-        text: emailText,
+        subject: finalSubject,
+        html: finalHtml,
+        text: finalText,
         senderEmail,
         attachments: gmailAttachments,
         headers: {
@@ -465,7 +714,7 @@ const EmailService = {
 
       if (gmailApiResult.success) {
         console.log(
-          `[EmailService] Confirmation email successfully sent via Gmail API (Scope: https://www.googleapis.com/auth/gmail.send) to ${to} (Ticket: ${ticketId}): Message ID ${gmailApiResult.messageId}`
+          `[EmailService] Confirmation email successfully sent via Gmail API to ${to} (Ticket: ${ticketId}): Message ID ${gmailApiResult.messageId}`
         );
         return {
           success: true,
@@ -475,17 +724,57 @@ const EmailService = {
         };
       }
 
-      console.error(
-        `[EmailService] Gmail API dispatch failed for ${to} (Ticket: ${ticketId}): ${gmailApiResult.error || gmailApiResult.message}`
+      // Fallback: If token expired, missing, or rate limit hit, enqueue email for reliable asynchronous dispatch
+      console.warn(
+        `[EmailService] Gmail API dispatch failed for ${to} (${gmailApiResult.error || gmailApiResult.message}). Enqueueing email safely...`
       );
+
+      const queueResult = await EmailQueueService.enqueueEmail({
+        to,
+        attendeeName,
+        subject: finalSubject,
+        html: finalHtml,
+        text: finalText,
+        ticketId: rawTicketId,
+        eventId: event?.id,
+        formId: form?.id,
+        submissionId: submission?.id,
+        attachments: gmailAttachments,
+        headers: {
+          'X-Entity-Ref-ID': `${event?.id || 'event'}-${ticketId}`,
+        },
+        lastError: gmailApiResult.error || gmailApiResult.message || 'Dispatch failed',
+      });
+
       return {
         success: false,
-        error: gmailApiResult.error || gmailApiResult.message || 'Gmail API dispatch failed',
-        ticketId,
+        queued: true,
+        queueId: queueResult.id,
+        ticketId: rawTicketId,
+        error: gmailApiResult.error || 'QUEUED_FOR_REAUTH',
+        message: 'Gmail API token expired or quota hit. Registration email safely queued.',
       };
     } catch (err) {
       console.error('[EmailService] Failed to send registration email via Gmail API:', err.message);
-      return { success: false, error: err.message };
+
+      // Even on exception, attempt to enqueue
+      try {
+        const queueResult = await EmailQueueService.enqueueEmail({
+          to,
+          attendeeName,
+          subject: `Registration Confirmed: ${event?.title || 'GDG Event'}`,
+          html: `<p>Registration confirmed for ${event?.title || 'GDG Event'}.</p>`,
+          text: `Registration confirmed.`,
+          ticketId: submission?.ticket_id,
+          eventId: event?.id,
+          formId: form?.id,
+          submissionId: submission?.id,
+          lastError: err.message,
+        });
+        return { success: false, queued: true, queueId: queueResult.id, error: err.message };
+      } catch {
+        return { success: false, error: err.message };
+      }
     }
   },
 };

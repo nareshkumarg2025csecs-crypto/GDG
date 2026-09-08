@@ -28,6 +28,10 @@ import {
   Sliders,
   Check,
   Loader2,
+  Mail,
+  Send,
+  Copy,
+  QrCode,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
 import { eventService } from '@/services/eventService';
@@ -47,6 +51,40 @@ import {
   formatEventTimeRange,
 } from '@/lib/formUtils';
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
+import {
+  DEFAULT_EMAIL_HTML_DRAFT,
+  DEFAULT_QR_PAYLOAD_PRESET,
+  QR_PAYLOAD_PRESETS,
+} from '@/lib/emailTemplates';
+
+export interface EmailDraftConfig {
+  mode: 'default' | 'custom';
+  subject: string;
+  body: string;
+  include_qr: boolean;
+}
+
+export interface QrCodeConfig {
+  mode: 'default' | 'manual';
+  content: string;
+}
+
+/**
+ * Safely converts an ISO datetime string to browser local YYYY-MM-DDTHH:mm format
+ * for datetime-local inputs without timezone distortion.
+ */
+export const isoToLocalInput = (isoStr?: string | null): string => {
+  if (!isoStr) return '';
+  if (typeof isoStr === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(isoStr)) {
+    return isoStr;
+  }
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) {
+    return typeof isoStr === 'string' ? isoStr.replace(/Z$/i, '').slice(0, 16) : '';
+  }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 const GOOGLE_THEME_COLORS = [
   { name: 'Google Blue', hex: '#4285F4' },
@@ -193,6 +231,131 @@ export const AdminEventEditorPage: React.FC = () => {
   const [sheetsUrl, setSheetsUrl] = useState(''); // Optional Google Sheets URL for auto-logging submissions
   const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
+  // Email Notification & Draft Configuration State
+  const [emailConfig, setEmailConfig] = useState<EmailDraftConfig>({
+    mode: 'default',
+    subject: 'Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})',
+    body: DEFAULT_EMAIL_HTML_DRAFT,
+    include_qr: true,
+  });
+  const [emailViewMode, setEmailViewMode] = useState<'visual' | 'code'>('code');
+  const [showEmailPreviewModal, setShowEmailPreviewModal] = useState(false);
+
+  // Check-in QR Code Scanned Payload Configuration State
+  const [qrConfig, setQrConfig] = useState<QrCodeConfig>({
+    mode: 'default',
+    content: DEFAULT_QR_PAYLOAD_PRESET,
+  });
+
+  // Helper to construct visual HTML for email preview with identical design and in-body QR placement as default pass
+  const buildVisualEmailHtml = (rawBody: string, includeQr: boolean) => {
+    let content = rawBody || '';
+
+    // Interpolate standard attendee & event placeholders
+    content = content
+      .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+      .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+
+    const rawQrTemplate =
+      qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
+        ? qrConfig.content
+        : DEFAULT_QR_PAYLOAD_PRESET;
+
+    const populatedQrContent = rawQrTemplate
+      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+      .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+      .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+
+    const qrPayload = encodeURIComponent(populatedQrContent);
+
+    // EXACT same official dark gradient pass card design as default email
+    const qrCardMarkup = `
+    <!-- Digital Pass QR Card -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+        Official Digital Event Pass
+      </div>
+      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
+        TKT-GDG8492
+      </div>
+      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
+        <img
+          src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}"
+          alt="Ticket QR - TKT-GDG8492"
+          width="150"
+          height="150"
+          style="display: block; border-radius: 8px; margin: 0 auto;"
+        />
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
+        📱 Present this QR pass at the venue entrance desk for verification.
+      </div>
+    </div>
+    <!-- /Digital Pass QR Card -->`;
+
+    // 1. If explicit {{qr_code}} placeholder is present, replace it in place
+    if (/\{\{\s*qr_code\s*\}\}/i.test(content)) {
+      return content.replace(/\{\{\s*qr_code\s*\}\}/gi, includeQr ? qrCardMarkup : '');
+    }
+
+    // 2. If QR is disabled, strip any existing QR card from template markup
+    if (!includeQr) {
+      return content
+        .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, '')
+        .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, '');
+    }
+
+    // 3. If QR is enabled and already has the digital pass card, update its payload with all details and return without injecting another
+    if (
+      content.includes('<!-- Digital Pass QR Card -->') ||
+      content.includes('Official Digital Event Pass') ||
+      content.includes('cid:ticket-qr-code') ||
+      content.includes('create-qr-code')
+    ) {
+      let updated = content;
+      if (updated.includes('cid:ticket-qr-code')) {
+        updated = updated.replace(/cid:ticket-qr-code/g, `https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}`);
+      }
+      if (/https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/i.test(updated)) {
+        updated = updated.replace(
+          /https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/gi,
+          `https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}`
+        );
+      }
+      return updated;
+    }
+
+    // 4. Place QR in the same place as default email: inside the card, before Important Notice, CTA button, or footer
+    if (content.includes('<!-- Important Notice')) {
+      return content.replace('<!-- Important Notice', `${qrCardMarkup}\n\n    <!-- Important Notice`);
+    }
+    if (content.includes('<!-- Call to Action')) {
+      return content.replace('<!-- Call to Action', `${qrCardMarkup}\n\n    <!-- Call to Action`);
+    }
+    if (content.includes('<!-- Footer')) {
+      return content.replace('<!-- Footer', `${qrCardMarkup}\n\n  <!-- Footer`);
+    }
+    if (content.includes('</div>\n  </div>')) {
+      return content.replace('</div>\n  </div>', `${qrCardMarkup}\n  </div>\n  </div>`);
+    }
+    if (content.includes('</body>')) {
+      return content.replace('</body>', `${qrCardMarkup}\n</body>`);
+    }
+
+    return `${content}\n${qrCardMarkup}`;
+  };
+
   // Live Preview Modal State
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
@@ -214,7 +377,7 @@ export const AdminEventEditorPage: React.FC = () => {
 
   // Prevent background scroll when modal preview is open (Desktop & Mobile)
   useEffect(() => {
-    if (showPreviewModal) {
+    if (showPreviewModal || showEmailPreviewModal) {
       stopLenis();
       document.body.style.overflow = 'hidden';
     } else {
@@ -225,7 +388,8 @@ export const AdminEventEditorPage: React.FC = () => {
       startLenis();
       document.body.style.overflow = '';
     };
-  }, [showPreviewModal]);
+  }, [showPreviewModal, showEmailPreviewModal]);
+
 
   // Convert uploaded image file to high-resolution, crystal-clear Base64 data URL without blur
   const processImageFile = (file: File, qualityPreset: 'original' | '2k' | 'hd' = imageQuality) => {
@@ -360,15 +524,11 @@ export const AdminEventEditorPage: React.FC = () => {
         }
 
         if (details.startTime || details.start_time) {
-          const raw = details.startTime || details.start_time;
-          const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
-          setStartTime(clean);
+          setStartTime(isoToLocalInput(details.startTime || details.start_time));
         }
 
         if (details.endTime || details.end_time) {
-          const raw = details.endTime || details.end_time;
-          const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
-          setEndTime(clean);
+          setEndTime(isoToLocalInput(details.endTime || details.end_time));
         }
 
         // Fetch attached form
@@ -381,9 +541,7 @@ export const AdminEventEditorPage: React.FC = () => {
             setHasForm(true);
 
             if (form.expires_at || form.schema?.expires_at) {
-              const raw = form.expires_at || form.schema?.expires_at;
-              const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
-              setExpiresAt(clean);
+              setExpiresAt(isoToLocalInput(form.expires_at || form.schema?.expires_at));
             }
 
             if (form.schema?.fields && Array.isArray(form.schema.fields)) {
@@ -400,7 +558,29 @@ export const AdminEventEditorPage: React.FC = () => {
             if (form.schema?.sheets_url) {
               setSheetsUrl(form.schema.sheets_url);
             }
+
+            // Load existing Email Draft configuration
+            if (form.schema?.email_config) {
+              const cfg = form.schema.email_config;
+              setEmailConfig({
+                mode: cfg.mode === 'custom' ? 'custom' : 'default',
+                subject: cfg.subject || 'Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})',
+                body: cfg.body || cfg.html || DEFAULT_EMAIL_HTML_DRAFT,
+                include_qr: cfg.include_qr !== false,
+              });
+            }
+
+            // Load existing QR Code Scanned Payload configuration
+            if (form.schema?.qr_config) {
+              const qcfg = form.schema.qr_config;
+              setQrConfig({
+                mode: qcfg.mode === 'manual' ? 'manual' : 'default',
+                content: qcfg.content || DEFAULT_QR_PAYLOAD_PRESET,
+              });
+            }
           } else {
+
+
             setHasForm(false);
           }
         } catch {
@@ -478,26 +658,60 @@ export const AdminEventEditorPage: React.FC = () => {
     setFormFields(formFields.filter((_, i) => i !== index));
   };
 
-  // Expiration presets
+  // Expiration presets with zero timezone distortion
   const applyExpiryPreset = (preset: 'start' | '1day' | '2hours') => {
     if (!startTime) {
       toast({
-        title: 'Set Start Time first',
-        description: 'Please set the event start date and time.',
+        title: 'Set Event Start Time First',
+        description: 'Please pick an Event Start Date & Time above before setting registration deadline presets.',
+        variant: 'destructive',
       });
       return;
     }
-    const startDate = new Date(startTime);
-    if (isNaN(startDate.getTime())) return;
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const [datePart, timePart = '00:00'] = startTime.split('T');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [hh, mm] = timePart.split(':').map(Number);
+
+    if (isNaN(y) || isNaN(m) || isNaN(d)) {
+      toast({
+        title: 'Invalid Start Time',
+        description: 'Please specify a valid start date and time.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (preset === 'start') {
-      setExpiresAt(startDate.toISOString().slice(0, 16));
+      // Exactly at event start: identical date and time
+      setExpiresAt(startTime);
+      toast({
+        title: 'Deadline Set: At Event Start',
+        description: `Registration will close at event start (${datePart} ${timePart}).`,
+      });
     } else if (preset === '1day') {
-      const d = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
-      setExpiresAt(d.toISOString().slice(0, 16));
+      // Exactly 1 day (24 hours) prior
+      const target = new Date(y, m - 1, d, hh, mm);
+      target.setDate(target.getDate() - 1);
+      const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+      setExpiresAt(formatted);
+      const [newD, newT] = formatted.split('T');
+      toast({
+        title: 'Deadline Set: 1 Day Before Start',
+        description: `Registration will close 1 day before event (${newD} ${newT}).`,
+      });
     } else if (preset === '2hours') {
-      const d = new Date(startDate.getTime() - 2 * 60 * 60 * 1000);
-      setExpiresAt(d.toISOString().slice(0, 16));
+      // Exactly 2 hours prior
+      const target = new Date(y, m - 1, d, hh, mm);
+      target.setHours(target.getHours() - 2);
+      const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+      setExpiresAt(formatted);
+      const [newD, newT] = formatted.split('T');
+      toast({
+        title: 'Deadline Set: 2 Hours Before Start',
+        description: `Registration will close 2 hours before event (${newD} ${newT}).`,
+      });
     }
   };
 
@@ -564,14 +778,23 @@ export const AdminEventEditorPage: React.FC = () => {
 
       // Handle attached form
       if (hasForm && savedEventId) {
-        const formSchema: FormSchema & { sheets_url?: string; is_open?: boolean } = {
+        const formSchema: FormSchema & {
+          sheets_url?: string;
+          is_open?: boolean;
+          email_config?: EmailDraftConfig;
+          qr_config?: QrCodeConfig;
+        } = {
           fields: formFields,
           is_open: isRegistrationOpen,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          email_config: emailConfig,
+          qr_config: qrConfig,
         };
         if (sheetsUrl.trim()) {
           formSchema.sheets_url = sheetsUrl.trim();
         }
+
+
 
         const formPayload = {
           event_id: savedEventId,
@@ -1554,6 +1777,417 @@ export const AdminEventEditorPage: React.FC = () => {
           )}
         </div>
 
+        {/* 4. Automated Registration Email Notification & Custom Draft Builder Card */}
+        {hasForm && (
+          <div className="p-6 sm:p-8 rounded-3xl border bg-card text-card-foreground shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/60 pb-4 gap-3">
+              <div>
+                <h2 className="text-lg font-bold font-sans flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-google-blue" />
+                  <span>Registration Confirmation Email</span>
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure the automated confirmation email dispatched to attendees upon completing this form.
+                </p>
+              </div>
+
+              {/* Default vs Custom Toggle */}
+              <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border border-border self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'default' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    emailConfig.mode === 'default'
+                      ? 'bg-google-blue text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Default QR Pass
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'custom' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    emailConfig.mode === 'custom'
+                      ? 'bg-google-blue text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Custom Email Draft
+                </button>
+              </div>
+            </div>
+
+            {emailConfig.mode === 'default' ? (
+              /* Default Branded Pass Card */
+              <div className="p-5 rounded-2xl bg-muted/30 border border-border space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center text-google-blue shrink-0 mt-0.5">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-foreground">
+                      Standard GDG Digital Pass Email
+                    </h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Every registered student receives an official branded confirmation with their sequential Ticket ID, event schedule, campus venue, calendar synchronization links, and an inline scannable QR pass for fast desk check-in.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailPreviewModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-google-blue" />
+                    <span>Preview Default Email Structure</span>
+                  </button>
+                  <span className="text-[11px] text-muted-foreground">
+                    Zero setup required &bull; 100% responsive layout with QR code
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* Custom Email Draft Editor */
+              <div className="space-y-4">
+                {/* Subject Line */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-foreground">
+                    Email Subject Line
+                  </label>
+                  <input
+                    type="text"
+                    value={emailConfig.subject}
+                    onChange={(e) => setEmailConfig((prev) => ({ ...prev, subject: e.target.value }))}
+                    placeholder="Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-sans shadow-sm"
+                  />
+                </div>
+
+                {/* Variable helper tags chips */}
+                <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                      Dynamic Placeholders (Click to insert):
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      Automatically populated for each registrant
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { tag: '{{name}}', label: 'Attendee Name' },
+                      { tag: '{{event_title}}', label: 'Event Title' },
+                      { tag: '{{ticket_id}}', label: 'Ticket ID' },
+                      { tag: '{{qr_code}}', label: 'Digital Pass QR Card' },
+                      { tag: '{{date}}', label: 'Event Date' },
+                      { tag: '{{time}}', label: 'Event Time' },
+                      { tag: '{{venue}}', label: 'Venue' },
+                      { tag: '{{ticket_link}}', label: 'Digital Pass URL' },
+                    ].map(({ tag, label }) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setEmailConfig((prev) => ({
+                            ...prev,
+                            body: prev.body + ' ' + tag,
+                          }));
+                          toast({ title: 'Tag Inserted', description: `Added ${tag} to draft.` });
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                      >
+                        <span className="text-google-blue font-bold">{tag}</span>
+                        <span className="text-[10px] text-muted-foreground">({label})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Draft Content Editor with HTML Code / Visual Preview Toggle */}
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="block text-xs font-semibold text-foreground">
+                      Email Body Content (Raw HTML Code Supported)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmailConfig((prev) => ({
+                            ...prev,
+                            body: DEFAULT_EMAIL_HTML_DRAFT,
+                          }));
+                          toast({
+                            title: 'Default Structure Loaded',
+                            description: 'Loaded standard GDG confirmation pass HTML template.',
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-semibold text-google-blue transition-colors"
+                      >
+                        Reset to Default HTML Pass
+                      </button>
+
+                      <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border border-border text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setEmailViewMode('code')}
+                          className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
+                            emailViewMode === 'code'
+                              ? 'bg-card text-foreground shadow-xs'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          &lt;/&gt; HTML Code
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmailViewMode('visual')}
+                          className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
+                            emailViewMode === 'visual'
+                              ? 'bg-card text-foreground shadow-xs'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          👁️ Live Output
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {emailViewMode === 'code' ? (
+                    <textarea
+                      rows={12}
+                      value={emailConfig.body}
+                      onChange={(e) => setEmailConfig((prev) => ({ ...prev, body: e.target.value }))}
+                      placeholder="Write your custom HTML email draft here..."
+                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-mono leading-relaxed shadow-sm"
+                    />
+                  ) : (
+                    <div className="p-4 sm:p-5 rounded-2xl border border-border bg-white text-slate-900 shadow-sm max-h-[550px] overflow-y-auto">
+                      <div
+                        className="text-xs leading-relaxed"
+                        dangerouslySetInnerHTML={{
+                          __html: buildVisualEmailHtml(emailConfig.body, emailConfig.include_qr),
+                        }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Accepts pure HTML tags (<code>&lt;div&gt;</code>, <code>&lt;p&gt;</code>, <code>&lt;a&gt;</code>, <code>&lt;table&gt;</code>, inline styles, etc.) or standard formatted text with line breaks.
+                  </p>
+                </div>
+
+                {/* Include QR Pass Toggle & Preview Button */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={emailConfig.include_qr}
+                      onChange={(e) => setEmailConfig((prev) => ({ ...prev, include_qr: e.target.checked }))}
+                      className="rounded border-input text-google-blue focus:ring-google-blue w-4 h-4"
+                    />
+                    <span className="text-xs font-medium text-foreground select-none">
+                      Include Official Digital Pass QR Card in email
+                    </span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailPreviewModal(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border border-google-blue/40 bg-google-blue/10 text-google-blue hover:bg-google-blue/20 transition-all shadow-sm"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Preview Custom Email</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 5. Check-in QR Code Scanned Payload Configuration Card */}
+        {hasForm && (
+          <div className="p-6 sm:p-8 rounded-3xl border bg-card text-card-foreground shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border/60 pb-4 gap-3">
+              <div>
+                <h2 className="text-lg font-bold font-sans flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-google-green" />
+                  <span>Check-in QR Code Content</span>
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Configure what phone cameras or barcode scanners read when scanning this attendee's entry QR pass.
+                </p>
+              </div>
+
+              {/* Default vs Manual Toggle */}
+              <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border border-border self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setQrConfig((prev) => ({ ...prev, mode: 'default' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    qrConfig.mode === 'default'
+                      ? 'bg-google-green text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Default (Full Ticket Info)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrConfig((prev) => ({ ...prev, mode: 'manual' }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    qrConfig.mode === 'manual'
+                      ? 'bg-google-green text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Manual / Custom Content
+                </button>
+              </div>
+            </div>
+
+            {qrConfig.mode === 'default' ? (
+              /* Default Structured Pass Info */
+              <div className="p-5 rounded-2xl bg-muted/30 border border-border space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-google-green/10 border border-google-green/20 flex items-center justify-center text-google-green shrink-0 mt-0.5">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-foreground">
+                      Comprehensive Ticket Data Payload
+                    </h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Scanning this QR code at check-in outputs the structured ticket details including Event Title, Ticket ID, Attendee Full Name, Email, Custom Form Answers, Date, and Venue.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-background border border-border/80 font-mono text-[11px] text-muted-foreground whitespace-pre leading-relaxed overflow-x-auto">
+{`GDG EVENT TICKET
+==============================
+Event: ${title || 'GDG Event'}
+Ticket ID: TKT-DEMO1234
+Name: Alex Johnson
+Email: alex.johnson@campus.edu
+Date: ${startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'}
+Venue: ${location || 'Campus Main Auditorium'}
+==============================
+Google Developer Groups On Campus`}
+                </div>
+              </div>
+            ) : (
+              /* Manual QR Configuration */
+              <div className="space-y-4">
+                {/* Quick Presets */}
+                <div className="space-y-1.5">
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                    Quick Preset Formats:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {QR_PAYLOAD_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setQrConfig((prev) => ({ ...prev, content: preset.content }));
+                          toast({ title: 'Preset Loaded', description: preset.name });
+                        }}
+                        className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Variable helper tags */}
+                <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono block">
+                    Dynamic QR Variables (Click to append):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { tag: '{{ticket_id}}', label: 'Ticket ID' },
+                      { tag: '{{ticket_link}}', label: 'Check-in URL' },
+                      { tag: '{{name}}', label: 'Attendee Name' },
+                      { tag: '{{email}}', label: 'Email' },
+                      { tag: '{{event_title}}', label: 'Event Title' },
+                      { tag: '{{venue}}', label: 'Venue' },
+                      { tag: '{{date}}', label: 'Date' },
+                    ].map(({ tag, label }) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => {
+                          setQrConfig((prev) => ({
+                            ...prev,
+                            content: prev.content ? `${prev.content} ${tag}` : tag,
+                          }));
+                          toast({ title: 'Tag Inserted', description: `Added ${tag} to QR payload.` });
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                      >
+                        <span className="text-google-green font-bold">{tag}</span>
+                        <span className="text-[10px] text-muted-foreground">({label})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Scanned Output Editor and Live QR Scanner Preview Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="block text-xs font-semibold text-foreground">
+                      QR Code Scanned Payload Content
+                    </label>
+                    <textarea
+                      rows={6}
+                      value={qrConfig.content}
+                      onChange={(e) => setQrConfig((prev) => ({ ...prev, content: e.target.value }))}
+                      placeholder="e.g. {{ticket_link}} or TICKET:{{ticket_id}}|USER:{{email}}"
+                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-green font-mono leading-relaxed shadow-sm"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Whatever you type here is exactly what gets encoded into the QR code and read when scanned.
+                    </p>
+                  </div>
+
+                  {/* Live Interactive QR Test on Screen */}
+                  <div className="p-4 rounded-2xl bg-muted/30 border border-border flex flex-col items-center justify-center text-center space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground font-mono">
+                      Live Scanner Test
+                    </span>
+                    <div className="p-2.5 bg-white rounded-xl border border-border shadow-xs">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=130x130&format=png&margin=2&data=${encodeURIComponent(
+                          (qrConfig.content || 'GDG-PASS')
+                            .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-DEMO1234')
+                            .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+                            .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+                            .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Event')
+                            .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Auditorium')
+                            .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Oct 14, 2026')
+                            .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-DEMO1234')
+                        )}`}
+                        alt="Scannable QR Test"
+                        className="w-28 h-28 rounded-lg"
+                      />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      📱 Point phone camera here to test
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+
         {/* Bottom Actions Bar with Live Preview */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-6 border-t border-border">
           <button
@@ -1720,8 +2354,197 @@ export const AdminEventEditorPage: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Live Email Draft Preview Modal */}
+      <AnimatePresence>
+        {showEmailPreviewModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            data-lenis-prevent
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              data-lenis-prevent
+              className="relative w-full max-w-2xl bg-card border border-border rounded-3xl shadow-2xl overflow-hidden my-auto max-h-[90vh] flex flex-col"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/40">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center text-google-blue">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">
+                      Email Draft Preview
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Simulated rendering for recipient: <span className="font-semibold text-foreground">alex.johnson@campus.edu</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailPreviewModal(false)}
+                  className="p-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Subject Bar */}
+              <div className="px-6 py-3 border-b border-border/60 bg-background/50 text-xs flex items-center gap-2">
+                <span className="font-semibold text-muted-foreground uppercase font-mono text-[10px]">Subject:</span>
+                <span className="font-medium text-foreground">
+                  {emailConfig.mode === 'custom' && emailConfig.subject
+                    ? emailConfig.subject
+                        .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+                        .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+                        .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+                        .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+                        .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+                        .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+                        .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492')
+                    : `Registration Confirmed: ${title || 'GDG Tech Summit 2026'} (Ticket TKT-GDG8492)`}
+                </span>
+              </div>
+
+              {/* Email Content Container */}
+              <div className="p-6 overflow-y-auto space-y-4 bg-muted/20 text-foreground font-sans max-h-[70vh]">
+                {(() => {
+                  const draftContent =
+                    emailConfig.mode === 'default'
+                      ? (DEFAULT_EMAIL_HTML_DRAFT || emailConfig.body)
+                      : (emailConfig.body || '');
+
+                  const hasHtmlMarkup = /<\/?[a-z][\s\S]*>/i.test(draftContent);
+
+                  const replaceVariables = (str: string) =>
+                    str
+                      .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+                      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+                      .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+                      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+                      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+                      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+                      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+                      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+
+                  const hasEmbeddedQr = /create-qr-code|ticket-qr-code|<img[^>]*qr/i.test(draftContent);
+                  const rawQrTemplate =
+                    qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
+                      ? qrConfig.content
+                      : DEFAULT_QR_PAYLOAD_PRESET;
+
+                  const populatedQrContent = rawQrTemplate
+                    .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+                    .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+                    .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+                    .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+                    .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+                    .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+                    .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+                    .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+
+                  const qrPayloadData = encodeURIComponent(populatedQrContent);
+
+                  if (hasHtmlMarkup) {
+                    return (
+                      <div className="max-w-xl mx-auto shadow-md rounded-2xl overflow-hidden bg-white text-slate-900 border border-border/80">
+                        <div
+                          dangerouslySetInnerHTML={{
+                            __html: buildVisualEmailHtml(
+                              draftContent,
+                              emailConfig.mode === 'default' || emailConfig.include_qr
+                            ),
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  // Plain text fallback preview
+                  return (
+                    <div className="max-w-xl mx-auto bg-card border border-border/80 rounded-2xl p-6 shadow-sm space-y-5">
+                      {/* GDG Top Header */}
+                      <div className="flex items-center justify-between border-b border-border/60 pb-4">
+                        <span className="text-base font-extrabold tracking-tight">
+                          <span className="text-google-blue">G</span>
+                          <span className="text-google-red">D</span>
+                          <span className="text-google-yellow">G</span> On Campus
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border font-mono">
+                          Registration Confirmed
+                        </span>
+                      </div>
+
+                      {/* Plain Text Body Content */}
+                      <div className="text-xs sm:text-sm text-foreground/90 leading-relaxed whitespace-pre-line">
+                        {replaceVariables(
+                          draftContent ||
+                            `Hi Alex Johnson,\n\nYour registration for ${title || 'GDG Tech Summit 2026'} has been confirmed! Below is your official digital pass.`
+                        )}
+                      </div>
+
+                      {/* QR Pass Card (Same Official Design as Default Pass) */}
+                      {(emailConfig.mode === 'default' || emailConfig.include_qr) && !hasEmbeddedQr && (
+                        <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white text-center space-y-3 shadow-lg border border-slate-700">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-mono">
+                            Official Digital Event Pass
+                          </div>
+                          <div className="text-xl font-bold font-mono tracking-widest text-sky-400">
+                            TKT-GDG8492
+                          </div>
+                          <div className="inline-block p-3 rounded-xl bg-white border border-border shadow-xs">
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&format=png&margin=4&data=${qrPayloadData}`}
+                              alt="Ticket QR Demo"
+                              className="w-36 h-36 mx-auto rounded-lg"
+                            />
+                          </div>
+                          <div className="text-xs text-slate-300 space-y-0.5">
+                            <p>
+                              📅 {startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'} &bull; ⏰{' '}
+                              {startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}
+                            </p>
+                            <p>📍 {location || 'Main Campus Auditorium'}</p>
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            📱 Present this QR pass at the venue entrance desk for verification.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Footer note */}
+                      <div className="pt-4 border-t border-border/50 text-center text-[11px] text-muted-foreground">
+                        Google Developer Groups On Campus &bull; Need help? Reply to this email.
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-end px-6 py-3.5 border-t border-border bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setShowEmailPreviewModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-foreground text-background hover:opacity-90 transition-opacity"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 export default AdminEventEditorPage;
+

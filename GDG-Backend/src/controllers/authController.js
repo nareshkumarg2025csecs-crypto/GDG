@@ -6,6 +6,7 @@ const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
 const GoogleCalendarService = require('../services/googleCalendarService');
 const GmailApiService = require('../services/gmailApiService');
+const EmailQueueService = require('../services/emailQueueService');
 
 /**
  * Helper function for user signup with a fixed role.
@@ -645,6 +646,10 @@ const handleGmailOAuthCallback = async (req, res) => {
     const refreshToken = tokens.refresh_token;
 
     if (refreshToken) {
+      // 1. Save to dedicated DB table and clear cache
+      await GmailApiService.saveRefreshToken(refreshToken);
+
+      // 2. Also update .env file for local development persistence
       const envPath = path.resolve(__dirname, '../../.env');
       try {
         let envContent = fs.readFileSync(envPath, 'utf8');
@@ -655,11 +660,18 @@ const handleGmailOAuthCallback = async (req, res) => {
         }
         fs.writeFileSync(envPath, envContent, 'utf8');
         process.env.GMAIL_REFRESH_TOKEN = refreshToken;
-        console.log('[GmailOAuth] GMAIL_REFRESH_TOKEN saved successfully to .env');
+        console.log('[GmailOAuth] GMAIL_REFRESH_TOKEN saved successfully to .env and database');
       } catch (fileErr) {
         console.warn('Could not write GMAIL_REFRESH_TOKEN to .env file:', fileErr.message);
       }
+
+      // 3. Automatically drain any pending queued registration emails
+      EmailQueueService.drainQueue().catch((drainErr) => {
+        console.warn('[GmailOAuth] Background queue drain error:', drainErr.message);
+      });
     }
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
 
     return res.send(`
       <!DOCTYPE html>
@@ -667,6 +679,7 @@ const handleGmailOAuthCallback = async (req, res) => {
       <head>
         <meta charset="utf-8" />
         <title>Gmail API Connected Successfully</title>
+        <meta http-equiv="refresh" content="3;url=${clientUrl}/admin/events?gmail_auth=success" />
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
           .card { background: #1e293b; padding: 40px; border-radius: 24px; text-align: center; max-width: 480px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
@@ -680,12 +693,12 @@ const handleGmailOAuthCallback = async (req, res) => {
       </head>
       <body>
         <div class="card">
-          <div class="badge">✓ Scope Authorized</div>
-          <h1>Gmail API Connected!</h1>
-          <p>The GDG platform is now connected to Google's official Gmail REST API with the required sending scope:</p>
+          <div class="badge">✓ Scope Authorized &amp; Saved</div>
+          <h1>Gmail API Reconnected!</h1>
+          <p>The GDG platform is now actively authorized with Google's Gmail API. Any pending queued emails are now being drained and dispatched automatically.</p>
           <div class="scope-box">https://www.googleapis.com/auth/gmail.send</div>
-          <p style="font-size: 12px; color: #64748b;">Registration confirmation emails will now be dispatched directly via Gmail API.</p>
-          <a href="http://localhost:8081/admin/dashboard">Return to GDG Dashboard →</a>
+          <p style="font-size: 12px; color: #64748b;">Redirecting you back to the Admin Events portal in 3 seconds...</p>
+          <a href="${clientUrl}/admin/events?gmail_auth=success">Return to Admin Portal Now &rarr;</a>
         </div>
       </body>
       </html>
@@ -700,6 +713,50 @@ const handleGmailOAuthCallback = async (req, res) => {
     `);
   }
 };
+
+/**
+ * GET /api/auth/google/gmail-status
+ * Authenticated / Admin-only: Verifies real live status of Gmail API token and returns queue statistics.
+ */
+const getGmailStatus = async (req, res) => {
+  try {
+    const realStatus = await GmailApiService.checkRealStatus();
+    const queueStats = await EmailQueueService.getQueueStats();
+
+    return res.status(200).json({
+      message: 'Gmail status and queue information retrieved.',
+      ...realStatus,
+      queue: queueStats,
+    });
+  } catch (err) {
+    console.error('getGmailStatus error:', err);
+    return res.status(500).json({
+      status: 'error',
+      message: err.message,
+    });
+  }
+};
+
+/**
+ * POST /api/auth/google/gmail-drain-queue
+ * Admin-only: Manually triggers processing of pending queued emails.
+ */
+const drainGmailQueue = async (req, res) => {
+  try {
+    const result = await EmailQueueService.drainQueue();
+    return res.status(200).json({
+      message: 'Email queue drain completed.',
+      result,
+    });
+  } catch (err) {
+    console.error('drainGmailQueue error:', err);
+    return res.status(500).json({
+      error: 'Failed to drain email queue.',
+      details: err.message,
+    });
+  }
+};
+
 
 /**
  * Validates admin secret signup code prior to Google OAuth redirection or creation.
@@ -754,5 +811,8 @@ module.exports = {
   syncGoogleProfile,
   getGmailOAuthUrl,
   handleGmailOAuthCallback,
+  getGmailStatus,
+  drainGmailQueue,
   validateAdminCode,
 };
+
