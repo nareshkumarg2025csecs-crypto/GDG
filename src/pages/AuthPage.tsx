@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/hooks/use-toast';
 import { ApiError } from '@/lib/api';
+import { authService } from '@/services/authService';
 
 interface AuthPageProps {
   defaultMode?: 'login' | 'signup';
@@ -35,7 +36,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
 
   // Mode and Role state
   const initialMode = searchParams.get('mode') === 'signup' ? 'signup' : defaultMode;
-  const initialRole = searchParams.get('role') === 'admin' ? 'admin' : 'student';
+  const isAdminParam = searchParams.get('role') === 'admin' || searchParams.get('admin') === 'true';
+  const initialRole = isAdminParam ? 'admin' : 'student';
 
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [role, setRole] = useState<'student' | 'admin'>(initialRole);
@@ -54,13 +56,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
   const [adminGoogleModalOpen, setAdminGoogleModalOpen] = useState(false);
+  const [adminModalError, setAdminModalError] = useState<string | null>(null);
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
 
-  // If already authenticated, redirect to home with notice
+  // If already authenticated, redirect to home page or requested redirect URL
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true });
+      const dest = searchParams.get('redirect') || '/';
+      navigate(dest, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, searchParams]);
 
   // Auto-dismiss server error banner after 3 seconds
   useEffect(() => {
@@ -226,12 +231,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
         );
 
         if (response.access_token) {
-          toast({
-            title: 'Account created successfully',
-            description: `Welcome to GDG, ${response.profile.full_name || response.profile.email}.`,
-          });
-          localStorage.removeItem('auth_redirect_url');
-          navigate(redirectUrl);
+          if (role === 'admin' || response.profile?.role === 'admin') {
+            toast({
+              title: 'Admin account created successfully',
+              description: 'Welcome to GDG!',
+            });
+            localStorage.removeItem('auth_redirect_url');
+            navigate(redirectUrl);
+          } else {
+            toast({
+              title: 'Account created successfully',
+              description: `Welcome to GDG! Please complete your academic details.`,
+            });
+            // Preserve target destination so user is forwarded there after onboarding
+            if (redirectUrl && redirectUrl !== '/' && redirectUrl !== '/auth') {
+              localStorage.setItem('auth_redirect_url', redirectUrl);
+            }
+            navigate('/onboarding');
+          }
         } else {
           setServerSuccess(
             response.message || 'Registration successful. Please check your email to verify your account.'
@@ -248,19 +265,83 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
   // Google OAuth Flow
   const handleGoogleClick = async () => {
     setServerError(null);
-    if (role === 'admin' && !adminCode.trim()) {
-      // Prompt for admin code
-      setAdminGoogleModalOpen(true);
+    setAdminModalError(null);
+
+    if (role === 'admin') {
+      const code = adminCode.trim();
+      if (!code) {
+        // Prompt for admin code in modal
+        setAdminGoogleModalOpen(true);
+        return;
+      }
+
+      // If code was already filled in the form, validate it first with the backend
+      setIsValidatingCode(true);
+      try {
+        const res = await authService.validateAdminCode(code);
+        if (!res.valid) {
+          const errMsg = res.message || 'Invalid admin secret code. Please contact club leads.';
+          setAdminModalError(errMsg);
+          setAdminGoogleModalOpen(true);
+          return;
+        }
+      } catch (err: any) {
+        const errMsg = sanitizeErrorMessage(err);
+        setAdminModalError(errMsg);
+        setAdminGoogleModalOpen(true);
+        return;
+      } finally {
+        setIsValidatingCode(false);
+      }
+
+      await executeGoogleRedirect(code);
       return;
     }
 
-    await executeGoogleRedirect(adminCode.trim());
+    await executeGoogleRedirect();
+  };
+
+  // Verify code entered inside the Admin Google Modal before moving to Google Auth
+  const handleVerifyAndRedirect = async () => {
+    const code = adminCode.trim();
+    if (!code) {
+      setAdminModalError('Please enter the admin secret code.');
+      return;
+    }
+
+    setAdminModalError(null);
+    setIsValidatingCode(true);
+
+    try {
+      const res = await authService.validateAdminCode(code);
+      if (!res.valid) {
+        setAdminModalError(res.message || 'Invalid admin secret code. Please contact club leads.');
+        return;
+      }
+
+      // Code is verified valid! Proceed to Google OAuth redirect
+      toast({
+        title: 'Admin Code Verified',
+        description: 'Redirecting to Google for administrator authentication...',
+      });
+      setAdminGoogleModalOpen(false);
+      await executeGoogleRedirect(code);
+    } catch (err: any) {
+      setAdminModalError(sanitizeErrorMessage(err));
+    } finally {
+      setIsValidatingCode(false);
+    }
   };
 
   const executeGoogleRedirect = async (secretCode?: string) => {
     setIsGoogleLoading(true);
     setServerError(null);
     try {
+      if (secretCode) {
+        sessionStorage.setItem('pending_admin_code', secretCode.trim());
+      } else {
+        sessionStorage.removeItem('pending_admin_code');
+      }
       await initiateGoogleLogin(role, role === 'admin' ? secretCode : undefined);
     } catch (err: any) {
       setServerError(sanitizeErrorMessage(err));
@@ -336,33 +417,35 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
             </p>
           </div>
 
-          {/* Role Selector Tabs (Student vs Admin) */}
-          <div className="grid grid-cols-2 p-1 rounded-xl bg-muted/70 mb-5 border border-border/50">
-            <button
-              type="button"
-              onClick={() => handleRoleChange('student')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${
-                role === 'student'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <GraduationCap className="w-4 h-4 text-google-blue" />
-              <span>Student</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRoleChange('admin')}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${
-                role === 'admin'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-google-red" />
-              <span>Admin</span>
-            </button>
-          </div>
+          {/* Role Selector Tabs (Student vs Admin) - Only shown if accessed with admin param */}
+          {isAdminParam && (
+            <div className="grid grid-cols-2 p-1 rounded-xl bg-muted/70 mb-5 border border-border/50">
+              <button
+                type="button"
+                onClick={() => handleRoleChange('student')}
+                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${
+                  role === 'student'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4 text-google-blue" />
+                <span>Student</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRoleChange('admin')}
+                className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${
+                  role === 'admin'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 text-google-red" />
+                <span>Admin</span>
+              </button>
+            </div>
+          )}
 
           {/* Server Error Alert Banner */}
           <AnimatePresence>
@@ -671,39 +754,76 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm rounded-2xl border p-6 bg-card text-card-foreground shadow-2xl"
+              className="w-full max-w-sm rounded-2xl border border-border/80 p-6 bg-card text-card-foreground shadow-2xl"
             >
-              <div className="flex items-center gap-3 mb-4 text-google-red">
+              <div className="flex items-center gap-3 mb-3 text-google-red">
                 <ShieldCheck className="w-6 h-6" />
-                <h3 className="font-bold text-lg">Admin Verification</h3>
+                <h3 className="font-bold text-lg font-sans">Admin Verification</h3>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">
-                Please enter the secret Admin Code to link your Google account with Administrator privileges.
+              <p className="text-xs text-muted-foreground mb-4 leading-relaxed font-sans">
+                Please enter the secret Admin Code. The code is verified first before you are redirected to Google authentication.
               </p>
+
+              {adminModalError && (
+                <div className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="leading-snug">{adminModalError}</span>
+                </div>
+              )}
+
               <div className="space-y-4">
                 <input
                   type="password"
                   placeholder="Enter admin secret code"
                   value={adminCode}
-                  onChange={(e) => setAdminCode(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
+                  onChange={(e) => {
+                    setAdminCode(e.target.value);
+                    if (adminModalError) setAdminModalError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleVerifyAndRedirect();
+                    }
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
+                    adminModalError
+                      ? 'border-destructive focus:ring-destructive/30'
+                      : 'border-input focus:ring-google-red/30 focus:border-google-red'
+                  }`}
                   autoFocus
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setAdminGoogleModalOpen(false)}
-                    className="flex-1 py-2 px-3 rounded-xl border text-xs font-semibold hover:bg-muted transition-colors"
+                    onClick={() => {
+                      setAdminGoogleModalOpen(false);
+                      setAdminModalError(null);
+                    }}
+                    disabled={isValidatingCode || isGoogleLoading}
+                    className="flex-1 py-2.5 px-3 rounded-xl border text-xs font-semibold hover:bg-muted transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    disabled={!adminCode.trim() || isGoogleLoading}
-                    onClick={() => executeGoogleRedirect(adminCode.trim())}
-                    className="flex-1 py-2 px-3 rounded-xl bg-google-red text-white text-xs font-semibold hover:bg-google-red/90 transition-colors disabled:opacity-50"
+                    disabled={!adminCode.trim() || isValidatingCode || isGoogleLoading}
+                    onClick={handleVerifyAndRedirect}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-google-red text-white text-xs font-semibold hover:bg-google-red/90 transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    {isGoogleLoading ? 'Redirecting...' : 'Verify & Continue'}
+                    {isValidatingCode ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : isGoogleLoading ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Redirecting...</span>
+                      </>
+                    ) : (
+                      <span>Verify & Continue</span>
+                    )}
                   </button>
                 </div>
               </div>

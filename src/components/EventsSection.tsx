@@ -3,11 +3,14 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom';
 import { ArrowRight, Calendar, MapPin, Tag, Clock, ChevronRight } from 'lucide-react';
 import { eventService } from '@/services/eventService';
+import { useAuth } from '@/hooks/useAuth';
 import { formatEventDate, formatEventTimeRange, stripMarkdown, type ClubEvent } from '@/lib/formUtils';
 
 const THEME_COLORS = ['#4285F4', '#34A853', '#EA4335', '#FBBC04'];
 
 const EventsSection = () => {
+    const { role } = useAuth();
+    const isAdmin = role === 'admin';
     const containerRef = useRef<HTMLElement>(null);
     const { scrollYProgress } = useScroll({
         target: containerRef,
@@ -87,10 +90,10 @@ const EventsSection = () => {
                             Stay updated with our latest workshops, hackathons, and tech talks.
                         </p>
                         <Link
-                            to="/events"
+                            to={isAdmin ? "/admin/events" : "/events"}
                             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-white/15 text-sm font-semibold text-foreground hover:bg-white/10 transition-all whitespace-nowrap"
                         >
-                            View All <ArrowRight className="w-4 h-4" />
+                            {isAdmin ? 'Manage Events' : 'View All'} <ArrowRight className="w-4 h-4" />
                         </Link>
                     </div>
                 </motion.div>
@@ -336,10 +339,10 @@ const EventsSection = () => {
                         className="mt-10 flex justify-center"
                     >
                         <Link
-                            to="/events"
+                            to={isAdmin ? "/admin/events" : "/events"}
                             className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full border border-white/15 text-sm font-bold text-white hover:bg-white/10 transition-all"
                         >
-                            View All Events <ArrowRight className="w-4 h-4" />
+                            {isAdmin ? 'Manage All Events' : 'View All Events'} <ArrowRight className="w-4 h-4" />
                         </Link>
                     </motion.div>
                 )}

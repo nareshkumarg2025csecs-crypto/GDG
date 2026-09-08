@@ -84,10 +84,19 @@ const studentLoginEmailLimiter = rateLimit({
 
 const studentLoginLimiter = [studentLoginIpLimiter, studentLoginEmailLimiter];
 
-// 3. Signup Limiters (IP based)
 const adminSignupLimiter = rateLimit({
   windowMs: securityConfig.rateLimits.adminSignup.windowMs,
   max: securityConfig.rateLimits.adminSignup.max,
+  keyGenerator: ipKeyGenerator,
+  handler: rateLimitHandler,
+  skip: shouldSkip,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const adminCodeValidationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts per 15 min per IP
   keyGenerator: ipKeyGenerator,
   handler: rateLimitHandler,
   skip: shouldSkip,
@@ -116,10 +125,27 @@ const generalApiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// 5. Form Submission Limiter (prevents registration flooding, mail spam, and database abuse)
+const formSubmissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // max 20 submissions per 15 minutes
+  keyGenerator: (req) => {
+    const userId = req.user?.id;
+    const ip = getClientIp(req);
+    return userId ? `user_sub_${userId}` : `ip_sub_${ip}`;
+  },
+  handler: rateLimitHandler,
+  skip: shouldSkip,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
   adminLoginLimiter,
   studentLoginLimiter,
   adminSignupLimiter,
+  adminCodeValidationLimiter,
   studentSignupLimiter,
   generalApiLimiter,
+  formSubmissionLimiter,
 };

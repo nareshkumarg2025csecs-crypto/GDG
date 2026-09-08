@@ -16,6 +16,7 @@ import {
   AlignLeft,
   ZoomIn,
   X as XIcon,
+  Loader2,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -26,20 +27,24 @@ import { EventQrModal } from '@/components/EventQrModal';
 import {
   type ClubEvent,
   type EventForm,
+  type FormSubmission,
   getEventRegistrationState,
   formatEventDateRange,
   formatEventTimeRange,
 } from '@/lib/formUtils';
+import EventTicketPass from '@/components/events/EventTicketPass';
 
 export const EventDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, profile } = useAuth();
 
   const [event, setEvent] = useState<ClubEvent | null>(null);
   const [form, setForm] = useState<EventForm | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [submissionDate, setSubmissionDate] = useState<string | null>(null);
+  const [userSubmission, setUserSubmission] = useState<FormSubmission | null>(null);
+  const [showTicketModal, setShowTicketModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [calendarAdded, setCalendarAdded] = useState(false);
@@ -85,8 +90,13 @@ export const EventDetailPage: React.FC = () => {
         if (isAuthenticated) {
           // Check calendar-added state
           try {
+            if (localStorage.getItem(`gdg_calendar_added_${id}`) === 'true') {
+              setCalendarAdded(true);
+            }
             const calRes = await eventService.getMyCalendarEvents();
-            setCalendarAdded((calRes.event_ids || []).includes(id!));
+            if ((calRes.event_ids || []).includes(id!)) {
+              setCalendarAdded(true);
+            }
           } catch {
             // non-critical
           }
@@ -98,6 +108,7 @@ export const EventDetailPage: React.FC = () => {
               if (userSub) {
                 setIsRegistered(true);
                 setSubmissionDate(userSub.submitted_at);
+                setUserSubmission(userSub);
               }
             } catch {
               // Submission check failure is non-critical
@@ -169,8 +180,11 @@ export const EventDetailPage: React.FC = () => {
         return;
       }
 
-      if (res.success) {
+      if (res.success || res.calendar_event_id) {
         setCalendarAdded(true);
+        try {
+          localStorage.setItem(`gdg_calendar_added_${id}`, 'true');
+        } catch (_) {}
         toast({
           title: 'Event Synced to Google Calendar',
           description: res.message || 'Check your primary Google Calendar.',
@@ -414,8 +428,17 @@ export const EventDetailPage: React.FC = () => {
                   onClick={handleAddToCalendar}
                   className="inline-flex items-center justify-center gap-2 py-3 px-5 rounded-2xl border border-border bg-background hover:bg-muted text-sm font-semibold transition-all shadow-sm disabled:opacity-50"
                 >
-                  <CalendarPlus className="w-4 h-4 text-google-yellow" />
-                  <span>{isCalendarLoading ? 'Connecting Calendar...' : 'Add to Google Calendar'}</span>
+                  {isCalendarLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-google-blue" />
+                      <span>Adding to Calendar...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CalendarPlus className="w-4 h-4 text-google-yellow" />
+                      <span>Add to Google Calendar</span>
+                    </>
+                  )}
                 </button>
               ) : (
                 <div className="text-xs font-mono text-muted-foreground flex items-center gap-2 py-2">
@@ -426,38 +449,53 @@ export const EventDetailPage: React.FC = () => {
 
               {/* Registration CTA — only shown if event has a form */}
               {form && regState === 'open' && (
-                isAuthenticated ? (
-                  <Link
-                    to={`/events/${id}/form`}
-                    className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
-                    style={{
-                      background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
-                      boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
-                    }}
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Fill Registration Form</span>
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/events/${id}/form`)}`)}
-                    className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
-                    style={{
-                      background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
-                      boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
-                    }}
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Sign in to Register</span>
-                  </button>
-                )
+                <div className="flex flex-col items-center sm:items-end gap-1.5">
+                  {isAuthenticated ? (
+                    <Link
+                      to={`/events/${id}/form`}
+                      className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                      style={{
+                        background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
+                        boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
+                      }}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Fill Registration Form</span>
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/events/${id}/form`)}`)}
+                      className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all"
+                      style={{
+                        background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
+                        boxShadow: '0 4px 20px rgba(66, 133, 244, 0.35)',
+                      }}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Sign in to Register</span>
+                    </button>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    Includes instant check-in QR pass & confirmation email
+                  </span>
+                </div>
               )}
 
               {form && regState === 'registered' && (
-                <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-google-green/10 text-google-green border border-google-green/30 text-sm font-semibold font-mono">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>You are Registered</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-google-green/10 text-google-green border border-google-green/30 text-sm font-semibold font-mono">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>You are Registered</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowTicketModal(true)}
+                    className="inline-flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold shadow-md transition-all"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>View QR Ticket</span>
+                  </button>
                 </div>
               )}
 
@@ -472,13 +510,28 @@ export const EventDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* QR Modal */}
+      {/* QR Share Modal */}
       <EventQrModal
         isOpen={showQrModal}
         onClose={() => setShowQrModal(false)}
         eventTitle={event?.title || 'Event'}
         eventUrl={window.location.href}
       />
+
+      {/* Ticket Pass QR Modal */}
+      {showTicketModal && event && (
+        <EventTicketPass
+          isModal
+          onClose={() => setShowTicketModal(false)}
+          event={event}
+          submissionId={userSubmission?.id}
+          submittedAt={userSubmission?.submitted_at}
+          answers={userSubmission?.answers || {}}
+          fields={form?.schema?.fields || []}
+          attendeeName={profile?.full_name}
+          attendeeEmail={profile?.email}
+        />
+      )}
 
       {/* ── Full-screen Image Lightbox ── */}
       <AnimatePresence>

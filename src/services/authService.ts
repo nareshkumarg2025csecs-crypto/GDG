@@ -105,6 +105,13 @@ export const authService = {
     });
   },
 
+  async validateAdminCode(adminCode: string): Promise<{ valid: boolean; message?: string }> {
+    return apiRequest<{ valid: boolean; message?: string }>('/api/auth/admin/validate-code', {
+      method: 'POST',
+      body: JSON.stringify({ admin_code: adminCode }),
+    });
+  },
+
   async syncGoogleProfile(
     payload: {
       provider_token?: string;

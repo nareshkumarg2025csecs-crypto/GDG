@@ -111,6 +111,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const isDark = theme === 'dark';
   const navigate = useNavigate();
   const { user, isAuthenticated, profile, role, logout } = useAuth();
+  const isAdmin = role === 'admin';
 
   const handleLogout = async () => {
     setProfileDropdownOpen(false);
@@ -139,6 +140,9 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [profileDropdownOpen]);
+
+  // Top header nav sections always link to public pages (/events for events)
+  const navSections = SECTIONS;
 
   // Update active section based on route
   useMemo(() => {
@@ -252,7 +256,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           {/* Desktop Nav Items - Hidden on Mobile */}
           <div className="hidden md:flex items-center gap-1">
             <div className="w-px h-6 mr-2 border-r border-border" />
-            {SECTIONS.map((section) => (
+            {navSections.map((section) => (
               <MagneticNavItem
                 key={section.id}
                 href={section.href}
@@ -275,18 +279,6 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 transparent={transparent}
               >
                 Dashboard
-              </MagneticNavItem>
-            )}
-            {role === 'admin' && (
-              <MagneticNavItem
-                href="/admin/events"
-                isActive={activeSection === 'admin'}
-                color="#EA4335"
-                onClick={() => setActiveSection('admin')}
-                scrolled={scrolled}
-                transparent={transparent}
-              >
-                Admin Events
               </MagneticNavItem>
             )}
             <div className="w-px h-6 mx-2 border-r border-border" />
@@ -368,16 +360,28 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </div>
                     </div>
 
-                    {/* Option 1: My Dashboard */}
-                    <Link
-                      to="/dashboard"
-                      role="menuitem"
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
-                    >
-                      <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
-                      <span>My Dashboard</span>
-                    </Link>
+                    {/* Option 1: Admin Events Panel (for admin) or My Dashboard */}
+                    {isAdmin ? (
+                      <Link
+                        to="/admin/events"
+                        role="menuitem"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-google-red transition-colors"
+                      >
+                        <Shield className="w-4 h-4 text-google-red" aria-hidden="true" />
+                        <span>Admin Events Panel</span>
+                      </Link>
+                    ) : (
+                      <Link
+                        to="/dashboard"
+                        role="menuitem"
+                        onClick={() => setProfileDropdownOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                      >
+                        <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
+                        <span>My Dashboard</span>
+                      </Link>
+                    )}
 
                     {/* Option 2: Theme Toggle */}
                     <button
@@ -445,16 +449,20 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
           {/* CTA Button */}
           <Link
-            to={role === 'admin' ? '/admin/events' : '/events'}
-            aria-label={role === 'admin' ? "Manage GDG events in Admin Portal" : "View GDG Events"}
+            to={isAdmin ? "/admin/events" : "/events"}
+            aria-label={isAdmin ? "Manage GDG Events" : "View GDG Events"}
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ml-1"
             style={{
               background: `linear-gradient(135deg, ${activeColor}, ${activeColor}cc)`,
               boxShadow: `0 4px 20px ${activeColor}40, 0 0 40px ${activeColor}20`,
             }}
           >
-            <Calendar className="w-4 h-4 text-white" aria-hidden="true" />
-            <span className="text-white hidden sm:inline">{role === 'admin' ? 'Manage' : 'Events'}</span>
+            {isAdmin ? (
+              <Shield className="w-4 h-4 text-white" aria-hidden="true" />
+            ) : (
+              <Calendar className="w-4 h-4 text-white" aria-hidden="true" />
+            )}
+            <span className="text-white hidden sm:inline">{isAdmin ? "Admin Events" : "Events"}</span>
           </Link>
 
           {/* Mobile Menu Toggle Button */}
@@ -495,7 +503,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
                 {/* Navigation Links */}
                 <nav className="flex flex-col gap-2">
-                  {SECTIONS.map((item, i) => (
+                  {navSections.map((item, i) => (
                     <motion.div
                       key={item.name}
                       initial={{ x: -50, opacity: 0 }}
@@ -547,28 +555,6 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     </motion.div>
                   )}
 
-                  {role === 'admin' && (
-                    <motion.div
-                      initial={{ x: -50, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      exit={{ x: -50, opacity: 0 }}
-                      transition={{ delay: 0.35, duration: 0.5 }}
-                    >
-                      <Link
-                        to="/admin/events"
-                        onClick={() => {
-                          setActiveSection('admin');
-                          setMenuOpen(false);
-                        }}
-                        className="group flex items-baseline gap-6 py-2"
-                      >
-                        <span className="text-xs font-mono text-google-red">05</span>
-                        <span className="text-4xl sm:text-6xl font-sans font-bold text-google-red transition-all duration-300 group-hover:translate-x-4">
-                          Admin Portal
-                        </span>
-                      </Link>
-                    </motion.div>
-                  )}
                 </nav>
 
                 {/* User Profile, Theme Toggle & Auth Actions in Responsive Drawer */}
@@ -598,14 +584,18 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
-                        {/* Mobile Dashboard Link */}
+                        {/* Mobile Action Link */}
                         <Link
-                          to="/dashboard"
+                          to={isAdmin ? "/admin/events" : "/dashboard"}
                           onClick={() => setMenuOpen(false)}
-                          className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-google-blue/10 text-google-blue border border-google-blue/20 text-xs font-semibold hover:bg-google-blue/20 transition-colors"
+                          className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-colors ${
+                            isAdmin
+                              ? 'bg-google-red/10 text-google-red border-google-red/20 hover:bg-google-red/20'
+                              : 'bg-google-blue/10 text-google-blue border-google-blue/20 hover:bg-google-blue/20'
+                          }`}
                         >
-                          <LayoutDashboard className="w-4 h-4" />
-                          <span>Dashboard</span>
+                          {isAdmin ? <Shield className="w-4 h-4" /> : <LayoutDashboard className="w-4 h-4" />}
+                          <span>{isAdmin ? 'Admin Events' : 'Dashboard'}</span>
                         </Link>
 
                         {/* Mobile Logout Button */}

@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { EasterEggProvider } from "@/components/easter-eggs/EasterEggProvider";
 import CustomCursor from "@/components/CustomCursor";
@@ -16,7 +16,9 @@ import EventRegistrationPage from "./pages/events/EventRegistrationPage";
 import AdminEventsPage from "./pages/admin/AdminEventsPage";
 import AdminEventEditorPage from "./pages/admin/AdminEventEditorPage";
 import AdminSubmissionsPage from "./pages/admin/AdminSubmissionsPage";
+import AdminGatewayPage from "./pages/admin/AdminGatewayPage";
 import StudentDashboardPage from "./pages/dashboard/StudentDashboardPage";
+import PersonalInfoPage from "./pages/auth/PersonalInfoPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
@@ -46,6 +48,7 @@ const App = () => {
                 <Route path="/events" element={<EventsPage />} />
                 <Route path="/events/:id" element={<EventDetailPage />} />
                 <Route path="/events/:id/form" element={<EventRegistrationPage />} />
+                <Route path="/events/:id/register" element={<EventRegistrationPage />} />
                 
                 {/* Student / User Dashboard Routes */}
                 <Route
@@ -64,8 +67,25 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/onboarding"
+                  element={
+                    <ProtectedRoute>
+                      <PersonalInfoPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/complete-profile"
+                  element={
+                    <ProtectedRoute>
+                      <PersonalInfoPage />
+                    </ProtectedRoute>
+                  }
+                />
                 
                 {/* Admin-only Routes */}
+                <Route path="/admin" element={<Navigate to="/" replace />} />
                 <Route
                   path="/admin/events"
                   element={
@@ -98,6 +118,9 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
+
+                {/* Secret Admin Gateway Route */}
+                <Route path="/admin-gdg" element={<AdminGatewayPage />} />
 
                 {/* Auth Routes */}
                 <Route path="/login" element={<AuthPage defaultMode="login" />} />

@@ -22,7 +22,14 @@ import {
   Award,
   Layers,
   Search,
+  QrCode,
+  Hash,
+  Building2,
+  ChevronDown,
 } from 'lucide-react';
+import EventTicketPass from '@/components/events/EventTicketPass';
+import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
+import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/store/authStore';
 import { dashboardService } from '@/services/dashboardService';
@@ -36,6 +43,7 @@ import {
   type ClubEvent,
   type EventForm,
   type FormSubmission,
+  parseEventDate,
   formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
@@ -51,9 +59,11 @@ export const StudentDashboardPage: React.FC = () => {
 
   // Profile Form Fields
   const [fullName, setFullName] = useState('');
+  const [rollNo, setRollNo] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [department, setDepartment] = useState('');
+  const [customDepartment, setCustomDepartment] = useState('');
   const [year, setYear] = useState('');
   const [yearOfPassing, setYearOfPassing] = useState('');
 
@@ -65,17 +75,32 @@ export const StudentDashboardPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'registered' | 'participated'>('registered');
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
+  const [selectedTicketData, setSelectedTicketData] = useState<{ event: ClubEvent; submission: FormSubmission } | null>(null);
 
   // Sync profile data into local state
   const syncProfileFields = (p = profile) => {
     if (!p) return;
     const details = p.details || {};
     setFullName(p.full_name || '');
+    setRollNo(details.roll_no || '');
     setProfileEmail(details.email || p.email || '');
     setPhoneNumber(details.phone_number || details.phone || '');
-    setDepartment(details.department || '');
     setYear(details.year || '');
     setYearOfPassing(details.year_of_passing || details.passout_year || '');
+
+    const currentDept = details.department || '';
+    if (currentDept) {
+      if ((DEPARTMENT_OPTIONS as readonly string[]).includes(currentDept)) {
+        setDepartment(currentDept);
+        setCustomDepartment('');
+      } else {
+        setDepartment('Other');
+        setCustomDepartment(currentDept);
+      }
+    } else {
+      setDepartment('');
+      setCustomDepartment('');
+    }
   };
 
   useEffect(() => {
@@ -154,13 +179,16 @@ export const StudentDashboardPage: React.FC = () => {
     }
 
     setIsSaving(true);
+    const resolvedDept = department === 'Other' ? customDepartment.trim() : department;
+
     try {
       const payload = {
         full_name: fullName.trim(),
         details: {
+          roll_no: rollNo.trim() ? rollNo.trim().toUpperCase() : undefined,
           email: profileEmail.trim() || undefined,
           phone_number: phoneNumber.trim() || undefined,
-          department: department.trim() || undefined,
+          department: resolvedDept || undefined,
           year: year.trim() || undefined,
           year_of_passing: yearOfPassing.trim() || undefined,
         },
@@ -214,7 +242,7 @@ export const StudentDashboardPage: React.FC = () => {
 
       const details = matchedEvent.details || {};
       const endStr = details.endTime || details.end_time || details.startTime || details.start_time;
-      const eventEnd = endStr ? new Date(endStr) : null;
+      const eventEnd = endStr ? parseEventDate(endStr) : null;
       const isPast = eventEnd ? now > eventEnd : false;
 
       // 1. Registered (Upcoming, not yet ended)
@@ -396,6 +424,17 @@ export const StudentDashboardPage: React.FC = () => {
                     </p>
                   </div>
 
+                  {/* Roll Number Tile */}
+                  <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
+                      <Hash className="w-4 h-4 text-google-yellow" />
+                      <span>Roll Number / Register No</span>
+                    </div>
+                    <p className="text-sm font-mono font-bold text-foreground pt-0.5">
+                      {currentDetails.roll_no || 'Not provided'}
+                    </p>
+                  </div>
+
                   {/* Profile Email Tile */}
                   <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
                     <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
@@ -407,21 +446,10 @@ export const StudentDashboardPage: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Phone Number Tile */}
-                  <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
-                      <Phone className="w-4 h-4 text-google-green" />
-                      <span>Phone Number</span>
-                    </div>
-                    <p className="text-sm font-bold text-foreground pt-0.5">
-                      {currentDetails.phone_number || currentDetails.phone || 'Not provided'}
-                    </p>
-                  </div>
-
                   {/* Department Tile */}
                   <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
                     <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
-                      <GraduationCap className="w-4 h-4 text-google-yellow" />
+                      <GraduationCap className="w-4 h-4 text-google-green" />
                       <span>Department</span>
                     </div>
                     <p className="text-sm font-bold text-foreground pt-0.5">
@@ -429,7 +457,7 @@ export const StudentDashboardPage: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Year of Study Tile (Free Text) */}
+                  {/* Year of Study Tile */}
                   <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
                     <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
                       <BookOpen className="w-4 h-4 text-purple-500" />
@@ -440,14 +468,14 @@ export const StudentDashboardPage: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Year of Passing Tile */}
+                  {/* Phone Number Tile */}
                   <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
                     <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
-                      <Calendar className="w-4 h-4 text-teal-500" />
-                      <span>Year of Passing</span>
+                      <Phone className="w-4 h-4 text-teal-500" />
+                      <span>Phone Number</span>
                     </div>
                     <p className="text-sm font-bold text-foreground pt-0.5">
-                      {currentDetails.year_of_passing || currentDetails.passout_year || 'Not provided'}
+                      {currentDetails.phone_number || currentDetails.phone || 'Not provided'}
                     </p>
                   </div>
                 </motion.div>
@@ -478,6 +506,25 @@ export const StudentDashboardPage: React.FC = () => {
                       />
                     </div>
 
+                    {/* Roll Number Input with placeholder example */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-foreground">
+                          Roll Number
+                        </label>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          Format: 240801202
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="e.g. 240801202"
+                        value={rollNo}
+                        onChange={(e) => setRollNo(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background font-mono text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-yellow/30 focus:border-google-yellow"
+                      />
+                    </div>
+
                     {/* Profile Email Input */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -497,6 +544,58 @@ export const StudentDashboardPage: React.FC = () => {
                       />
                     </div>
 
+                    {/* Department Dropdown */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-foreground">
+                        Department
+                      </label>
+                      <SearchableSelect
+                        id="dashboard-department"
+                        value={department}
+                        onChange={(val) => setDepartment(val)}
+                        options={DEPARTMENT_OPTIONS}
+                        placeholder="Select Department"
+                        searchPlaceholder="Search department..."
+                        searchable={true}
+                        accentColor="green"
+                      />
+                    </div>
+
+                    {/* Dynamic Field: If "Other" department is selected */}
+                    {department === 'Other' && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-google-blue" />
+                          <span>Specify Department</span>
+                          <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Robotics and Automation"
+                          value={customDepartment}
+                          onChange={(e) => setCustomDepartment(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                        />
+                      </div>
+                    )}
+
+                    {/* Current Year of Study Dropdown */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-foreground">
+                        Current Year of Study
+                      </label>
+                      <SearchableSelect
+                        id="dashboard-year"
+                        value={year}
+                        onChange={(val) => setYear(val)}
+                        options={YEAR_OF_STUDY_OPTIONS}
+                        placeholder="Select Current Year"
+                        searchable={false}
+                        accentColor="purple"
+                      />
+                    </div>
+
                     {/* Phone Number Input */}
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold text-foreground">
@@ -507,39 +606,6 @@ export const StudentDashboardPage: React.FC = () => {
                         placeholder="e.g. +1 555-0199 or 9876543210"
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
-                      />
-                    </div>
-
-                    {/* Department Input */}
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-foreground">
-                        Department / Major
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Computer Science, IT, ECE"
-                        value={department}
-                        onChange={(e) => setDepartment(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
-                      />
-                    </div>
-
-                    {/* Year of Study Input (Free Text) */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-semibold text-foreground">
-                          Current Year of Study
-                        </label>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          (e.g. 2nd Year, Final Year)
-                        </span>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="e.g. 2nd Year, 3rd Year, Final Year"
-                        value={year}
-                        onChange={(e) => setYear(e.target.value)}
                         className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
                       />
                     </div>
@@ -774,7 +840,8 @@ export const StudentDashboardPage: React.FC = () => {
                       {/* Card Footer Actions */}
                       {(() => {
                         const eventEnd = details.endTime || details.end_time;
-                        const isEnded = eventEnd ? new Date() > new Date(eventEnd) : false;
+                        const endD = parseEventDate(eventEnd);
+                        const isEnded = endD ? new Date() > endD : false;
                         const isAddedToCal = addedCalendarEventIds.includes(event.id) && !isEnded;
 
                         return (
@@ -797,13 +864,25 @@ export const StudentDashboardPage: React.FC = () => {
                               </button>
                             )}
 
-                            <Link
-                              to={`/events/${event.id}`}
-                              className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-google-blue/10 text-google-blue hover:bg-google-blue/20 text-xs font-semibold transition-colors"
-                            >
-                              <span>Event Details</span>
-                              <ArrowRight className="w-3 h-3" />
-                            </Link>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTicketData({ event, submission })}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                                title="View and Download Ticket QR Code"
+                              >
+                                <QrCode className="w-3.5 h-3.5 text-google-blue" />
+                                <span>QR Pass</span>
+                              </button>
+
+                              <Link
+                                to={`/events/${event.id}`}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-google-blue/10 text-google-blue hover:bg-google-blue/20 text-xs font-semibold transition-colors"
+                              >
+                                <span>Details</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </Link>
+                            </div>
                           </div>
                         );
                       })()}
@@ -919,9 +998,15 @@ export const StudentDashboardPage: React.FC = () => {
 
                       {/* Card Footer */}
                       <div className="p-3.5 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-mono text-muted-foreground">
-                          Registered: {new Date(submission.submitted_at).toLocaleDateString()}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTicketData({ event, submission })}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                          title="View and Download Ticket QR Code"
+                        >
+                          <QrCode className="w-3.5 h-3.5 text-google-green" />
+                          <span>QR Pass</span>
+                        </button>
                         <Link
                           to={`/events/${event.id}`}
                           className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
@@ -937,6 +1022,21 @@ export const StudentDashboardPage: React.FC = () => {
             )
           )}
         </div>
+
+        {/* QR Ticket Pass Modal */}
+        {selectedTicketData && (
+          <EventTicketPass
+            isModal
+            onClose={() => setSelectedTicketData(null)}
+            event={selectedTicketData.event}
+            submissionId={selectedTicketData.submission.id}
+            submittedAt={selectedTicketData.submission.submitted_at}
+            answers={selectedTicketData.submission.answers || {}}
+            fields={formsByEvent[selectedTicketData.event.id]?.schema?.fields || []}
+            attendeeName={profile?.full_name}
+            attendeeEmail={profile?.email}
+          />
+        )}
       </main>
 
       <Footer />

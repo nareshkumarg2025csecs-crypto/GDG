@@ -16,9 +16,12 @@ if (!adminSignupCode) {
   }
 }
 
+const crypto = require('crypto');
+
 /**
  * Validates whether the provided code matches the configured ADMIN_SIGNUP_CODE.
- * Strictly checks process.env.ADMIN_SIGNUP_CODE with no hardcoded fallback.
+ * Strictly checks process.env.ADMIN_SIGNUP_CODE with constant-time equality check
+ * to protect against side-channel timing analysis attacks.
  *
  * @param {string} candidateCode
  * @returns {boolean}
@@ -31,7 +34,12 @@ const validateAdminSignupCode = (candidateCode) => {
   if (!candidateCode || typeof candidateCode !== 'string') {
     return false;
   }
-  return candidateCode.trim() === secretCode.trim();
+
+  // Hash both values to constant length 32-byte buffers to avoid length-leaking timing discrepancies
+  const secretHash = crypto.createHash('sha256').update(secretCode.trim()).digest();
+  const candidateHash = crypto.createHash('sha256').update(candidateCode.trim()).digest();
+
+  return crypto.timingSafeEqual(secretHash, candidateHash);
 };
 
 module.exports = {

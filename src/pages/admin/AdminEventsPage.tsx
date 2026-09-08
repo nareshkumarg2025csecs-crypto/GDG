@@ -19,6 +19,7 @@ import {
   Layers,
   Sparkles,
   Home,
+  Loader2,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -464,17 +465,22 @@ export const AdminEventsPage: React.FC = () => {
                       type="button"
                       disabled={isProcessing === event.id}
                       onClick={() => handleTogglePublish(event)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all inline-flex items-center gap-1.5 disabled:opacity-60 ${
                         isPublished
                           ? 'border-border hover:bg-muted text-foreground'
                           : 'bg-google-green text-white border-transparent hover:bg-google-green/90 shadow-sm'
                       }`}
                     >
-                      {isProcessing === event.id
-                        ? 'Updating...'
-                        : isPublished
-                        ? 'Unpublish'
-                        : 'Publish Now'}
+                      {isProcessing === event.id ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Updating...</span>
+                        </>
+                      ) : isPublished ? (
+                        'Unpublish'
+                      ) : (
+                        'Publish Now'
+                      )}
                     </button>
 
                     <div className="flex items-center gap-1.5">
@@ -549,10 +555,18 @@ export const AdminEventsPage: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  disabled={isProcessing === deleteConfirmId}
                   onClick={() => handleDeleteEvent(deleteConfirmId)}
-                  className="flex-1 py-2 px-3 rounded-xl bg-destructive text-destructive-foreground text-xs font-semibold hover:bg-destructive/90 transition-colors"
+                  className="flex-1 py-2 px-3 rounded-xl bg-destructive text-destructive-foreground text-xs font-semibold hover:bg-destructive/90 transition-colors inline-flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
-                  {isProcessing === deleteConfirmId ? 'Deleting...' : 'Delete Permanently'}
+                  {isProcessing === deleteConfirmId ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deleting...</span>
+                    </>
+                  ) : (
+                    'Delete Permanently'
+                  )}
                 </button>
               </div>
             </motion.div>

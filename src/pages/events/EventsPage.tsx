@@ -38,6 +38,7 @@ const DEFAULT_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
 export const EventsPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 

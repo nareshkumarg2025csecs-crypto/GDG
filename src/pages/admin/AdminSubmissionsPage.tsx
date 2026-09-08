@@ -18,6 +18,9 @@ import {
   Key,
   ShieldCheck,
   AlertCircle,
+  Mail,
+  MailCheck,
+  Tag,
 } from 'lucide-react';
 import { formService } from '@/services/formService';
 import { eventService } from '@/services/eventService';
@@ -104,8 +107,9 @@ export const AdminSubmissionsPage: React.FC = () => {
   const filteredSubmissions = submissions.filter((sub) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const ticketId = (sub.ticket_id || sub.answers?.ticket_id || '').toLowerCase();
     const answersText = Object.values(sub.answers || {}).join(' ').toLowerCase();
-    return answersText.includes(q) || sub.user_id.toLowerCase().includes(q);
+    return ticketId.includes(q) || answersText.includes(q) || sub.user_id.toLowerCase().includes(q);
   });
 
   // ── Export as JSON ─────────────────────────────────────────────────────────
@@ -129,10 +133,15 @@ export const AdminSubmissionsPage: React.FC = () => {
       return;
     }
 
-    const headerRow = ['#', 'Submitted At', 'Attendance Status', ...fields.map((f) => f.label)];
+    const headerRow = ['#', 'Ticket ID', 'Email Status', 'Attendance Status', 'Submitted At', ...fields.map((f) => f.label)];
     const rows = filteredSubmissions.map((sub, idx) => {
+      const ticketId = sub.ticket_id || sub.answers?.ticket_id || `TKT-${sub.id.slice(0, 6).toUpperCase()}`;
+      const emailStatus = (sub.email_sent ?? sub.answers?.email_sent) ? 'Sent' : 'Pending';
       const base = [
         String(idx + 1),
+        ticketId,
+        emailStatus,
+        sub.attended ? 'Attended' : 'Not Attended',
         new Date(sub.submitted_at).toLocaleString('en-US', {
           month: 'short',
           day: 'numeric',
@@ -140,7 +149,6 @@ export const AdminSubmissionsPage: React.FC = () => {
           hour: '2-digit',
           minute: '2-digit',
         }),
-        sub.attended ? 'Attended' : 'Not Attended',
       ];
       const fieldVals = fields.map((f) => {
         const val = sub.answers ? sub.answers[f.name || f.id] : '';
@@ -388,6 +396,8 @@ export const AdminSubmissionsPage: React.FC = () => {
                 <thead className="bg-muted/70 text-muted-foreground border-b border-border font-mono text-[11px] uppercase tracking-wider">
                   <tr>
                     <th className="py-3.5 px-4">#</th>
+                    <th className="py-3.5 px-4 whitespace-nowrap">Ticket ID</th>
+                    <th className="py-3.5 px-4 whitespace-nowrap">Email Pass</th>
                     <th className="py-3.5 px-4 whitespace-nowrap">Attendance</th>
                     <th className="py-3.5 px-4 whitespace-nowrap">Submitted At</th>
                     {fields.map((f) => (
@@ -401,6 +411,25 @@ export const AdminSubmissionsPage: React.FC = () => {
                   {filteredSubmissions.map((sub, idx) => (
                     <tr key={sub.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-muted-foreground">{idx + 1}</td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 font-mono font-bold text-google-blue bg-google-blue/10 border border-google-blue/25 px-2.5 py-1 rounded-md text-xs shadow-xs">
+                          <Tag className="w-3 h-3 text-google-blue" />
+                          <span>{sub.ticket_id || sub.answers?.ticket_id || `TKT-${sub.id.slice(0, 6).toUpperCase()}`}</span>
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        {(sub.email_sent ?? sub.answers?.email_sent) ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-google-green bg-google-green/10 border border-google-green/25">
+                            <MailCheck className="w-3.5 h-3.5 text-google-green" />
+                            <span>Sent</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold text-muted-foreground bg-muted border border-border">
+                            <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span>Pending</span>
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <button
                           type="button"

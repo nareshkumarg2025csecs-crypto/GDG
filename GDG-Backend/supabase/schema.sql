@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS public.form_submissions (
     submitted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure attended column is added if table already existed
+-- Ensure attended, ticket_id, and email_sent columns are added if table already existed
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -161,6 +161,24 @@ BEGIN
           AND column_name = 'attended'
     ) THEN
         ALTER TABLE public.form_submissions ADD COLUMN attended BOOLEAN DEFAULT false NOT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'ticket_id'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN ticket_id TEXT;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'email_sent'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN email_sent BOOLEAN DEFAULT false;
     END IF;
 END $$;
 

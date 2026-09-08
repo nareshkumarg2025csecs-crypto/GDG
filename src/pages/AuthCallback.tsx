@@ -72,7 +72,11 @@ export const AuthCallback: React.FC = () => {
 
         // Determine requested role from query or hash for regular Google OAuth Sign-in/Sign-up
         const roleParam = (searchParams.get('role') || hashParams.get('role') || 'student') as UserRole;
-        const adminCodeParam = searchParams.get('admin_code') || undefined;
+        const adminCodeParam =
+          searchParams.get('admin_code') ||
+          hashParams.get('admin_code') ||
+          sessionStorage.getItem('pending_admin_code') ||
+          undefined;
 
         if (!accessToken) {
           // If neither hash nor search tokens are found
@@ -95,21 +99,39 @@ export const AuthCallback: React.FC = () => {
           accessToken
         );
 
+        // Clear temporary admin code once consumed
+        sessionStorage.removeItem('pending_admin_code');
+
         setStatus('success');
         toast({
           title: `Welcome, ${syncResponse.profile.full_name || syncResponse.profile.email}!`,
           description: 'Successfully authenticated with Google.',
         });
 
-        // Redirect to target event or dashboard/homepage after brief delay
+        // Redirect to onboarding if personal info is incomplete (roll_no / department missing)
+        const hasCompletedInfo =
+          Boolean(syncResponse.profile?.details?.roll_no) &&
+          Boolean(syncResponse.profile?.details?.department);
+
         const targetUrl =
           localStorage.getItem('auth_redirect_url') ||
           searchParams.get('redirect') ||
           '/';
-        localStorage.removeItem('auth_redirect_url');
 
         setTimeout(() => {
-          navigate(targetUrl, { replace: true });
+          if (syncResponse.profile.role === 'admin') {
+            localStorage.removeItem('auth_redirect_url');
+            navigate(targetUrl, { replace: true });
+          } else if (!hasCompletedInfo && syncResponse.profile.role === 'student') {
+            // Keep targetUrl in storage so onboarding forwards there upon saving
+            if (targetUrl && targetUrl !== '/' && targetUrl !== '/onboarding') {
+              localStorage.setItem('auth_redirect_url', targetUrl);
+            }
+            navigate('/onboarding', { replace: true });
+          } else {
+            localStorage.removeItem('auth_redirect_url');
+            navigate(targetUrl, { replace: true });
+          }
         }, 1200);
       } catch (err: any) {
         console.error('Google OAuth callback error:', err);

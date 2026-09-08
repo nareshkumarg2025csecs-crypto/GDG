@@ -1,8 +1,11 @@
+const fs = require('fs');
+const path = require('path');
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const { validateAdminSignupCode } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
 const GoogleCalendarService = require('../services/googleCalendarService');
+const GmailApiService = require('../services/gmailApiService');
 
 /**
  * Helper function for user signup with a fixed role.
@@ -484,7 +487,18 @@ const syncGoogleProfile = async (req, res) => {
     const user = userData.user;
     const { provider_token, provider_refresh_token, role = 'student', admin_code } = req.body;
 
-    if (role === 'admin') {
+    // Check if the user already has an existing profile in the database
+    let { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const isExistingAdmin = profile && profile.role === 'admin';
+
+    // If requesting admin role and NOT already an established admin in the database,
+    // strictly validate the admin_code
+    if (role === 'admin' && !isExistingAdmin) {
       if (!validateAdminSignupCode(admin_code)) {
         await logActivity(req, {
           user_id: user.id,
@@ -498,13 +512,7 @@ const syncGoogleProfile = async (req, res) => {
       }
     }
 
-    const assignedRole = role === 'admin' ? 'admin' : 'student';
-
-    let { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle();
+    const assignedRole = role === 'admin' || isExistingAdmin ? 'admin' : 'student';
 
     let isNewUser = false;
     if (!profile) {
@@ -528,6 +536,17 @@ const syncGoogleProfile = async (req, res) => {
         return res.status(500).json({ error: 'Failed to create profile for Google user.' });
       }
       profile = newProfile;
+    } else if (role === 'admin' && profile.role !== 'admin' && validateAdminSignupCode(admin_code)) {
+      // Elevate existing user to admin if they supplied a valid code
+      const { data: updatedProfile, error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({ role: 'admin' })
+        .eq('id', user.id)
+        .select()
+        .single();
+      if (!updateError && updatedProfile) {
+        profile = updatedProfile;
+      }
     }
 
     if (provider_token) {
@@ -557,6 +576,174 @@ const syncGoogleProfile = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/auth/google/gmail-auth-url
+ * Generates and returns/redirects to Google's consent page requesting https://www.googleapis.com/auth/gmail.send
+ */
+const getGmailOAuthUrl = async (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    const redirectUri = `${protocol}://${host}/api/auth/google/gmail-callback`;
+    const url = GmailApiService.getAuthUrl(redirectUri);
+
+    if (req.query.redirect === 'true') {
+      return res.redirect(url);
+    }
+
+    return res.status(200).json({
+      message: 'Gmail API authorization URL generated.',
+      auth_url: url,
+      scope: 'https://www.googleapis.com/auth/gmail.send',
+      redirect_uri: redirectUri,
+    });
+  } catch (err) {
+    console.error('getGmailOAuthUrl error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+const escapeHtml = (str) => {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+/**
+ * GET /api/auth/google/gmail-callback
+ * Handles Google OAuth callback, exchanges code for refresh token with gmail.send scope, and saves it to .env
+ */
+const handleGmailOAuthCallback = async (req, res) => {
+  try {
+    const { code, error } = req.query;
+    if (error) {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Authorization Denied or Failed</h2>
+          <p>${escapeHtml(error)}</p>
+        </div>
+      `);
+    }
+    if (!code) {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Missing Authorization Code</h2>
+          <p>No code returned by Google OAuth.</p>
+        </div>
+      `);
+    }
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    const redirectUri = `${protocol}://${host}/api/auth/google/gmail-callback`;
+
+    const tokens = await GmailApiService.exchangeCodeForTokens(code, redirectUri);
+    const refreshToken = tokens.refresh_token;
+
+    if (refreshToken) {
+      const envPath = path.resolve(__dirname, '../../.env');
+      try {
+        let envContent = fs.readFileSync(envPath, 'utf8');
+        if (envContent.includes('GMAIL_REFRESH_TOKEN=')) {
+          envContent = envContent.replace(/GMAIL_REFRESH_TOKEN=.*/g, `GMAIL_REFRESH_TOKEN=${refreshToken}`);
+        } else {
+          envContent += `\n# Gmail API Refresh Token (Scope: https://www.googleapis.com/auth/gmail.send)\nGMAIL_REFRESH_TOKEN=${refreshToken}\n`;
+        }
+        fs.writeFileSync(envPath, envContent, 'utf8');
+        process.env.GMAIL_REFRESH_TOKEN = refreshToken;
+        console.log('[GmailOAuth] GMAIL_REFRESH_TOKEN saved successfully to .env');
+      } catch (fileErr) {
+        console.warn('Could not write GMAIL_REFRESH_TOKEN to .env file:', fileErr.message);
+      }
+    }
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Gmail API Connected Successfully</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+          .card { background: #1e293b; padding: 40px; border-radius: 24px; text-align: center; max-width: 480px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
+          h1 { color: #34d399; font-size: 24px; margin: 0 0 10px 0; }
+          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0; }
+          .badge { display: inline-block; background: rgba(52, 211, 153, 0.15); color: #34d399; padding: 6px 18px; border-radius: 50px; font-weight: bold; font-size: 12px; margin-bottom: 20px; border: 1px solid rgba(52, 211, 153, 0.3); }
+          .scope-box { background: #0f172a; padding: 12px 16px; border-radius: 12px; font-family: monospace; font-size: 13px; color: #60a5fa; word-break: break-all; margin: 20px 0; border: 1px solid #1e293b; }
+          a { display: inline-block; background: #4285F4; color: #ffffff; padding: 12px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 13px; transition: opacity 0.2s; }
+          a:hover { opacity: 0.9; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge">✓ Scope Authorized</div>
+          <h1>Gmail API Connected!</h1>
+          <p>The GDG platform is now connected to Google's official Gmail REST API with the required sending scope:</p>
+          <div class="scope-box">https://www.googleapis.com/auth/gmail.send</div>
+          <p style="font-size: 12px; color: #64748b;">Registration confirmation emails will now be dispatched directly via Gmail API.</p>
+          <a href="http://localhost:8081/admin/dashboard">Return to GDG Dashboard →</a>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('handleGmailOAuthCallback error:', err);
+    return res.status(500).send(`
+      <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+        <h2 style="color: #ef4444;">Exchange Error</h2>
+        <p>${escapeHtml(err.message)}</p>
+      </div>
+    `);
+  }
+};
+
+/**
+ * Validates admin secret signup code prior to Google OAuth redirection or creation.
+ * Uses timing-safe verification and logs failed attempts.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+const validateAdminCode = async (req, res) => {
+  try {
+    const { admin_code } = req.body;
+    if (!admin_code || typeof admin_code !== 'string' || !admin_code.trim()) {
+      return res.status(400).json({
+        valid: false,
+        error: 'Admin secret code is required.',
+      });
+    }
+
+    const isValid = validateAdminSignupCode(admin_code.trim());
+    if (!isValid) {
+      await logActivity(req, {
+        user_id: null,
+        action: 'admin_code_validation_failed',
+        details: { reason: 'Invalid admin code entered' },
+      });
+
+      return res.status(400).json({
+        valid: false,
+        error: 'Invalid admin secret code. Please contact club leads.',
+      });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      message: 'Admin secret code verified successfully.',
+    });
+  } catch (error) {
+    console.error('Error validating admin code:', error);
+    return res.status(500).json({
+      valid: false,
+      error: 'Failed to validate admin code.',
+    });
+  }
+};
+
 module.exports = {
   studentSignup,
   adminSignup,
@@ -565,4 +752,7 @@ module.exports = {
   logout,
   getGoogleOAuthUrl,
   syncGoogleProfile,
+  getGmailOAuthUrl,
+  handleGmailOAuthCallback,
+  validateAdminCode,
 };

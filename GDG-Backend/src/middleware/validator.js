@@ -121,7 +121,9 @@ const validateCreateForm = [
   body('event_id')
     .trim()
     .notEmpty()
-    .withMessage('event_id is required'),
+    .withMessage('event_id is required')
+    .isUUID()
+    .withMessage('event_id must be a valid UUID'),
   body('title')
     .trim()
     .notEmpty()
@@ -139,7 +141,9 @@ const validateSubmitForm = [
   param('formId')
     .trim()
     .notEmpty()
-    .withMessage('Form ID is required'),
+    .withMessage('Form ID is required')
+    .isUUID()
+    .withMessage('Form ID must be a valid UUID'),
   body('answers')
     .isObject()
     .withMessage('Answers must be a valid JSON object'),

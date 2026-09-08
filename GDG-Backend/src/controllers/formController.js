@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { logActivity } = require('../services/activityLogService');
 const GoogleSheetsService = require('../services/googleSheetsService');
+const EmailService = require('../services/emailService');
 
 /**
  * Helper function to validate form submission answers against the form's dynamic schema.
@@ -80,7 +81,13 @@ const validateFormAnswers = (schema, answers) => {
       case 'select':
       case 'radio':
         if (field.options && Array.isArray(field.options) && field.options.length > 0) {
-          if (!field.options.includes(value)) {
+          const hasOtherOption = field.options.some(
+            (opt) => typeof opt === 'string' && opt.toLowerCase().startsWith('other')
+          );
+          const isOtherValue =
+            typeof value === 'string' && value.trim().toLowerCase().startsWith('other');
+
+          if (!field.options.includes(value) && !(hasOtherOption && isOtherValue)) {
             errors.push(
               `Field '${field.label || fieldName}' has invalid option '${value}'. Allowed options: [${field.options.join(', ')}].`
             );
@@ -347,9 +354,30 @@ const deleteForm = async (req, res) => {
 };
 
 /**
+ * Generates an event-specific alphanumeric prefix, e.g. "Boot Camp" -> "BC", "Smart India Hackathon" -> "SI", "Workshop" -> "WO"
+ */
+const generateTicketPrefix = (eventTitle) => {
+  if (!eventTitle || typeof eventTitle !== 'string') return 'GD';
+  const cleaned = eventTitle.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+
+  if (words.length >= 2) {
+    const initials = words.map((w) => w[0].toUpperCase()).slice(0, 2).join('');
+    if (initials.length === 2) return initials;
+  }
+
+  if (words.length === 1 && words[0].length >= 2) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+
+  return 'GD';
+};
+
+/**
  * POST /api/forms/:formId/submissions
  * Authenticated / Students: Submit answers for a form with dynamic schema validation,
- * strict server-side deadline enforcement, and duplicate submission prevention.
+ * strict server-side deadline enforcement, duplicate submission prevention,
+ * sequential alphanumeric ticket ID assignment, and email dispatch status tracking.
  */
 const submitForm = async (req, res) => {
   try {
@@ -393,7 +421,7 @@ const submitForm = async (req, res) => {
     // 3. Server-side Duplicate Prevention Check (Zero client trust)
     const { data: existingSubmission } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, submitted_at')
+      .select('id, submitted_at, ticket_id, answers')
       .eq('form_id', formId)
       .eq('user_id', req.user.id)
       .maybeSingle();
@@ -403,6 +431,7 @@ const submitForm = async (req, res) => {
         error: 'Conflict: You have already submitted registration for this event.',
         submission_id: existingSubmission.id,
         submitted_at: existingSubmission.submitted_at,
+        ticket_id: existingSubmission.ticket_id || existingSubmission.answers?.ticket_id,
       });
     }
 
@@ -415,14 +444,57 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 5. Store submission in database
+    // 5. Generate Order-wise Alphanumeric Ticket ID (e.g. BC001, SI002, GD003)
+    const { count: submissionCount } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('form_id', formId);
+
+    const { data: eventInfo } = await supabaseAdmin
+      .from('events')
+      .select('id, title, details')
+      .eq('id', form.event_id)
+      .single();
+
+    const prefix = generateTicketPrefix(eventInfo?.title || form.title);
+    const orderNum = (submissionCount || 0) + 1;
+    let ticketId = `${prefix}${String(orderNum).padStart(3, '0')}`;
+
+    // Ensure uniqueness by querying existing ticket IDs for this form
+    const { data: existingFormSubs } = await supabaseAdmin
+      .from('form_submissions')
+      .select('ticket_id, answers')
+      .eq('form_id', formId);
+
+    const usedIds = new Set(
+      (existingFormSubs || [])
+        .map((s) => s.ticket_id || s.answers?.ticket_id)
+        .filter(Boolean)
+    );
+
+    let seqCounter = orderNum;
+    while (usedIds.has(ticketId)) {
+      seqCounter++;
+      ticketId = `${prefix}${String(seqCounter).padStart(3, '0')}`;
+    }
+
+    // Embed ticket_id and initial email_sent state inside answers
+    const submissionAnswers = {
+      ...answers,
+      ticket_id: ticketId,
+      email_sent: false,
+    };
+
+    // 6. Store submission in database (setting both table column ticket_id and answers.ticket_id)
     const { data: submission, error } = await supabaseAdmin
       .from('form_submissions')
       .insert([
         {
           form_id: formId,
           user_id: req.user.id,
-          answers,
+          ticket_id: ticketId,
+          email_sent: false,
+          answers: submissionAnswers,
           submitted_at: new Date().toISOString(),
         },
       ])
@@ -448,8 +520,62 @@ const submitForm = async (req, res) => {
     await logActivity(req, {
       user_id: req.user.id,
       action: 'form_submitted',
-      details: { form_id: formId, event_id: form.event_id, submission_id: submission.id },
+      details: {
+        form_id: formId,
+        event_id: form.event_id,
+        submission_id: submission.id,
+        ticket_id: ticketId,
+      },
     });
+
+    // 7. Automated Email Confirmation Dispatch with Inline QR Pass
+    let emailDispatched = false;
+    let emailResult = null;
+
+    const attendeeEmail = answers.email || req.user.email || req.user.profile?.email;
+    const attendeeName =
+      answers.full_name ||
+      answers.name ||
+      req.user.profile?.full_name ||
+      attendeeEmail?.split('@')[0] ||
+      'Attendee';
+
+    try {
+      if (attendeeEmail && attendeeEmail.includes('@')) {
+        emailResult = await EmailService.sendRegistrationConfirmation({
+          to: attendeeEmail,
+          attendeeName,
+          event: eventInfo || { id: form.event_id, title: form.title },
+          submission: {
+            ...submission,
+            ticket_id: ticketId,
+            answers: submissionAnswers,
+          },
+          form,
+        });
+
+        // Update email_sent state in both table column and answers
+        if (emailResult && emailResult.success) {
+          emailDispatched = true;
+          await supabaseAdmin
+            .from('form_submissions')
+            .update({
+              ticket_id: ticketId,
+              email_sent: true,
+              answers: {
+                ...submissionAnswers,
+                ticket_id: ticketId,
+                email_sent: true,
+                email_sent_at: new Date().toISOString(),
+              },
+            })
+            .eq('id', submission.id);
+          console.log(`[submitForm] Database updated with email_sent=true for submission ${submission.id} (${ticketId})`);
+        }
+      }
+    } catch (emailErr) {
+      console.warn('[submitForm] Automated email dispatch failed (non-blocking):', emailErr.message);
+    }
 
     // Google Sheets Sync — fire-and-forget after successful submission
     if (form.schema?.sheets_url) {
@@ -474,7 +600,13 @@ const submitForm = async (req, res) => {
 
     return res.status(201).json({
       message: 'Form submitted successfully.',
-      submission,
+      submission: {
+        ...submission,
+        ticket_id: ticketId,
+      },
+      ticket_id: ticketId,
+      email_dispatched: emailDispatched,
+      confirmation_email_sent_to: attendeeEmail,
     });
   } catch (error) {
     console.error('submitForm error:', error);
@@ -510,6 +642,8 @@ const getFormSubmissions = async (req, res) => {
       count: submissions.length,
       submissions: submissions.map((s) => ({
         ...s,
+        ticket_id: s.ticket_id || s.answers?.ticket_id || null,
+        email_sent: s.email_sent !== undefined ? Boolean(s.email_sent) : Boolean(s.answers?.email_sent),
         attended: Boolean(s.attended),
       })),
     });
@@ -545,6 +679,8 @@ const getMySubmissions = async (req, res) => {
       count: submissions.length,
       submissions: submissions.map((s) => ({
         ...s,
+        ticket_id: s.ticket_id || s.answers?.ticket_id || null,
+        email_sent: s.email_sent !== undefined ? Boolean(s.email_sent) : Boolean(s.answers?.email_sent),
         attended: Boolean(s.attended),
       })),
     });
@@ -666,6 +802,149 @@ const syncSheetForAdmin = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/forms/ticket/:ticketId
+ * Public/Authorized: Look up a registration pass by its alphanumeric ticket ID.
+ * Returns submission, form, and event details so the attendee can view/download their ticket pass.
+ */
+const getTicketPass = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    if (!ticketId || typeof ticketId !== 'string') {
+      return res.status(400).json({ error: 'Ticket ID is required.' });
+    }
+
+    const cleanTicketId = ticketId.trim().toUpperCase();
+
+    // 1. Query submission by ticket_id column OR inside answers->ticket_id
+    let { data: submission, error } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+      .eq('ticket_id', cleanTicketId)
+      .maybeSingle();
+
+    if (!submission) {
+      // Fallback: search in recent submissions
+      const { data: fallbackSubs } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+        .limit(100);
+
+      submission = (fallbackSubs || []).find(
+        (s) => (s.answers?.ticket_id || '').toUpperCase() === cleanTicketId
+      );
+    }
+
+    if (!submission) {
+      return res.status(404).json({ error: 'Ticket not found. Please verify your ticket ID.' });
+    }
+
+    // 2. Fetch Form and Event details
+    const { data: form } = await supabaseAdmin
+      .from('forms')
+      .select('id, event_id, title, schema, expires_at')
+      .eq('id', submission.form_id)
+      .single();
+
+    let event = null;
+    if (form?.event_id) {
+      const { data: eventData } = await supabaseAdmin
+        .from('events')
+        .select('id, title, details')
+        .eq('id', form.event_id)
+        .single();
+      event = eventData;
+    }
+
+    return res.status(200).json({
+      message: 'Ticket pass details retrieved successfully.',
+      ticket_id: cleanTicketId,
+      submission: {
+        ...submission,
+        ticket_id: cleanTicketId,
+      },
+      form,
+      event,
+    });
+  } catch (error) {
+    console.error('getTicketPass error:', error);
+    return res.status(500).json({ error: 'Internal server error while fetching ticket pass.' });
+  }
+};
+
+/**
+ * GET /api/forms/ticket/:ticketId/qr-download
+ * Direct download of the QR code PNG pass image with Content-Disposition header.
+ */
+const downloadTicketQr = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    if (!ticketId) {
+      return res.status(400).json({ error: 'Ticket ID is required.' });
+    }
+    const QRCode = require('qrcode');
+    const cleanTicketId = ticketId.trim().toUpperCase();
+
+    // Look up submission details
+    let { data: submission } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, answers, submitted_at, ticket_id')
+      .eq('ticket_id', cleanTicketId)
+      .maybeSingle();
+
+    if (!submission) {
+      const { data: fallbackSubs } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id, form_id, answers, submitted_at, ticket_id')
+        .limit(100);
+
+      submission = (fallbackSubs || []).find(
+        (s) => (s.answers?.ticket_id || '').toUpperCase() === cleanTicketId
+      );
+    }
+
+    const { data: form } = submission?.form_id
+      ? await supabaseAdmin.from('forms').select('event_id, title').eq('id', submission.form_id).single()
+      : { data: null };
+
+    const { data: event } = form?.event_id
+      ? await supabaseAdmin.from('events').select('title, details').eq('id', form.event_id).single()
+      : { data: null };
+
+    const eventTitle = event?.title || form?.title || 'GDG Event';
+    const attendeeName = submission?.answers?.full_name || submission?.answers?.name || 'Attendee';
+    const attendeeEmail = submission?.answers?.email || '';
+
+    const qrText = [
+      'GDG EVENT TICKET',
+      '==============================',
+      `Event: ${eventTitle}`,
+      `Ticket ID: ${cleanTicketId}`,
+      `Name: ${attendeeName}`,
+      `Email: ${attendeeEmail}`,
+      '==============================',
+      'Google Developer Groups On Campus',
+    ].join('\n');
+
+    const qrBuffer = await QRCode.toBuffer(qrText, {
+      width: 400,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff',
+      },
+    });
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="gdg-ticket-${cleanTicketId}.png"`);
+    return res.status(200).send(qrBuffer);
+  } catch (err) {
+    console.error('downloadTicketQr error:', err);
+    return res.status(500).json({ error: 'Failed to generate QR code image.' });
+  }
+};
+
 module.exports = {
   createForm,
   getFormsByEvent,
@@ -678,4 +957,6 @@ module.exports = {
   updateSubmissionAttendance,
   syncSheetForAdmin,
   validateFormAnswers,
+  getTicketPass,
+  downloadTicketQr,
 };

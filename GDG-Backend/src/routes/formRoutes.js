@@ -10,24 +10,32 @@ const {
   getMySubmissions,
   updateSubmissionAttendance,
   syncSheetForAdmin,
+  getTicketPass,
+  downloadTicketQr,
 } = require('../controllers/formController');
 const {
   validateCreateForm,
   validateSubmitForm,
 } = require('../middleware/validator');
+const { formSubmissionLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
 // User Submissions
 router.get('/submissions/my', requireAuth, getMySubmissions);
 
+// Public Ticket Pass Lookup & Direct QR Download
+router.get('/ticket/:ticketId', getTicketPass);
+router.get('/ticket/:ticketId/qr-download', downloadTicketQr);
+
 // Single Form View (public — anyone can see form structure)
 router.get('/:id', getFormById);
 
-// Submit Form (Students / Authenticated)
+// Submit Form (Students / Authenticated with strict rate limiter)
 router.post(
   '/:formId/submissions',
   requireAuth,
+  formSubmissionLimiter,
   validateSubmitForm,
   submitForm
 );

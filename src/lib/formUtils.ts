@@ -1,3 +1,5 @@
+import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from './profileConstants';
+
 export type RegistrationState = 'open' | 'registered' | 'closed' | 'hidden';
 
 export type EventFieldType = 'markdown' | 'text' | 'key_value' | 'link' | 'list';
@@ -55,6 +57,51 @@ export interface FormField {
   max?: number;
 }
 
+export const DEFAULT_FORM_FIELDS: FormField[] = [
+  {
+    id: 'f_name',
+    name: 'full_name',
+    label: 'Full Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter your full name',
+  },
+  {
+    id: 'f_email',
+    name: 'email',
+    label: 'Email Address',
+    type: 'email',
+    required: true,
+    placeholder: 'your.name@example.com',
+  },
+  {
+    id: 'f_phone',
+    name: 'phone_number',
+    label: 'Phone Number',
+    type: 'text',
+    required: true,
+    placeholder: 'e.g. +91 9876543210',
+  },
+  {
+    id: 'f_department',
+    name: 'department',
+    label: 'Department',
+    type: 'select',
+    required: true,
+    placeholder: 'Select your department',
+    options: [...DEPARTMENT_OPTIONS],
+  },
+  {
+    id: 'f_year',
+    name: 'year_of_study',
+    label: 'Year of Study',
+    type: 'select',
+    required: true,
+    placeholder: 'Select year of study',
+    options: [...YEAR_OF_STUDY_OPTIONS],
+  },
+];
+
 export interface FormSchema {
   fields: FormField[];
   expires_at?: string | null;
@@ -78,6 +125,8 @@ export interface FormSubmission {
   user_id: string;
   answers: Record<string, any>;
   attended?: boolean;
+  ticket_id?: string;
+  email_sent?: boolean;
   submitted_at: string;
 }
 
@@ -130,13 +179,29 @@ export function getEventRegistrationState(params: {
 }
 
 /**
+ * Safely parses an event date/time string without unwanted UTC timezone shifts.
+ * Strips trailing 'Z' if present so that wall-clock times entered by the admin
+ * (e.g. 12:00 PM) are displayed as entered, not shifted by local timezone offsets.
+ */
+export function parseEventDate(isoDate?: string | null): Date | null {
+  if (!isoDate) return null;
+  try {
+    const clean = typeof isoDate === 'string' ? isoDate.replace(/Z$/i, '') : isoDate;
+    const d = new Date(clean);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Formats ISO date string to a human-readable date.
  */
 export function formatEventDate(isoDate?: string | null): string {
   if (!isoDate) return 'Date TBA';
   try {
-    const d = new Date(isoDate);
-    if (isNaN(d.getTime())) return 'Date TBA';
+    const d = parseEventDate(isoDate);
+    if (!d) return 'Date TBA';
     return d.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -159,8 +224,8 @@ export function formatEventDateRange(
 ): string {
   if (!startIso) return 'Date TBA';
   try {
-    const start = new Date(startIso);
-    if (isNaN(start.getTime())) return 'Date TBA';
+    const start = parseEventDate(startIso);
+    if (!start) return 'Date TBA';
 
     const formatOpts: Intl.DateTimeFormatOptions = {
       weekday: 'short',
@@ -173,8 +238,8 @@ export function formatEventDateRange(
 
     if (!endIso) return startStr;
 
-    const end = new Date(endIso);
-    if (isNaN(end.getTime())) return startStr;
+    const end = parseEventDate(endIso);
+    if (!end) return startStr;
 
     // Compare calendar day (year+month+day)
     const sameDay =
@@ -197,7 +262,9 @@ export function formatEventDateRange(
 export function formatEventTimeRange(startIso?: string | null, endIso?: string | null): string {
   if (!startIso) return 'Time TBA';
   try {
-    const start = new Date(startIso);
+    const start = parseEventDate(startIso);
+    if (!start) return 'Time TBA';
+
     const startTimeStr = start.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -206,7 +273,9 @@ export function formatEventTimeRange(startIso?: string | null, endIso?: string |
 
     if (!endIso) return startTimeStr;
 
-    const end = new Date(endIso);
+    const end = parseEventDate(endIso);
+    if (!end) return startTimeStr;
+
     const endTimeStr = end.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',

@@ -64,6 +64,13 @@ export async function apiRequest<T = any>(
   }
 
   if (!response.ok) {
+    // If token is expired or unauthorized, clear stale stored auth session
+    if (response.status === 401 && !url.includes('/api/auth/student/login') && !url.includes('/api/auth/admin/login')) {
+      try {
+        localStorage.removeItem('gdg_auth_storage');
+      } catch (_) {}
+    }
+
     const errorMessage =
       data?.error ||
       data?.message ||

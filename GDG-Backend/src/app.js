@@ -6,11 +6,15 @@ const dotenv = require('dotenv');
 const routes = require('./routes');
 const securityConfig = require('./config/securityConfig');
 const { sanitizeInput } = require('./middleware/cleanInput');
+const { generalApiLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 dotenv.config();
 
 const app = express();
+
+// Enable reverse proxy trust (prevents IP spoofing behind proxies like Nginx/Cloudflare/Heroku)
+app.set('trust proxy', 1);
 
 // 1. Security HTTP Headers
 app.use(
@@ -63,8 +67,8 @@ app.get('/', (req, res) => {
   });
 });
 
-// Mount Main API Routes under /api
-app.use('/api', routes);
+// Mount Main API Routes under /api (with general rate limiter)
+app.use('/api', generalApiLimiter, routes);
 
 // 404 Fallback Handler
 app.use(notFoundHandler);

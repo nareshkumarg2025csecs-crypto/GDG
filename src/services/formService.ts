@@ -15,6 +15,7 @@ export interface SingleFormResponse {
 export interface SubmitFormResponse {
   message: string;
   submission: FormSubmission;
+  confirmation_email_sent_to?: string;
 }
 
 export interface SubmissionsListResponse {
@@ -98,5 +99,22 @@ export const formService = {
         body: JSON.stringify({ attended }),
       }
     );
+  },
+
+  async getTicketPass(ticketId: string): Promise<{
+    message: string;
+    ticket_id: string;
+    submission: FormSubmission;
+    form: EventForm;
+    event: any;
+  }> {
+    return apiRequest(`/api/forms/ticket/${encodeURIComponent(ticketId)}`, {
+      method: 'GET',
+    });
+  },
+
+  getTicketQrDownloadUrl(ticketId: string): string {
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    return `${baseUrl}/api/forms/ticket/${encodeURIComponent(ticketId)}/qr-download`;
   },
 };

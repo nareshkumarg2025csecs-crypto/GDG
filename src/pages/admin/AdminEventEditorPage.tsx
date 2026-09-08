@@ -27,6 +27,7 @@ import {
   TableProperties,
   Sliders,
   Check,
+  Loader2,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
 import { eventService } from '@/services/eventService';
@@ -41,9 +42,11 @@ import {
   type FormSchema,
   type EventSection,
   type EventFieldType,
+  DEFAULT_FORM_FIELDS,
   formatEventDate,
   formatEventTimeRange,
 } from '@/lib/formUtils';
+import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
 
 const GOOGLE_THEME_COLORS = [
   { name: 'Google Blue', hex: '#4285F4' },
@@ -127,6 +130,30 @@ function SelectOptionsEditor({
         }}
         className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
       />
+
+      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+        <span className="text-[10px] text-muted-foreground font-mono">Presets:</span>
+        <button
+          type="button"
+          onClick={() => {
+            onChange([...DEPARTMENT_OPTIONS]);
+            setTextValue(DEPARTMENT_OPTIONS.join(', '));
+          }}
+          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Standard Departments ({DEPARTMENT_OPTIONS.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onChange([...YEAR_OF_STUDY_OPTIONS]);
+            setTextValue(YEAR_OF_STUDY_OPTIONS.join(', '));
+          }}
+          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Study Years (1st - 4th)
+        </button>
+      </div>
     </div>
   );
 }
@@ -164,24 +191,7 @@ export const AdminEventEditorPage: React.FC = () => {
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(true);
   const [expiresAt, setExpiresAt] = useState('');
   const [sheetsUrl, setSheetsUrl] = useState(''); // Optional Google Sheets URL for auto-logging submissions
-  const [formFields, setFormFields] = useState<FormField[]>([
-    {
-      id: 'f1',
-      name: 'full_name',
-      label: 'Full Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Enter your full name',
-    },
-    {
-      id: 'f2',
-      name: 'email',
-      label: 'Email Address',
-      type: 'email',
-      required: true,
-      placeholder: 'your.name@example.com',
-    },
-  ]);
+  const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
   // Live Preview Modal State
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -189,6 +199,7 @@ export const AdminEventEditorPage: React.FC = () => {
   // Loading & Submitting
   const [isLoading, setIsLoading] = useState(isEditing);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [savingMode, setSavingMode] = useState<'draft' | 'publish' | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // Refs for datetime inputs and image uploader
@@ -309,8 +320,9 @@ export const AdminEventEditorPage: React.FC = () => {
       const endTomorrow = new Date(tomorrow);
       endTomorrow.setHours(12, 30, 0, 0);
 
-      const startIsoStr = tomorrow.toISOString().slice(0, 16);
-      const endIsoStr = endTomorrow.toISOString().slice(0, 16);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startIsoStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T10:00`;
+      const endIsoStr = `${endTomorrow.getFullYear()}-${pad(endTomorrow.getMonth() + 1)}-${pad(endTomorrow.getDate())}T12:30`;
 
       setStartTime(startIsoStr);
       setEndTime(endIsoStr);
@@ -348,17 +360,15 @@ export const AdminEventEditorPage: React.FC = () => {
         }
 
         if (details.startTime || details.start_time) {
-          const startD = new Date(details.startTime || details.start_time);
-          if (!isNaN(startD.getTime())) {
-            setStartTime(startD.toISOString().slice(0, 16));
-          }
+          const raw = details.startTime || details.start_time;
+          const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
+          setStartTime(clean);
         }
 
         if (details.endTime || details.end_time) {
-          const endD = new Date(details.endTime || details.end_time);
-          if (!isNaN(endD.getTime())) {
-            setEndTime(endD.toISOString().slice(0, 16));
-          }
+          const raw = details.endTime || details.end_time;
+          const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
+          setEndTime(clean);
         }
 
         // Fetch attached form
@@ -371,10 +381,9 @@ export const AdminEventEditorPage: React.FC = () => {
             setHasForm(true);
 
             if (form.expires_at || form.schema?.expires_at) {
-              const expD = new Date(form.expires_at || form.schema?.expires_at);
-              if (!isNaN(expD.getTime())) {
-                setExpiresAt(expD.toISOString().slice(0, 16));
-              }
+              const raw = form.expires_at || form.schema?.expires_at;
+              const clean = typeof raw === 'string' ? raw.replace(/Z$/i, '').slice(0, 16) : '';
+              setExpiresAt(clean);
             }
 
             if (form.schema?.fields && Array.isArray(form.schema.fields)) {
@@ -508,10 +517,11 @@ export const AdminEventEditorPage: React.FC = () => {
       return;
     }
 
-    setIsSubmitting(true);
-
     const targetPublished =
       forcePublish !== undefined ? forcePublish : isEditing ? isPublished : true;
+
+    setSavingMode(targetPublished ? 'publish' : 'draft');
+    setIsSubmitting(true);
 
     try {
       const primaryDescription =
@@ -528,14 +538,10 @@ export const AdminEventEditorPage: React.FC = () => {
         coverImage: bannerUrl.trim() || undefined,
         theme_color: themeColor,
         is_registration_open: isRegistrationOpen,
-        startTime: new Date(startTime).toISOString(),
-        start_time: new Date(startTime).toISOString(),
-        endTime: endTime
-          ? new Date(endTime).toISOString()
-          : new Date(new Date(startTime).getTime() + 2 * 3600 * 1000).toISOString(),
-        end_time: endTime
-          ? new Date(endTime).toISOString()
-          : new Date(new Date(startTime).getTime() + 2 * 3600 * 1000).toISOString(),
+        startTime: startTime,
+        start_time: startTime,
+        endTime: endTime || startTime,
+        end_time: endTime || startTime,
         capacity: capacity ? Number(capacity) : undefined,
         status: (targetPublished ? 'published' : 'draft') as 'draft' | 'published',
         published: targetPublished,
@@ -603,6 +609,7 @@ export const AdminEventEditorPage: React.FC = () => {
       setErrorBanner(err.message || 'An error occurred while saving.');
     } finally {
       setIsSubmitting(false);
+      setSavingMode(null);
     }
   };
 
@@ -667,18 +674,34 @@ export const AdminEventEditorPage: React.FC = () => {
               type="button"
               disabled={isSubmitting}
               onClick={() => handleSave(false)}
-              className="px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs sm:text-sm font-semibold transition-all shadow-sm"
+              className="px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs sm:text-sm font-semibold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60"
             >
-              Save as Draft
+              {isSubmitting && savingMode === 'draft' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  <span>Saving Draft...</span>
+                </>
+              ) : (
+                <span>Save as Draft</span>
+              )}
             </button>
             <button
               type="button"
               disabled={isSubmitting}
               onClick={() => handleSave(true)}
-              className="px-4 py-2 rounded-xl bg-google-green hover:bg-google-green/90 text-white text-xs sm:text-sm font-semibold transition-all shadow-md flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-google-green hover:bg-google-green/90 text-white text-xs sm:text-sm font-semibold transition-all shadow-md flex items-center gap-1.5 disabled:opacity-60"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isEditing && isPublished ? 'Save Live Changes' : 'Publish Event'}</span>
+              {isSubmitting && savingMode === 'publish' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>{isEditing && isPublished ? 'Saving Changes...' : 'Publishing...'}</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isEditing && isPublished ? 'Save Live Changes' : 'Publish Event'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1344,21 +1367,102 @@ export const AdminEventEditorPage: React.FC = () => {
 
           {/* Form Questions List */}
           <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold font-sans">Registration Form Questions</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-border/60">
+              <div>
+                <h3 className="text-sm font-bold font-sans flex items-center gap-2">
+                  <span>Registration Form Questions</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-google-blue/10 text-google-blue border border-google-blue/20">
+                    {formFields.length} {formFields.length === 1 ? 'Question' : 'Questions'}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Standard defaults: Full Name, Email, Phone Number, Department, and Year of Study.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormFields(DEFAULT_FORM_FIELDS);
+                    toast({
+                      title: 'Standard Questions Loaded',
+                      description: 'Reset to standard defaults: Name, Email, Phone, Department, and Year of Study.',
+                    });
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-yellow/40 bg-google-yellow/10 text-google-yellow hover:bg-google-yellow/20 text-xs font-semibold transition-all shadow-sm"
+                  title="Reset to 5 standard dashboard questions (Name, Email, Phone, Department, Year)"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Load Default 5 Questions</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAddField}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-google-blue text-white text-xs font-semibold hover:bg-google-blue/90 transition-all shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Question</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick-Add Presets Bar */}
+            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-xl bg-muted/40 border border-border/70 text-xs">
+              <span className="text-[11px] font-mono text-muted-foreground mr-1">Quick Add:</span>
               <button
                 type="button"
-                onClick={handleAddField}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-google-blue text-white text-xs font-semibold hover:bg-google-blue/90 transition-all shadow-sm"
+                onClick={() => {
+                  const exists = formFields.some(f => f.name === 'phone_number');
+                  if (exists) {
+                    toast({ title: 'Already added', description: 'Phone number is already in the form.' });
+                    return;
+                  }
+                  const phoneField = DEFAULT_FORM_FIELDS.find(f => f.name === 'phone_number');
+                  if (phoneField) setFormFields(prev => [...prev, { ...phoneField, id: `f_${Date.now()}` }]);
+                }}
+                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Question</span>
+                + Phone Number
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const exists = formFields.some(f => f.name === 'department');
+                  if (exists) {
+                    toast({ title: 'Already added', description: 'Department is already in the form.' });
+                    return;
+                  }
+                  const deptField = DEFAULT_FORM_FIELDS.find(f => f.name === 'department');
+                  if (deptField) setFormFields(prev => [...prev, { ...deptField, id: `f_${Date.now()}` }]);
+                }}
+                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
+              >
+                + Department (14 Standard Depts)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const exists = formFields.some(f => f.name === 'year_of_study');
+                  if (exists) {
+                    toast({ title: 'Already added', description: 'Year of study is already in the form.' });
+                    return;
+                  }
+                  const yearField = DEFAULT_FORM_FIELDS.find(f => f.name === 'year_of_study');
+                  if (yearField) setFormFields(prev => [...prev, { ...yearField, id: `f_${Date.now()}` }]);
+                }}
+                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
+              >
+                + Year of Study (1st - 4th Year)
               </button>
             </div>
 
             {formFields.length === 0 ? (
               <div className="text-center py-6 px-4 border border-dashed rounded-2xl bg-muted/20 text-muted-foreground text-xs">
-                No custom questions. Students will register with their account name and email.
+                No questions configured. Click "Load Default 5 Questions" to add standard registration fields.
               </div>
             ) : (
               <div className="space-y-3">
@@ -1466,18 +1570,34 @@ export const AdminEventEditorPage: React.FC = () => {
               type="button"
               disabled={isSubmitting}
               onClick={() => handleSave(false)}
-              className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold shadow-sm transition-all"
+              className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60"
             >
-              Save as Draft
+              {isSubmitting && savingMode === 'draft' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  <span>Saving Draft...</span>
+                </>
+              ) : (
+                <span>Save as Draft</span>
+              )}
             </button>
             <button
               type="button"
               disabled={isSubmitting}
               onClick={() => handleSave(true)}
-              className="flex-1 sm:flex-initial px-6 py-3 rounded-2xl bg-google-green hover:bg-google-green/90 text-white text-xs sm:text-sm font-semibold shadow-md flex items-center justify-center gap-1.5 transition-all"
+              className="flex-1 sm:flex-initial px-6 py-3 rounded-2xl bg-google-green hover:bg-google-green/90 text-white text-xs sm:text-sm font-semibold shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-60"
             >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{isEditing && isPublished ? 'Save Live Changes' : 'Publish Event'}</span>
+              {isSubmitting && savingMode === 'publish' ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>{isEditing && isPublished ? 'Saving Live Changes...' : 'Publishing Event...'}</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isEditing && isPublished ? 'Save Live Changes' : 'Publish Event'}</span>
+                </>
+              )}
             </button>
           </div>
         </div>

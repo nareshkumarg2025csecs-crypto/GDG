@@ -7,6 +7,9 @@ const {
   logout,
   getGoogleOAuthUrl,
   syncGoogleProfile,
+  getGmailOAuthUrl,
+  handleGmailOAuthCallback,
+  validateAdminCode,
 } = require('../controllers/authController');
 const {
   getGoogleLinkUrl,
@@ -18,6 +21,7 @@ const {
   adminLoginLimiter,
   studentLoginLimiter,
   adminSignupLimiter,
+  adminCodeValidationLimiter,
   studentSignupLimiter,
 } = require('../middleware/rateLimiter');
 const {
@@ -52,6 +56,12 @@ router.post(
 );
 
 router.post(
+  '/admin/validate-code',
+  adminCodeValidationLimiter,
+  validateAdminCode
+);
+
+router.post(
   '/admin/login',
   adminLoginLimiter,
   validateLogin,
@@ -69,5 +79,9 @@ router.post('/google/sync-profile', syncGoogleProfile);
 router.get('/google/link', requireAuth, getGoogleLinkUrl);
 router.post('/google/tokens', requireAuth, saveGoogleTokens);
 router.get('/google/status', requireAuth, getGoogleLinkStatus);
+
+// Official Gmail REST API Authorization (Scope: https://www.googleapis.com/auth/gmail.send)
+router.get('/google/gmail-auth-url', getGmailOAuthUrl);
+router.get('/google/gmail-callback', handleGmailOAuthCallback);
 
 module.exports = router;
