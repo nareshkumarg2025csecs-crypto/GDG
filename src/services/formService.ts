@@ -42,6 +42,7 @@ export const formService = {
     title: string;
     schema: FormSchema;
     expires_at?: string | null;
+    submission_limit?: number | null;
   }): Promise<SingleFormResponse> {
     return apiRequest<SingleFormResponse>('/api/forms', {
       method: 'POST',
@@ -55,6 +56,7 @@ export const formService = {
       title?: string;
       schema?: FormSchema;
       expires_at?: string | null;
+      submission_limit?: number | null;
     }
   ): Promise<SingleFormResponse> {
     return apiRequest<SingleFormResponse>(`/api/forms/${id}`, {

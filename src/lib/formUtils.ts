@@ -1,6 +1,6 @@
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from './profileConstants';
 
-export type RegistrationState = 'open' | 'registered' | 'closed' | 'hidden';
+export type RegistrationState = 'open' | 'registered' | 'closed' | 'full' | 'hidden';
 
 export type EventFieldType = 'markdown' | 'text' | 'key_value' | 'link' | 'list';
 
@@ -105,6 +105,7 @@ export const DEFAULT_FORM_FIELDS: FormField[] = [
 export interface FormSchema {
   fields: FormField[];
   expires_at?: string | null;
+  submission_limit?: number | null;
   description?: string;
   [key: string]: any;
 }
@@ -115,6 +116,9 @@ export interface EventForm {
   title: string;
   schema: FormSchema;
   expires_at?: string | null;
+  submission_limit?: number | null;
+  submission_count?: number;
+  is_full?: boolean;
   created_by?: string;
   created_at: string;
 }
@@ -133,26 +137,30 @@ export interface FormSubmission {
 /**
  * Computes the unified state of an event's registration action.
  * Priority:
- * 1. If explicit manual closed state (isOpen === false), return "closed" (or "registered" if already registered)
+ * 1. If explicit manual closed state (isOpen === false), return "closed"
  * 2. Hide registration completely if now > expires_at + 24 hours
- * 3. If registered, show "registered" badge
- * 4. If past deadline, show "closed" badge
- * 5. Otherwise, show "open" (Register / Fill Form active)
+ * 3. If past deadline, show "closed" badge
+ * 4. If registered, show "registered" badge
+ * 5. If event capacity / slot limit is reached, show "full"
+ * 6. Otherwise, show "open" (Register / Fill Form active)
  */
 export function getEventRegistrationState(params: {
   isRegistered: boolean;
   isOpen?: boolean | null;
   expiresAt?: string | null;
+  isFull?: boolean | null;
+  submissionLimit?: number | null;
+  submissionCount?: number | null;
   now?: Date;
 }): RegistrationState {
-  const { isRegistered, isOpen, expiresAt, now = new Date() } = params;
+  const { isRegistered, isOpen, expiresAt, isFull, submissionLimit, submissionCount, now = new Date() } = params;
 
   // 1. Explicit manual closed toggle set by admin
   if (isOpen === false) {
     return 'closed';
   }
 
-  // 2. Check deadline expiration: if deadline is reached, show closed (overrides registered label)
+  // 2. Check deadline expiration: if deadline is reached, show closed
   if (expiresAt) {
     const expiryDate = new Date(expiresAt);
     if (!isNaN(expiryDate.getTime())) {
@@ -170,9 +178,23 @@ export function getEventRegistrationState(params: {
     }
   }
 
-  // 3. If within deadline and user has already submitted
+  // 3. If user has already submitted, prioritize registered state so they can view ticket pass
   if (isRegistered) {
     return 'registered';
+  }
+
+  // 4. Check if event capacity / slot limit is full
+  const reachedCapacity = isFull === true || (
+    submissionLimit !== undefined &&
+    submissionLimit !== null &&
+    submissionLimit > 0 &&
+    submissionCount !== undefined &&
+    submissionCount !== null &&
+    submissionCount >= submissionLimit
+  );
+
+  if (reachedCapacity) {
+    return 'full';
   }
 
   return 'open';

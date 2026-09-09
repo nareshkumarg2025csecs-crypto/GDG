@@ -15,6 +15,7 @@ import {
   Loader2,
   Mail,
   MailCheck,
+  Users,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -267,9 +268,13 @@ export const EventRegistrationPage: React.FC = () => {
     if (!form) return 'hidden';
     return getEventRegistrationState({
       isRegistered,
+      isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
       expiresAt: form.expires_at || form.schema?.expires_at,
+      isFull: form.is_full,
+      submissionLimit: form.submission_limit || form.schema?.submission_limit,
+      submissionCount: form.submission_count,
     });
-  }, [form, isRegistered]);
+  }, [form, isRegistered, details]);
 
   // Resolve submitted attendee email from form answers first (unconditional hook)
   const submittedEmail = useMemo(() => {
@@ -378,7 +383,17 @@ export const EventRegistrationPage: React.FC = () => {
           description: 'You have already submitted registration for this event.',
         });
       } else if (err.status === 410) {
-        setServerError('Registration closed: The deadline to submit this form has passed.');
+        if (
+          err.is_full ||
+          err.message?.toLowerCase().includes('slot') ||
+          err.message?.toLowerCase().includes('full') ||
+          err.message?.toLowerCase().includes('capacity')
+        ) {
+          setForm((prev: any) => (prev ? { ...prev, is_full: true } : prev));
+          setServerError('Event slots are full: Registration capacity has been reached. No more registrations are allowed.');
+        } else {
+          setServerError('Registration closed: The deadline to submit this form has passed.');
+        }
       } else {
         setServerError(err.message || 'An error occurred while submitting your registration.');
       }
@@ -552,6 +567,76 @@ export const EventRegistrationPage: React.FC = () => {
             >
               <span>Browse More Events</span>
             </Link>
+          </div>
+        </div>
+      </div>
+    );
+  // Event Slot Full View
+  if (regState === 'full') {
+    const limit = form?.submission_limit || form?.schema?.submission_limit;
+
+    return (
+      <div className="min-h-screen bg-background text-foreground pt-24 pb-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-xl mx-auto space-y-6">
+          <Link
+            to={`/events/${id}`}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-full hover:bg-muted"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Event</span>
+          </Link>
+
+          <div className="p-8 sm:p-10 rounded-3xl border border-rose-500/30 bg-card text-card-foreground shadow-2xl text-center space-y-6 relative overflow-hidden">
+            {/* Background Glow */}
+            <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-rose-500/10 blur-3xl pointer-events-none" />
+
+            <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center justify-center mx-auto shadow-inner">
+              <Users className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 font-mono">
+                Capacity Reached
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold font-sans text-foreground">
+                Event Slots Are Full
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+                All available seats for <strong>{event.title}</strong> have been reserved. Registration has automatically closed and no more registrations can be accepted.
+              </p>
+            </div>
+
+            {limit && Number(limit) > 0 && (
+              <div className="p-4 rounded-2xl bg-muted/40 border border-border/80 max-w-xs mx-auto space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground font-medium">Slot Status:</span>
+                  <span className="font-mono font-bold text-rose-500">
+                    {limit} / {limit} Filled
+                  </span>
+                </div>
+                {/* 100% full visual progress bar */}
+                <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-amber-500 to-rose-500 rounded-full w-full" />
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                to={`/events/${id}`}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold transition-all shadow-xs"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Event Details</span>
+              </Link>
+
+              <Link
+                to="/events"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
+              >
+                <span>Browse Other Events</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>

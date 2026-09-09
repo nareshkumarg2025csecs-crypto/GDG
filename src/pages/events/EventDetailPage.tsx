@@ -17,6 +17,7 @@ import {
   ZoomIn,
   X as XIcon,
   Loader2,
+  Users,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -147,6 +148,9 @@ export const EventDetailPage: React.FC = () => {
       isRegistered,
       isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
       expiresAt: form.expires_at || form.schema?.expires_at,
+      isFull: form.is_full,
+      submissionLimit: form.submission_limit ?? form.schema?.submission_limit,
+      submissionCount: form.submission_count,
     });
   }, [form, isRegistered, details]);
 
@@ -307,6 +311,13 @@ export const EventDetailPage: React.FC = () => {
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Registration Confirmed</span>
+                  </span>
+                )}
+
+                {regState === 'full' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 font-mono">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Slots Full</span>
                   </span>
                 )}
 
@@ -496,6 +507,18 @@ export const EventDetailPage: React.FC = () => {
                     <QrCode className="w-4 h-4" />
                     <span>View QR Ticket</span>
                   </button>
+                </div>
+              )}
+
+              {form && regState === 'full' && (
+                <div className="flex flex-col items-center sm:items-end gap-1.5">
+                  <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-rose-500/10 text-rose-500 border border-rose-500/30 text-sm font-semibold font-mono">
+                    <Users className="w-4 h-4" />
+                    <span>Event Slots Are Full</span>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Capacity reached{form.submission_count !== undefined ? ` (${form.submission_count}/${form.submission_limit || form.schema?.submission_limit || form.submission_count} registered)` : ''}. No more registrations allowed.
+                  </span>
                 </div>
               )}
 

@@ -108,11 +108,12 @@ CREATE TABLE IF NOT EXISTS public.forms (
     title TEXT NOT NULL,
     schema JSONB DEFAULT '{}'::jsonb NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE,
+    submission_limit INTEGER,
     created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Ensure expires_at column is added if table already existed
+-- Ensure expires_at and submission_limit columns are added if table already existed
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -122,6 +123,15 @@ BEGIN
           AND column_name = 'expires_at'
     ) THEN
         ALTER TABLE public.forms ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'forms' 
+          AND column_name = 'submission_limit'
+    ) THEN
+        ALTER TABLE public.forms ADD COLUMN submission_limit INTEGER;
     END IF;
 END $$;
 

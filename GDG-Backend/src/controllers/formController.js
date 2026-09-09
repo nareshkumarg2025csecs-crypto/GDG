@@ -119,7 +119,7 @@ const validateFormAnswers = (schema, answers) => {
  */
 const createForm = async (req, res) => {
   try {
-    const { event_id, title, schema, expires_at } = req.body;
+    const { event_id, title, schema, expires_at, submission_limit } = req.body;
 
     if (!event_id || !title) {
       return res.status(400).json({
@@ -140,9 +140,18 @@ const createForm = async (req, res) => {
       });
     }
 
+    const parsedLimit = submission_limit !== undefined
+      ? (submission_limit === null || submission_limit === '' || Number(submission_limit) <= 0 ? null : parseInt(submission_limit, 10))
+      : (schema?.submission_limit !== undefined
+          ? (schema.submission_limit === null || schema.submission_limit === '' || Number(schema.submission_limit) <= 0 ? null : parseInt(schema.submission_limit, 10))
+          : null);
+
     const formSchema = schema && typeof schema === 'object' ? { ...schema } : {};
     if (expires_at) {
       formSchema.expires_at = expires_at;
+    }
+    if (parsedLimit !== undefined) {
+      formSchema.submission_limit = parsedLimit;
     }
 
     const insertPayload = {
@@ -156,12 +165,35 @@ const createForm = async (req, res) => {
     if (expires_at) {
       insertPayload.expires_at = expires_at;
     }
+    if (parsedLimit !== undefined) {
+      insertPayload.submission_limit = parsedLimit;
+    }
 
-    const { data: form, error } = await supabaseAdmin
-      .from('forms')
-      .insert([insertPayload])
-      .select()
-      .single();
+    let form;
+    let error;
+    try {
+      const res = await supabaseAdmin
+        .from('forms')
+        .insert([insertPayload])
+        .select()
+        .single();
+      form = res.data;
+      error = res.error;
+
+      // Graceful fallback if database column submission_limit is not yet migrated
+      if (error && error.message && error.message.includes('submission_limit')) {
+        delete insertPayload.submission_limit;
+        const retryRes = await supabaseAdmin
+          .from('forms')
+          .insert([insertPayload])
+          .select()
+          .single();
+        form = retryRes.data;
+        error = retryRes.error;
+      }
+    } catch (insertErr) {
+      error = insertErr;
+    }
 
     if (error) {
       console.error('Create Form Error:', error);
@@ -180,7 +212,12 @@ const createForm = async (req, res) => {
 
     return res.status(201).json({
       message: 'Form created successfully for event.',
-      form,
+      form: {
+        ...form,
+        submission_limit: parsedLimit,
+        submission_count: 0,
+        is_full: false,
+      },
     });
   } catch (error) {
     console.error('createForm error:', error);
@@ -192,7 +229,7 @@ const createForm = async (req, res) => {
 
 /**
  * GET /api/events/:eventId/forms
- * Authenticated: Get all forms associated with an event.
+ * Authenticated: Get all forms associated with an event, enriched with real submission count and slot limit status.
  */
 const getFormsByEvent = async (req, res) => {
   try {
@@ -211,10 +248,34 @@ const getFormsByEvent = async (req, res) => {
       });
     }
 
+    // Attach submission count and slot capacity status to each form
+    const enrichedForms = await Promise.all(
+      (forms || []).map(async (f) => {
+        const { count } = await supabaseAdmin
+          .from('form_submissions')
+          .select('id', { count: 'exact', head: true })
+          .eq('form_id', f.id);
+
+        const currentCount = count || 0;
+        const limit = f.submission_limit !== undefined && f.submission_limit !== null
+          ? f.submission_limit
+          : (f.schema?.submission_limit !== undefined && f.schema?.submission_limit !== null ? f.schema.submission_limit : null);
+        const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
+        const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
+
+        return {
+          ...f,
+          submission_count: currentCount,
+          submission_limit: parsedLimitNum,
+          is_full: isFull,
+        };
+      })
+    );
+
     return res.status(200).json({
       message: 'Forms retrieved successfully.',
-      count: forms.length,
-      forms,
+      count: enrichedForms.length,
+      forms: enrichedForms,
     });
   } catch (error) {
     console.error('getFormsByEvent error:', error);
@@ -226,7 +287,7 @@ const getFormsByEvent = async (req, res) => {
 
 /**
  * GET /api/forms/:id
- * Authenticated: Get form by ID (including schema).
+ * Authenticated: Get form by ID (including schema, submission count, and slot status).
  */
 const getFormById = async (req, res) => {
   try {
@@ -244,9 +305,26 @@ const getFormById = async (req, res) => {
       });
     }
 
+    const { count } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id', { count: 'exact', head: true })
+      .eq('form_id', form.id);
+
+    const currentCount = count || 0;
+    const limit = form.submission_limit !== undefined && form.submission_limit !== null
+      ? form.submission_limit
+      : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
+    const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
+    const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
+
     return res.status(200).json({
       message: 'Form retrieved successfully.',
-      form,
+      form: {
+        ...form,
+        submission_count: currentCount,
+        submission_limit: parsedLimitNum,
+        is_full: isFull,
+      },
     });
   } catch (error) {
     console.error('getFormById error:', error);
@@ -258,12 +336,18 @@ const getFormById = async (req, res) => {
 
 /**
  * PUT /api/forms/:id
- * Admin-only: Update a form schema, title, or expiration date.
+ * Admin-only: Update a form schema, title, expiration date, or submission limit.
  */
 const updateForm = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, schema, expires_at } = req.body;
+    const { title, schema, expires_at, submission_limit } = req.body;
+
+    const parsedLimit = submission_limit !== undefined
+      ? (submission_limit === null || submission_limit === '' || Number(submission_limit) <= 0 ? null : parseInt(submission_limit, 10))
+      : (schema?.submission_limit !== undefined
+          ? (schema.submission_limit === null || schema.submission_limit === '' || Number(schema.submission_limit) <= 0 ? null : parseInt(schema.submission_limit, 10))
+          : undefined);
 
     const updatePayload = {};
     if (title && typeof title === 'string') updatePayload.title = title.trim();
@@ -272,20 +356,49 @@ const updateForm = async (req, res) => {
       if (expires_at !== undefined) {
         updatePayload.schema.expires_at = expires_at;
       }
-    } else if (expires_at !== undefined) {
-      updatePayload.expires_at = expires_at;
+      if (parsedLimit !== undefined) {
+        updatePayload.schema.submission_limit = parsedLimit;
+      }
+    } else if (expires_at !== undefined || parsedLimit !== undefined) {
+      updatePayload.schema = {};
+      if (expires_at !== undefined) updatePayload.schema.expires_at = expires_at;
+      if (parsedLimit !== undefined) updatePayload.schema.submission_limit = parsedLimit;
     }
 
     if (expires_at !== undefined) {
       updatePayload.expires_at = expires_at;
     }
+    if (parsedLimit !== undefined) {
+      updatePayload.submission_limit = parsedLimit;
+    }
 
-    const { data: form, error } = await supabaseAdmin
-      .from('forms')
-      .update(updatePayload)
-      .eq('id', id)
-      .select()
-      .single();
+    let form;
+    let error;
+    try {
+      const res = await supabaseAdmin
+        .from('forms')
+        .update(updatePayload)
+        .eq('id', id)
+        .select()
+        .single();
+      form = res.data;
+      error = res.error;
+
+      // Graceful fallback if database column submission_limit is not yet migrated
+      if (error && error.message && error.message.includes('submission_limit')) {
+        delete updatePayload.submission_limit;
+        const retryRes = await supabaseAdmin
+          .from('forms')
+          .update(updatePayload)
+          .eq('id', id)
+          .select()
+          .single();
+        form = retryRes.data;
+        error = retryRes.error;
+      }
+    } catch (updateErr) {
+      error = updateErr;
+    }
 
     if (error || !form) {
       return res.status(404).json({
@@ -390,10 +503,10 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 1. Verify form exists and retrieve its dynamic schema & expiry
+    // 1. Verify form exists and retrieve its dynamic schema, expiry, and submission limit
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('id, event_id, title, schema, expires_at')
+      .select('*')
       .eq('id', formId)
       .single();
 
@@ -416,6 +529,28 @@ const submitForm = async (req, res) => {
         error: 'Registration closed: The deadline to submit this form has passed.',
         expires_at: expiryTime,
       });
+    }
+
+    // 2.5 Server-side Form Submission Limit / Event Capacity Slot Check (Zero client trust)
+    const rawLimit = form.submission_limit !== undefined && form.submission_limit !== null
+      ? form.submission_limit
+      : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
+    const parsedSlotLimit = rawLimit && Number(rawLimit) > 0 ? Number(rawLimit) : null;
+
+    if (parsedSlotLimit) {
+      const { count: currentTotal } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('form_id', formId);
+
+      if ((currentTotal || 0) >= parsedSlotLimit) {
+        return res.status(410).json({
+          error: 'Event slot is full: All available registration seats have been filled. No more registrations are allowed.',
+          is_full: true,
+          submission_limit: parsedSlotLimit,
+          current_count: currentTotal || 0,
+        });
+      }
     }
 
     // 3. Server-side Duplicate Prevention Check (Zero client trust)

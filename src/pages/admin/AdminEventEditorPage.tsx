@@ -32,6 +32,7 @@ import {
   Send,
   Copy,
   QrCode,
+  Users,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
 import { eventService } from '@/services/eventService';
@@ -229,6 +230,7 @@ export const AdminEventEditorPage: React.FC = () => {
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(true);
   const [expiresAt, setExpiresAt] = useState('');
   const [sheetsUrl, setSheetsUrl] = useState(''); // Optional Google Sheets URL for auto-logging submissions
+  const [submissionLimit, setSubmissionLimit] = useState<number | ''>(''); // Optional attendee slot / submission limit
   const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
   // Email Notification & Draft Configuration State
@@ -559,6 +561,13 @@ export const AdminEventEditorPage: React.FC = () => {
               setSheetsUrl(form.schema.sheets_url);
             }
 
+            // Load existing submission / slot limit if previously saved
+            if (form.submission_limit !== undefined && form.submission_limit !== null) {
+              setSubmissionLimit(form.submission_limit);
+            } else if (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null) {
+              setSubmissionLimit(form.schema.submission_limit);
+            }
+
             // Load existing Email Draft configuration
             if (form.schema?.email_config) {
               const cfg = form.schema.email_config;
@@ -778,15 +787,19 @@ export const AdminEventEditorPage: React.FC = () => {
 
       // Handle attached form
       if (hasForm && savedEventId) {
+        const parsedSubLimit = submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit);
+
         const formSchema: FormSchema & {
           sheets_url?: string;
           is_open?: boolean;
+          submission_limit?: number | null;
           email_config?: EmailDraftConfig;
           qr_config?: QrCodeConfig;
         } = {
           fields: formFields,
           is_open: isRegistrationOpen,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          submission_limit: parsedSubLimit,
           email_config: emailConfig,
           qr_config: qrConfig,
         };
@@ -794,13 +807,12 @@ export const AdminEventEditorPage: React.FC = () => {
           formSchema.sheets_url = sheetsUrl.trim();
         }
 
-
-
         const formPayload = {
           event_id: savedEventId,
           title: formTitle.trim() || `${title.trim()} Registration`,
           schema: formSchema,
           expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          submission_limit: parsedSubLimit,
         };
 
         if (existingFormId) {
@@ -808,6 +820,7 @@ export const AdminEventEditorPage: React.FC = () => {
             title: formPayload.title,
             schema: formPayload.schema,
             expires_at: formPayload.expires_at,
+            submission_limit: formPayload.submission_limit,
           });
         } else {
           await formService.createForm(formPayload);
@@ -1584,6 +1597,105 @@ export const AdminEventEditorPage: React.FC = () => {
                     </a>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Form Submission / Attendee Capacity Limit */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-card via-card to-amber-500/5 border border-border/80 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shrink-0 mt-0.5">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-foreground flex items-center gap-2">
+                    <span>Attendee Capacity &amp; Submission Limit</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                      submissionLimit
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold'
+                        : 'bg-muted text-muted-foreground border-border'
+                    }`}>
+                      {submissionLimit ? `${submissionLimit} Slots Max` : 'Unlimited Slots'}
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed max-w-xl">
+                    Set the maximum registrations allowed for this event. Once the limit is reached, registration automatically locks and public pages display <strong className="text-amber-500 font-semibold">"Event Slot is Full"</strong> so no more registrations are accepted.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div className="text-xs font-mono px-3 py-1.5 rounded-xl bg-muted/60 border border-border shrink-0 self-start sm:self-auto flex items-center gap-1.5">
+                <span className="text-muted-foreground">Capacity:</span>
+                <span className={submissionLimit ? 'text-amber-500 font-bold' : 'text-google-blue font-bold'}>
+                  {submissionLimit ? `${submissionLimit} Capped` : 'Open / Unlimited'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1.5">
+                <div className="relative">
+                  <Users className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="e.g. 50 (Leave empty for unlimited)"
+                    value={submissionLimit}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setSubmissionLimit('');
+                      } else {
+                        const num = parseInt(val, 10);
+                        setSubmissionLimit(isNaN(num) || num <= 0 ? '' : num);
+                      }
+                    }}
+                    className="w-full pl-9 pr-14 py-2 rounded-xl border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 font-mono"
+                  />
+                  {submissionLimit !== '' && (
+                    <button
+                      type="button"
+                      onClick={() => setSubmissionLimit('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+                      title="Clear limit"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-mono text-muted-foreground mr-1">Presets:</span>
+                {[30, 50, 100, 200, 500].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setSubmissionLimit(preset)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                      submissionLimit === preset
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                        : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSubmissionLimit('')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                    submissionLimit === ''
+                      ? 'bg-google-blue text-white border-google-blue shadow-xs'
+                      : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Unlimited
+                </button>
               </div>
             </div>
           </div>

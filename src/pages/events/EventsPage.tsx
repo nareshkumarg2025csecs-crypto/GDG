@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   QrCode,
   X as XIcon,
+  Users,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -318,6 +319,9 @@ export const EventsPage: React.FC = () => {
                     isRegistered,
                     isOpen: attachedForm.schema?.is_open !== false && details.is_registration_open !== false,
                     expiresAt: attachedForm.expires_at || attachedForm.schema?.expires_at,
+                    isFull: attachedForm.is_full,
+                    submissionLimit: attachedForm.submission_limit || attachedForm.schema?.submission_limit,
+                    submissionCount: attachedForm.submission_count,
                   })
                 : 'hidden';
 
@@ -367,6 +371,13 @@ export const EventsPage: React.FC = () => {
                           </span>
                         )}
 
+                        {regState === 'full' && (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500 text-white font-mono shadow-sm">
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Slots Full</span>
+                          </span>
+                        )}
+
                         {regState === 'closed' && (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-google-yellow text-black font-mono shadow-sm">
                             <Clock className="w-3.5 h-3.5" />
@@ -409,6 +420,13 @@ export const EventsPage: React.FC = () => {
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>Registered</span>
+                          </span>
+                        )}
+
+                        {attachedForm && regState === 'full' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 font-mono">
+                            <Users className="w-3 h-3" />
+                            <span>Slots Full</span>
                           </span>
                         )}
 
@@ -541,6 +559,11 @@ export const EventsPage: React.FC = () => {
                               <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                           )
+                        ) : attachedForm && regState === 'full' ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold cursor-not-allowed">
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Slots Full</span>
+                          </span>
                         ) : (
                           <Link
                             to={`/events/${event.id}`}
