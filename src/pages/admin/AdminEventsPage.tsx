@@ -12,6 +12,7 @@ import {
   Users,
   CheckCircle2,
   Clock,
+  MapPin,
   FileText,
   AlertTriangle,
   ArrowRight,
@@ -438,8 +439,38 @@ export const AdminEventsPage: React.FC = () => {
                       </div>
                       {(details.location || details.venue) && (
                         <div className="flex items-center gap-2">
-                          <span className="w-3.5 text-center text-google-red font-bold">📍</span>
+                          <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
                           <span className="truncate">{details.location || details.venue}</span>
+                        </div>
+                      )}
+                      {attachedForm && (
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <Users className="w-3.5 h-3.5 text-google-green shrink-0" />
+                          <span>
+                            {(() => {
+                              const count = attachedForm.submission_count ?? 0;
+                              const limit = attachedForm.submission_limit || attachedForm.schema?.submission_limit;
+                              if (limit && Number(limit) > 0) {
+                                const remaining = Math.max(0, Number(limit) - count);
+                                return (
+                                  <>
+                                    <strong className="text-foreground font-semibold">{count}</strong> registered
+                                    <span className="text-muted-foreground mx-1">•</span>
+                                    <span className={remaining === 0 ? 'text-rose-500 font-semibold' : 'text-google-green font-semibold'}>
+                                      {remaining === 0 ? 'No spots left' : `${remaining} spot${remaining === 1 ? '' : 's'} left`}
+                                    </span>
+                                  </>
+                                );
+                              }
+                              return (
+                                <>
+                                  <strong className="text-foreground font-semibold">{count}</strong> registered
+                                  <span className="text-muted-foreground mx-1">•</span>
+                                  <span className="text-muted-foreground">Unlimited spots</span>
+                                </>
+                              );
+                            })()}
+                          </span>
                         </div>
                       )}
                     </div>

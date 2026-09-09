@@ -33,6 +33,7 @@ import {
   formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
+  calculateRemainingTime,
 } from '@/lib/formUtils';
 
 const DEFAULT_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
@@ -314,10 +315,12 @@ export const EventsPage: React.FC = () => {
               const details = event.details || {};
               const attachedForm = formsByEvent[event.id];
               const isRegistered = attachedForm ? registeredFormIds.has(attachedForm.id) : false;
+              const opensAt = attachedForm?.opens_at || attachedForm?.schema?.opens_at;
               const regState = attachedForm
                 ? getEventRegistrationState({
                     isRegistered,
                     isOpen: attachedForm.schema?.is_open !== false && details.is_registration_open !== false,
+                    opensAt,
                     expiresAt: attachedForm.expires_at || attachedForm.schema?.expires_at,
                     isFull: attachedForm.is_full,
                     submissionLimit: attachedForm.submission_limit || attachedForm.schema?.submission_limit,
@@ -371,6 +374,13 @@ export const EventsPage: React.FC = () => {
                           </span>
                         )}
 
+                        {regState === 'upcoming' && (
+                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500 text-white font-mono shadow-sm">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
+                          </span>
+                        )}
+
                         {regState === 'full' && (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500 text-white font-mono shadow-sm">
                             <Users className="w-3.5 h-3.5" />
@@ -420,6 +430,13 @@ export const EventsPage: React.FC = () => {
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
                             <CheckCircle2 className="w-3 h-3" />
                             <span>Registered</span>
+                          </span>
+                        )}
+
+                        {attachedForm && regState === 'upcoming' && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/30 font-mono">
+                            <Clock className="w-3 h-3" />
+                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
                           </span>
                         )}
 
@@ -482,6 +499,36 @@ export const EventsPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
                           <span className="truncate">{details.location || details.venue}</span>
+                        </div>
+                      )}
+                      {attachedForm && (attachedForm.show_submission_count !== false && attachedForm.schema?.show_submission_count !== false) && (
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <Users className="w-3.5 h-3.5 text-google-green shrink-0" />
+                          <span>
+                            {(() => {
+                              const count = attachedForm.submission_count ?? 0;
+                              const limit = attachedForm.submission_limit || attachedForm.schema?.submission_limit;
+                              if (limit && Number(limit) > 0) {
+                                const remaining = Math.max(0, Number(limit) - count);
+                                return (
+                                  <>
+                                    <strong className="text-foreground font-semibold">{count}</strong> registered
+                                    <span className="text-muted-foreground mx-1">•</span>
+                                    <span className={remaining === 0 ? 'text-rose-500 font-semibold' : 'text-google-green font-semibold'}>
+                                      {remaining === 0 ? 'No spots left' : `${remaining} spot${remaining === 1 ? '' : 's'} left`}
+                                    </span>
+                                  </>
+                                );
+                              }
+                              return (
+                                <>
+                                  <strong className="text-foreground font-semibold">{count}</strong> registered
+                                  <span className="text-muted-foreground mx-1">•</span>
+                                  <span className="text-muted-foreground">Unlimited spots</span>
+                                </>
+                              );
+                            })()}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -559,6 +606,15 @@ export const EventsPage: React.FC = () => {
                               <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                           )
+                        ) : attachedForm && regState === 'upcoming' ? (
+                          <Link
+                            to={`/events/${event.id}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold hover:bg-amber-500/20 transition-colors"
+                            title={`Registration opens in ${calculateRemainingTime(opensAt).formatted}`}
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
+                          </Link>
                         ) : attachedForm && regState === 'full' ? (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold cursor-not-allowed">
                             <Users className="w-3.5 h-3.5" />

@@ -119,7 +119,7 @@ const validateFormAnswers = (schema, answers) => {
  */
 const createForm = async (req, res) => {
   try {
-    const { event_id, title, schema, expires_at, submission_limit } = req.body;
+    const { event_id, title, schema, opens_at, expires_at, submission_limit, show_submission_count } = req.body;
 
     if (!event_id || !title) {
       return res.status(400).json({
@@ -147,11 +147,21 @@ const createForm = async (req, res) => {
           : null);
 
     const formSchema = schema && typeof schema === 'object' ? { ...schema } : {};
+    if (opens_at !== undefined) {
+      formSchema.opens_at = opens_at || null;
+    }
     if (expires_at) {
       formSchema.expires_at = expires_at;
     }
     if (parsedLimit !== undefined) {
       formSchema.submission_limit = parsedLimit;
+    }
+    if (show_submission_count !== undefined) {
+      formSchema.show_submission_count = show_submission_count !== false;
+    } else if (schema?.show_submission_count !== undefined) {
+      formSchema.show_submission_count = schema.show_submission_count !== false;
+    } else {
+      formSchema.show_submission_count = true;
     }
 
     const insertPayload = {
@@ -162,6 +172,9 @@ const createForm = async (req, res) => {
       created_at: new Date().toISOString(),
     };
 
+    if (opens_at !== undefined) {
+      insertPayload.opens_at = opens_at || null;
+    }
     if (expires_at) {
       insertPayload.expires_at = expires_at;
     }
@@ -180,9 +193,10 @@ const createForm = async (req, res) => {
       form = res.data;
       error = res.error;
 
-      // Graceful fallback if database column submission_limit is not yet migrated
-      if (error && error.message && error.message.includes('submission_limit')) {
-        delete insertPayload.submission_limit;
+      // Graceful fallback if database columns opens_at or submission_limit are not yet migrated
+      if (error && error.message && (error.message.includes('submission_limit') || error.message.includes('opens_at'))) {
+        if (error.message.includes('submission_limit')) delete insertPayload.submission_limit;
+        if (error.message.includes('opens_at')) delete insertPayload.opens_at;
         const retryRes = await supabaseAdmin
           .from('forms')
           .insert([insertPayload])
@@ -263,10 +277,22 @@ const getFormsByEvent = async (req, res) => {
         const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
         const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
 
+        const opensAt = f.opens_at !== undefined && f.opens_at !== null
+          ? f.opens_at
+          : (f.schema?.opens_at || null);
+        const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
+
+        const showCount = f.show_submission_count !== undefined
+          ? f.show_submission_count
+          : (f.schema?.show_submission_count !== false);
+
         return {
           ...f,
+          opens_at: opensAt,
+          is_upcoming: isUpcoming,
           submission_count: currentCount,
           submission_limit: parsedLimitNum,
+          show_submission_count: showCount,
           is_full: isFull,
         };
       })
@@ -287,7 +313,7 @@ const getFormsByEvent = async (req, res) => {
 
 /**
  * GET /api/forms/:id
- * Authenticated: Get form by ID (including schema, submission count, and slot status).
+ * Authenticated: Get form by ID (including schema, submission count, slot status, and opening status).
  */
 const getFormById = async (req, res) => {
   try {
@@ -317,12 +343,24 @@ const getFormById = async (req, res) => {
     const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
     const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
 
+    const opensAt = form.opens_at !== undefined && form.opens_at !== null
+      ? form.opens_at
+      : (form.schema?.opens_at || null);
+    const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
+
+    const showCount = form.show_submission_count !== undefined
+      ? form.show_submission_count
+      : (form.schema?.show_submission_count !== false);
+
     return res.status(200).json({
       message: 'Form retrieved successfully.',
       form: {
         ...form,
+        opens_at: opensAt,
+        is_upcoming: isUpcoming,
         submission_count: currentCount,
         submission_limit: parsedLimitNum,
+        show_submission_count: showCount,
         is_full: isFull,
       },
     });
@@ -341,7 +379,7 @@ const getFormById = async (req, res) => {
 const updateForm = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, schema, expires_at, submission_limit } = req.body;
+    const { title, schema, opens_at, expires_at, submission_limit, show_submission_count } = req.body;
 
     const parsedLimit = submission_limit !== undefined
       ? (submission_limit === null || submission_limit === '' || Number(submission_limit) <= 0 ? null : parseInt(submission_limit, 10))
@@ -353,18 +391,29 @@ const updateForm = async (req, res) => {
     if (title && typeof title === 'string') updatePayload.title = title.trim();
     if (schema && typeof schema === 'object') {
       updatePayload.schema = { ...schema };
+      if (opens_at !== undefined) {
+        updatePayload.schema.opens_at = opens_at || null;
+      }
       if (expires_at !== undefined) {
         updatePayload.schema.expires_at = expires_at;
       }
       if (parsedLimit !== undefined) {
         updatePayload.schema.submission_limit = parsedLimit;
       }
-    } else if (expires_at !== undefined || parsedLimit !== undefined) {
+      if (show_submission_count !== undefined) {
+        updatePayload.schema.show_submission_count = show_submission_count !== false;
+      }
+    } else if (opens_at !== undefined || expires_at !== undefined || parsedLimit !== undefined || show_submission_count !== undefined) {
       updatePayload.schema = {};
+      if (opens_at !== undefined) updatePayload.schema.opens_at = opens_at || null;
       if (expires_at !== undefined) updatePayload.schema.expires_at = expires_at;
       if (parsedLimit !== undefined) updatePayload.schema.submission_limit = parsedLimit;
+      if (show_submission_count !== undefined) updatePayload.schema.show_submission_count = show_submission_count !== false;
     }
 
+    if (opens_at !== undefined) {
+      updatePayload.opens_at = opens_at || null;
+    }
     if (expires_at !== undefined) {
       updatePayload.expires_at = expires_at;
     }
@@ -384,9 +433,10 @@ const updateForm = async (req, res) => {
       form = res.data;
       error = res.error;
 
-      // Graceful fallback if database column submission_limit is not yet migrated
-      if (error && error.message && error.message.includes('submission_limit')) {
-        delete updatePayload.submission_limit;
+      // Graceful fallback if database columns opens_at or submission_limit are not yet migrated
+      if (error && error.message && (error.message.includes('submission_limit') || error.message.includes('opens_at'))) {
+        if (error.message.includes('submission_limit')) delete updatePayload.submission_limit;
+        if (error.message.includes('opens_at')) delete updatePayload.opens_at;
         const retryRes = await supabaseAdmin
           .from('forms')
           .update(updatePayload)
@@ -520,6 +570,15 @@ const submitForm = async (req, res) => {
     if (form.schema?.is_open === false) {
       return res.status(410).json({
         error: 'Registration closed: Registrations for this event have been closed by the admin.',
+      });
+    }
+
+    const openingTime = form.opens_at || form.schema?.opens_at;
+    if (openingTime && new Date() < new Date(openingTime)) {
+      return res.status(403).json({
+        error: `Registration has not opened yet. Registration opens on ${new Date(openingTime).toLocaleString()}.`,
+        is_upcoming: true,
+        opens_at: openingTime,
       });
     }
 

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
+import { dashboardService } from '@/services/dashboardService';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -28,14 +29,15 @@ import {
   getEventRegistrationState,
   formatEventDate,
   formatEventTimeRange,
+  calculateRemainingTime,
 } from '@/lib/formUtils';
 import EventTicketPass from '@/components/events/EventTicketPass';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 
-// Helper to autofill default form answers from user's completed profile
-const getDefaultFieldValue = (field: FormField, profile: any) => {
-  if (!profile) return field.type === 'checkbox' ? false : '';
-  const details = profile.details || {};
+// Helper to autofill default form answers from user's completed profile & dashboard
+const getDefaultFieldValue = (field: FormField, profile: any, user?: any) => {
+  if (!profile && !user) return field.type === 'checkbox' ? false : '';
+  const details = profile?.details || {};
   const fieldKey = (field.name || '').toLowerCase().trim();
   const fieldLabel = (field.label || '').toLowerCase().trim();
 
@@ -48,7 +50,7 @@ const getDefaultFieldValue = (field: FormField, profile: any) => {
     fieldKey === 'email_id' ||
     fieldLabel.includes('email')
   ) {
-    return details.email || profile.email || '';
+    return details.email || profile?.email || user?.email || '';
   }
 
   // 2. Name matching
@@ -58,9 +60,13 @@ const getDefaultFieldValue = (field: FormField, profile: any) => {
     fieldKey === 'name' ||
     fieldKey === 'attendee_name' ||
     fieldKey === 'student_name' ||
-    (fieldLabel.includes('name') && !fieldLabel.includes('college') && !fieldLabel.includes('parent'))
+    (fieldLabel.includes('name') &&
+      !fieldLabel.includes('college') &&
+      !fieldLabel.includes('parent') &&
+      !fieldLabel.includes('phone') &&
+      !fieldLabel.includes('mobile'))
   ) {
-    return profile.full_name || '';
+    return profile?.full_name || '';
   }
 
   // 3. Roll Number / Register Number matching
@@ -77,7 +83,15 @@ const getDefaultFieldValue = (field: FormField, profile: any) => {
     fieldLabel.includes('register number') ||
     fieldLabel.includes('registration number')
   ) {
-    return details.roll_no || '';
+    return (
+      details.roll_no ||
+      profile?.roll_no ||
+      details.roll_number ||
+      profile?.roll_number ||
+      details.reg_no ||
+      details.register_number ||
+      ''
+    );
   }
 
   // 4. Department / Branch matching
@@ -88,7 +102,7 @@ const getDefaultFieldValue = (field: FormField, profile: any) => {
     fieldLabel.includes('department') ||
     fieldLabel.includes('branch')
   ) {
-    return details.department || '';
+    return details.department || profile?.department || '';
   }
 
   // 5. Year matching
@@ -99,21 +113,52 @@ const getDefaultFieldValue = (field: FormField, profile: any) => {
     fieldLabel.includes('year of study') ||
     fieldLabel === 'year'
   ) {
-    return details.year || '';
+    return details.year || profile?.year || '';
   }
 
-  // 6. Phone number matching
+  // 6. Phone number matching (loads from student dashboard details, profile, or user)
   if (
     field.type === 'tel' ||
     fieldKey === 'phone' ||
     fieldKey === 'phone_number' ||
+    fieldKey === 'phonenumber' ||
+    fieldKey === 'phone_no' ||
+    fieldKey === 'phoneno' ||
     fieldKey === 'mobile' ||
     fieldKey === 'mobile_number' ||
+    fieldKey === 'mobilenumber' ||
+    fieldKey === 'mobile_no' ||
+    fieldKey === 'mobileno' ||
     fieldKey === 'contact' ||
+    fieldKey === 'contact_number' ||
+    fieldKey === 'contact_no' ||
+    fieldKey === 'whatsapp' ||
+    fieldKey === 'whatsapp_number' ||
     fieldLabel.includes('phone') ||
-    fieldLabel.includes('mobile')
+    fieldLabel.includes('mobile') ||
+    fieldLabel.includes('contact') ||
+    fieldLabel.includes('whatsapp')
   ) {
-    return details.phone_number || details.phone || '';
+    return (
+      details.phone_number ||
+      details.phone ||
+      details.phoneNumber ||
+      details.mobile ||
+      details.mobile_number ||
+      details.contact ||
+      details.contact_number ||
+      details.phone_no ||
+      details.phoneno ||
+      details.whatsapp ||
+      profile?.phone_number ||
+      profile?.phone ||
+      profile?.phoneNumber ||
+      profile?.mobile ||
+      profile?.contact ||
+      user?.phone ||
+      user?.phone_number ||
+      ''
+    );
   }
 
   return field.type === 'checkbox' ? false : '';
@@ -123,7 +168,7 @@ export const EventRegistrationPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, profile, isAuthenticated } = useAuth();
+  const { user, profile, isAuthenticated, updateProfile } = useAuth();
 
   const ticketParam = searchParams.get('ticket') || searchParams.get('ticket_id');
 
@@ -133,46 +178,33 @@ export const EventRegistrationPage: React.FC = () => {
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Form State
-  const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [isCalendarAdded, setIsCalendarAdded] = useState(false);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
-  const [isCalendarAdded, setIsCalendarAdded] = useState(false);
   const [confirmationEmailTo, setConfirmationEmailTo] = useState<string | null>(null);
 
-  // Load Event, Form and check server-authoritative submission status
+  // Load Event and Form Details
   useEffect(() => {
-    if (!id) return;
-
-    // Fast check for locally saved calendar sync
-    try {
-      if (localStorage.getItem(`gdg_calendar_added_${id}`) === 'true') {
-        setIsCalendarAdded(true);
-      }
-    } catch (_) {}
-
     const loadData = async () => {
-      setIsLoading(true);
+      if (!id) return;
       try {
-        // Priority 1: If URL contains a ticket parameter (from confirmation email), load pass directly
+        setIsLoading(true);
+
+        // Ticket Direct View Mode
         if (ticketParam) {
           try {
             const ticketRes = await formService.getTicketPass(ticketParam);
-            if (ticketRes?.submission) {
-              setEvent(ticketRes.event || (await eventService.getEventById(id)).event);
-              setForm(ticketRes.form);
+            if (ticketRes?.event && ticketRes?.submission) {
+              setEvent(ticketRes.event);
+              setForm(ticketRes.form || null);
               setIsRegistered(true);
               setSubmittedAt(ticketRes.submission.submitted_at);
               setSubmissionId(ticketRes.submission.id);
-              const subAnswers = ticketRes.submission.answers || {};
-              setAnswers({
-                ...subAnswers,
-                ticket_id: ticketRes.ticket_id || ticketParam,
-              });
+              setAnswers(ticketRes.submission.answers || {});
               setIsLoading(false);
               return;
             }
@@ -181,7 +213,7 @@ export const EventRegistrationPage: React.FC = () => {
           }
         }
 
-        const [eventRes, formsRes, subsRes, calRes] = await Promise.all([
+        const [eventRes, formsRes, subsRes, calRes, dashRes] = await Promise.all([
           eventService.getEventById(id),
           formService.getFormsByEvent(id),
           isAuthenticated
@@ -190,7 +222,15 @@ export const EventRegistrationPage: React.FC = () => {
           isAuthenticated
             ? eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] }))
             : Promise.resolve({ event_ids: [] }),
+          isAuthenticated
+            ? dashboardService.getDashboard().catch(() => null)
+            : Promise.resolve(null),
         ]);
+
+        const activeProfile = dashRes?.dashboard || profile;
+        if (dashRes?.dashboard) {
+          updateProfile(dashRes.dashboard);
+        }
 
         if (calRes?.event_ids && Array.isArray(calRes.event_ids) && calRes.event_ids.includes(id)) {
           setIsCalendarAdded(true);
@@ -202,7 +242,6 @@ export const EventRegistrationPage: React.FC = () => {
           const attachedForm = formsRes.forms[0];
           setForm(attachedForm);
 
-          // Check if already registered
           const userSub = (subsRes.submissions || []).find(
             (s) => s.form_id === attachedForm.id
           );
@@ -211,14 +250,11 @@ export const EventRegistrationPage: React.FC = () => {
             setIsRegistered(true);
             setSubmittedAt(userSub.submitted_at);
             setSubmissionId(userSub.id);
-            if (userSub.answers) {
-              setAnswers(userSub.answers);
-            }
+            setAnswers(userSub.answers || {});
           } else {
-            // Initialize answer defaults from user profile only if not yet registered
             const initialAnswers: Record<string, any> = {};
             (attachedForm.schema?.fields || []).forEach((field) => {
-              initialAnswers[field.name] = getDefaultFieldValue(field, profile);
+              initialAnswers[field.name] = getDefaultFieldValue(field, activeProfile, user);
             });
             setAnswers(initialAnswers);
           }
@@ -236,9 +272,9 @@ export const EventRegistrationPage: React.FC = () => {
     };
 
     loadData();
-  }, [id, isAuthenticated, navigate, profile, ticketParam]);
+  }, [id, isAuthenticated, navigate, profile, ticketParam, updateProfile, user]);
 
-  // Reactive prefill: Populate any empty form answers whenever profile data hydrates
+  // Reactive prefill
   useEffect(() => {
     if (!profile || isRegistered || !form?.schema?.fields) return;
 
@@ -249,7 +285,7 @@ export const EventRegistrationPage: React.FC = () => {
       form.schema.fields.forEach((field) => {
         const currentVal = nextAnswers[field.name];
         if (currentVal === undefined || currentVal === '') {
-          const autoVal = getDefaultFieldValue(field, profile);
+          const autoVal = getDefaultFieldValue(field, profile, user);
           if (autoVal !== '' && autoVal !== false) {
             nextAnswers[field.name] = autoVal;
             hasChanges = true;
@@ -259,22 +295,31 @@ export const EventRegistrationPage: React.FC = () => {
 
       return hasChanges ? nextAnswers : prev;
     });
-  }, [profile, isRegistered, form]);
+  }, [profile, isRegistered, form, user]);
 
   const fields = form?.schema?.fields || [];
   const details = event?.details || {};
 
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const regState = useMemo(() => {
     if (!form) return 'hidden';
+    const opensAt = form.opens_at || form.schema?.opens_at;
     return getEventRegistrationState({
       isRegistered,
       isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
+      opensAt,
       expiresAt: form.expires_at || form.schema?.expires_at,
       isFull: form.is_full,
       submissionLimit: form.submission_limit || form.schema?.submission_limit,
       submissionCount: form.submission_count,
+      now,
     });
-  }, [form, isRegistered, details]);
+  }, [form, isRegistered, details, now]);
 
   // Resolve submitted attendee email from form answers first (unconditional hook)
   const submittedEmail = useMemo(() => {
@@ -382,6 +427,9 @@ export const EventRegistrationPage: React.FC = () => {
           title: 'Already Registered',
           description: 'You have already submitted registration for this event.',
         });
+      } else if (err.status === 403 && (err.is_upcoming || err.message?.toLowerCase().includes('not opened') || err.message?.toLowerCase().includes('not started'))) {
+        setForm((prev: any) => (prev ? { ...prev, opens_at: err.opens_at || prev.opens_at } : prev));
+        setServerError(`Registration has not opened yet. It will open on ${new Date(err.opens_at || form?.opens_at || '').toLocaleString()}.`);
       } else if (err.status === 410) {
         if (
           err.is_full ||
@@ -567,6 +615,126 @@ export const EventRegistrationPage: React.FC = () => {
             >
               <span>Browse More Events</span>
             </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Registration Not Started Yet / Scheduled Opening View
+  if (regState === 'upcoming') {
+    const opensAt = form?.opens_at || form?.schema?.opens_at;
+    const remaining = calculateRemainingTime(opensAt, now);
+    const targetDate = opensAt ? new Date(opensAt) : null;
+
+    return (
+      <div className="min-h-screen bg-background text-foreground pt-24 pb-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-xl mx-auto space-y-6">
+          <Link
+            to={`/events/${id}`}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-full hover:bg-muted"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Event</span>
+          </Link>
+
+          <div className="p-8 sm:p-10 rounded-3xl border border-amber-500/30 bg-card text-card-foreground shadow-2xl text-center space-y-6 relative overflow-hidden">
+            {/* Background Glow Orbs */}
+            <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-google-blue/10 blur-3xl pointer-events-none" />
+
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+              <Clock className="w-8 h-8 animate-pulse" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 font-mono">
+                Scheduled Registration
+              </span>
+              <h1 className="text-2xl sm:text-3xl font-extrabold font-sans text-foreground">
+                Registration Opens Soon
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
+                Registration for <strong>{event.title}</strong> has not opened yet. The form will unlock automatically as soon as the countdown timer finishes.
+              </p>
+            </div>
+
+            {/* Real-time 4-part Countdown Grid */}
+            <div className="grid grid-cols-4 gap-2 sm:gap-3 max-w-sm mx-auto">
+              <div className="p-3 sm:p-4 rounded-2xl bg-muted/60 border border-border text-center shadow-xs">
+                <span className="block text-2xl sm:text-3xl font-black font-mono text-foreground">
+                  {String(remaining.days).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                  Days
+                </span>
+              </div>
+              <div className="p-3 sm:p-4 rounded-2xl bg-muted/60 border border-border text-center shadow-xs">
+                <span className="block text-2xl sm:text-3xl font-black font-mono text-foreground">
+                  {String(remaining.hours).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                  Hours
+                </span>
+              </div>
+              <div className="p-3 sm:p-4 rounded-2xl bg-muted/60 border border-border text-center shadow-xs">
+                <span className="block text-2xl sm:text-3xl font-black font-mono text-foreground">
+                  {String(remaining.minutes).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                  Mins
+                </span>
+              </div>
+              <div className="p-3 sm:p-4 rounded-2xl bg-muted/60 border border-border text-center shadow-xs">
+                <span className="block text-2xl sm:text-3xl font-black font-mono text-amber-500">
+                  {String(remaining.seconds).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">
+                  Secs
+                </span>
+              </div>
+            </div>
+
+            {targetDate && (
+              <div className="p-3.5 rounded-xl bg-muted/40 border border-border/80 max-w-sm mx-auto text-xs text-muted-foreground">
+                <p>
+                  Official Opening:{' '}
+                  <strong className="text-foreground">
+                    {targetDate.toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </strong>{' '}
+                  at{' '}
+                  <strong className="text-foreground">
+                    {targetDate.toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </strong>
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <Link
+                to={`/events/${id}`}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold transition-all shadow-xs"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Event Details</span>
+              </Link>
+
+              <Link
+                to="/events"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
+              >
+                <span>Browse Other Events</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>

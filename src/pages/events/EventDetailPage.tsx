@@ -32,6 +32,7 @@ import {
   getEventRegistrationState,
   formatEventDateRange,
   formatEventTimeRange,
+  calculateRemainingTime,
 } from '@/lib/formUtils';
 import EventTicketPass from '@/components/events/EventTicketPass';
 
@@ -142,17 +143,27 @@ export const EventDetailPage: React.FC = () => {
   const banner = details.banner_url || details.coverImage || details.cover_image;
   const customSections = details.custom_sections || [];
 
+  // Live ticker for accurate real-time countdown when registration opening is scheduled
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const regState = useMemo(() => {
     if (!form) return 'hidden';
+    const opensAt = form.opens_at || form.schema?.opens_at;
     return getEventRegistrationState({
       isRegistered,
       isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
+      opensAt,
       expiresAt: form.expires_at || form.schema?.expires_at,
       isFull: form.is_full,
       submissionLimit: form.submission_limit ?? form.schema?.submission_limit,
       submissionCount: form.submission_count,
+      now,
     });
-  }, [form, isRegistered, details]);
+  }, [form, isRegistered, details, now]);
 
   const handleAddToCalendar = async () => {
     if (!isAuthenticated) {
@@ -314,6 +325,13 @@ export const EventDetailPage: React.FC = () => {
                   </span>
                 )}
 
+                {regState === 'upcoming' && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-mono">
+                    <Clock className="w-3.5 h-3.5 animate-pulse" />
+                    <span>Registration Opens Soon ({calculateRemainingTime(form?.opens_at || form?.schema?.opens_at, now).formattedShort})</span>
+                  </span>
+                )}
+
                 {regState === 'full' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 font-mono">
                     <Users className="w-3.5 h-3.5" />
@@ -335,55 +353,104 @@ export const EventDetailPage: React.FC = () => {
             </div>
 
             {/* Quick Meta Details Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 rounded-2xl bg-muted/40 border border-border/60">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center shrink-0">
-                  <Calendar className="w-5 h-5 text-google-blue" />
-                </div>
-                <div>
-                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
-                    Date
-                  </span>
-                  <span className="text-sm font-semibold">
-                    {formatEventDateRange(
-                      details.startTime || details.start_time,
-                      details.endTime || details.end_time
-                    )}
-                  </span>
-                </div>
-              </div>
+            {(() => {
+              const showCount = form && form.show_submission_count !== false && form.schema?.show_submission_count !== false;
+              return (
+                <div className={`grid grid-cols-1 ${showCount ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'} gap-4 p-5 rounded-2xl bg-muted/40 border border-border/60`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center shrink-0">
+                      <Calendar className="w-5 h-5 text-google-blue" />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                        Date
+                      </span>
+                      <span className="text-sm font-semibold">
+                        {formatEventDateRange(
+                          details.startTime || details.start_time,
+                          details.endTime || details.end_time
+                        )}
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-google-yellow/10 border border-google-yellow/20 flex items-center justify-center shrink-0">
-                  <Clock className="w-5 h-5 text-google-yellow" />
-                </div>
-                <div>
-                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
-                    Time
-                  </span>
-                  <span className="text-sm font-semibold">
-                    {formatEventTimeRange(
-                      details.startTime || details.start_time,
-                      details.endTime || details.end_time
-                    )}
-                  </span>
-                </div>
-              </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-google-yellow/10 border border-google-yellow/20 flex items-center justify-center shrink-0">
+                      <Clock className="w-5 h-5 text-google-yellow" />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                        Time
+                      </span>
+                      <span className="text-sm font-semibold">
+                        {formatEventTimeRange(
+                          details.startTime || details.start_time,
+                          details.endTime || details.end_time
+                        )}
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-google-red/10 border border-google-red/20 flex items-center justify-center shrink-0">
-                  <MapPin className="w-5 h-5 text-google-red" />
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-google-red/10 border border-google-red/20 flex items-center justify-center shrink-0">
+                      <MapPin className="w-5 h-5 text-google-red" />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                        Venue
+                      </span>
+                      <span className="text-sm font-semibold truncate">
+                        {details.location || details.venue || 'Campus Hall'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {showCount && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-google-green/10 border border-google-green/20 flex items-center justify-center shrink-0">
+                        <Users className="w-5 h-5 text-google-green" />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                          Registrations
+                        </span>
+                        {(() => {
+                          const count = form.submission_count ?? 0;
+                          const limit = form.submission_limit || form.schema?.submission_limit;
+                          if (limit && Number(limit) > 0) {
+                            const remaining = Math.max(0, Number(limit) - count);
+                            return (
+                              <div>
+                                <span className="text-sm font-semibold">
+                                  {count} <span className="text-xs font-normal text-muted-foreground">registered</span>
+                                </span>
+                                <div className="text-[11px] font-medium">
+                                  {remaining === 0 ? (
+                                    <span className="text-rose-500 font-semibold">No spots left</span>
+                                  ) : (
+                                    <span className="text-google-green font-semibold">
+                                      {remaining} spot{remaining === 1 ? '' : 's'} left
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div>
+                              <span className="text-sm font-semibold">
+                                {count} <span className="text-xs font-normal text-muted-foreground">registered</span>
+                              </span>
+                              <div className="text-[11px] text-muted-foreground">Unlimited spots</div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
-                    Venue
-                  </span>
-                  <span className="text-sm font-semibold truncate">
-                    {details.location || details.venue || 'Campus Hall'}
-                  </span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Custom Sections Added by Admin (No fixed template) */}
             {customSections.length > 0 ? (
@@ -487,8 +554,67 @@ export const EventDetailPage: React.FC = () => {
                       <span>Sign in to Register</span>
                     </button>
                   )}
+                  {(form.show_submission_count !== false && form.schema?.show_submission_count !== false) && (() => {
+                    const count = form.submission_count ?? 0;
+                    const limit = form.submission_limit || form.schema?.submission_limit;
+                    if (limit && Number(limit) > 0) {
+                      const remaining = Math.max(0, Number(limit) - count);
+                      return (
+                        <div className="flex items-center gap-1.5 text-xs font-medium">
+                          <span className="text-muted-foreground">
+                            <strong className="text-foreground">{count}</strong> / {limit} registered
+                          </span>
+                          <span className="text-muted-foreground">•</span>
+                          <span className={remaining <= 5 ? 'text-amber-500 font-semibold' : 'text-google-green font-semibold'}>
+                            {remaining === 0 ? 'Slots Full' : `${remaining} spot${remaining === 1 ? '' : 's'} remaining`}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="text-xs text-muted-foreground">
+                        <strong className="text-foreground">{count}</strong> registered so far
+                      </div>
+                    );
+                  })()}
                   <span className="text-[11px] text-muted-foreground">
                     Includes instant check-in QR pass & confirmation email
+                  </span>
+                </div>
+              )}
+
+              {form && regState === 'upcoming' && (
+                <div className="flex flex-col items-center sm:items-end gap-2">
+                  <div className="p-3.5 px-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex flex-col items-center sm:items-end gap-1 shadow-xs">
+                    <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase tracking-wider">
+                      <Clock className="w-4 h-4 animate-pulse text-amber-500 shrink-0" />
+                      <span>Registration Opens In:</span>
+                      <span className="text-sm font-extrabold text-foreground font-mono">
+                        {calculateRemainingTime(form.opens_at || form.schema?.opens_at, now).formatted}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-medium">
+                      Opens on{' '}
+                      {new Date(form.opens_at || form.schema?.opens_at!).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}{' '}
+                      at{' '}
+                      {new Date(form.opens_at || form.schema?.opens_at!).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      })}
+                    </span>
+                  </div>
+
+                  <div className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-2xl bg-muted/80 text-muted-foreground font-semibold text-sm border border-border cursor-not-allowed select-none">
+                    <Clock className="w-4 h-4" />
+                    <span>Registration Opens Soon</span>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">
+                    Form will unlock automatically when opening time arrives
                   </span>
                 </div>
               )}

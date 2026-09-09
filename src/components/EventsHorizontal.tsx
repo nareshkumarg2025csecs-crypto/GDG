@@ -13,7 +13,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useTheme } from '@/contexts/ThemeContext';
 import { eventService } from '@/services/eventService';
-import { formatEventDate, stripMarkdown } from '@/lib/formUtils';
+import { formatEventDate, formatEventDateRange, stripMarkdown } from '@/lib/formUtils';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -187,7 +187,10 @@ export function EventsHorizontal() {
               eventId: e.id,
               title: e.title,
               type: details.category || 'Workshop',
-              date: formatEventDate(details.startTime || details.start_time),
+              date: formatEventDateRange(
+                details.startTime || details.start_time,
+                details.endTime || details.end_time
+              ),
               color: col,
               bannerUrl: details.banner_url || details.coverImage || details.cover_image,
               description: stripMarkdown(

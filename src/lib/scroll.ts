@@ -49,6 +49,21 @@ export function initSmoothScroll(): void {
         smoothTouch: false,
         touchMultiplier: 2,
         infinite: false,
+        prevent: (node: any) => {
+            if (!node) return false;
+            const el = node as HTMLElement;
+            const tagName = el.tagName?.toLowerCase();
+            if (tagName === 'textarea' || tagName === 'input' || tagName === 'select' || tagName === 'pre' || tagName === 'code') {
+                return true;
+            }
+            if (el.hasAttribute && el.hasAttribute('data-lenis-prevent')) {
+                return true;
+            }
+            if (el.closest && el.closest('[data-lenis-prevent], textarea, pre, .overflow-y-auto, .overflow-auto')) {
+                return true;
+            }
+            return false;
+        },
     });
 
     lenisInstance.on('scroll', (e: any) => {

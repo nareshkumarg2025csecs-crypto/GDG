@@ -41,8 +41,10 @@ export const formService = {
     event_id: string;
     title: string;
     schema: FormSchema;
+    opens_at?: string | null;
     expires_at?: string | null;
     submission_limit?: number | null;
+    show_submission_count?: boolean;
   }): Promise<SingleFormResponse> {
     return apiRequest<SingleFormResponse>('/api/forms', {
       method: 'POST',
@@ -55,8 +57,10 @@ export const formService = {
     data: {
       title?: string;
       schema?: FormSchema;
+      opens_at?: string | null;
       expires_at?: string | null;
       submission_limit?: number | null;
+      show_submission_count?: boolean;
     }
   ): Promise<SingleFormResponse> {
     return apiRequest<SingleFormResponse>(`/api/forms/${id}`, {

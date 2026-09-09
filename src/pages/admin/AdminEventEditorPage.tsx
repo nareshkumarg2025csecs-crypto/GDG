@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Eye,
+  EyeOff,
   Image,
   Upload,
   UploadCloud,
@@ -50,6 +51,7 @@ import {
   DEFAULT_FORM_FIELDS,
   formatEventDate,
   formatEventTimeRange,
+  calculateRemainingTime,
 } from '@/lib/formUtils';
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
 import {
@@ -228,9 +230,12 @@ export const AdminEventEditorPage: React.FC = () => {
   const [existingFormId, setExistingFormId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState('');
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(true);
+  const [opensAt, setOpensAt] = useState('');
+  const opensInputRef = useRef<HTMLInputElement>(null);
   const [expiresAt, setExpiresAt] = useState('');
   const [sheetsUrl, setSheetsUrl] = useState(''); // Optional Google Sheets URL for auto-logging submissions
   const [submissionLimit, setSubmissionLimit] = useState<number | ''>(''); // Optional attendee slot / submission limit
+  const [showSubmissionCount, setShowSubmissionCount] = useState<boolean>(true); // Whether public users see the live count
   const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
   // Email Notification & Draft Configuration State
@@ -248,6 +253,61 @@ export const AdminEventEditorPage: React.FC = () => {
     mode: 'default',
     content: DEFAULT_QR_PAYLOAD_PRESET,
   });
+
+  // Helper to generate realistic mock preview data for any question field
+  const getDemoFieldValue = (field: FormField): string => {
+    const n = (field.name || field.id || '').toLowerCase();
+    const l = (field.label || '').toLowerCase();
+    if (n.includes('dept') || l.includes('dept') || n.includes('branch') || l.includes('branch')) return 'Computer Science & Engineering';
+    if (n.includes('year') || l.includes('year')) return '3rd Year';
+    if (n.includes('roll') || l.includes('roll') || n.includes('reg') || l.includes('reg')) return '22CS089';
+    if (n.includes('phone') || l.includes('phone') || n.includes('mobile') || l.includes('mobile') || n.includes('contact') || l.includes('contact')) return '+91 98765 43210';
+    if (n.includes('college') || l.includes('college') || n.includes('inst') || l.includes('inst') || n.includes('univ') || l.includes('univ')) return 'College of Engineering';
+    if (n.includes('github') || l.includes('github')) return 'github.com/alexjohnson';
+    if (n.includes('linkedin') || l.includes('linkedin')) return 'linkedin.com/in/alexjohnson';
+    if (field.options && field.options.length > 0) return field.options[0];
+    if (field.type === 'number') return '42';
+    if (field.type === 'checkbox' || field.type === 'boolean') return 'Yes';
+    return 'Confirmed Response';
+  };
+
+  // Helper to populate sample QR payload with attendee, form answers, and event details
+  const populateSampleQrPayload = (template: string) => {
+    let res = template || '';
+    res = res
+      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+      .replace(/\{\{\s*(name|full_name)\s*\}\}/gi, 'Alex Johnson')
+      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+      .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492')
+      .replace(/\{\{\s*registered_at\s*\}\}/gi, new Date().toLocaleString('en-US'));
+
+    // All form answers block
+    const formAnswerLines = formFields
+      .filter((f) => f.name !== 'full_name' && f.name !== 'email' && f.name !== 'ticket_id')
+      .map((f) => `${f.label || f.name}: ${getDemoFieldValue(f)}`)
+      .join('\n');
+
+    res = res.replace(/\{\{\s*(all_form_answers|all_answers|form_answers|form_responses)\s*\}\}/gi, formAnswerLines);
+
+    // Replace individual form field variables
+    formFields.forEach((f) => {
+      const demoVal = getDemoFieldValue(f);
+      const varKey = (f.name || f.id || '').toLowerCase();
+      if (varKey) {
+        res = res.replace(new RegExp(`\\{\\{\\s*${varKey}\\s*\\}\\}`, 'gi'), demoVal);
+      }
+      if (f.label) {
+        const escapedLabel = f.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        res = res.replace(new RegExp(`\\{\\{\\s*${escapedLabel}\\s*\\}\\}`, 'gi'), demoVal);
+      }
+    });
+
+    return res;
+  };
 
   // Helper to construct visual HTML for email preview with identical design and in-body QR placement as default pass
   const buildVisualEmailHtml = (rawBody: string, includeQr: boolean) => {
@@ -269,16 +329,7 @@ export const AdminEventEditorPage: React.FC = () => {
         ? qrConfig.content
         : DEFAULT_QR_PAYLOAD_PRESET;
 
-    const populatedQrContent = rawQrTemplate
-      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
-      .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
-      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
-      .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
-      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
-      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
-      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
-
+    const populatedQrContent = populateSampleQrPayload(rawQrTemplate);
     const qrPayload = encodeURIComponent(populatedQrContent);
 
     // EXACT same official dark gradient pass card design as default email
@@ -542,6 +593,10 @@ export const AdminEventEditorPage: React.FC = () => {
             setFormTitle(form.title || '');
             setHasForm(true);
 
+            if (form.opens_at || form.schema?.opens_at) {
+              setOpensAt(isoToLocalInput(form.opens_at || form.schema?.opens_at));
+            }
+
             if (form.expires_at || form.schema?.expires_at) {
               setExpiresAt(isoToLocalInput(form.expires_at || form.schema?.expires_at));
             }
@@ -566,6 +621,15 @@ export const AdminEventEditorPage: React.FC = () => {
               setSubmissionLimit(form.submission_limit);
             } else if (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null) {
               setSubmissionLimit(form.schema.submission_limit);
+            }
+
+            // Load existing show_submission_count toggle state
+            if (form.schema?.show_submission_count !== undefined) {
+              setShowSubmissionCount(form.schema.show_submission_count !== false);
+            } else if (form.show_submission_count !== undefined) {
+              setShowSubmissionCount(form.show_submission_count !== false);
+            } else {
+              setShowSubmissionCount(true);
             }
 
             // Load existing Email Draft configuration
@@ -665,6 +729,85 @@ export const AdminEventEditorPage: React.FC = () => {
   // Allow deleting ANY form question
   const handleRemoveField = (index: number) => {
     setFormFields(formFields.filter((_, i) => i !== index));
+  };
+
+  // Registration opening time presets
+  const applyOpensPreset = (preset: 'now' | '1day' | '3days' | '1week' | 'clear') => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    if (preset === 'now') {
+      const now = new Date();
+      const formatted = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      setOpensAt(formatted);
+      toast({
+        title: 'Opening Time Set: Immediately (Now)',
+        description: 'Registration opens immediately from this exact moment.',
+      });
+      return;
+    }
+
+    if (preset === 'clear') {
+      setOpensAt('');
+      toast({
+        title: 'Schedule Removed',
+        description: 'Registration will be open immediately without schedule restrictions.',
+      });
+      return;
+    }
+
+    if (!startTime) {
+      toast({
+        title: 'Set Event Start Time First',
+        description: 'Please pick an Event Start Date & Time above before setting registration opening presets.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const [datePart, timePart = '00:00'] = startTime.split('T');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [hh, mm] = timePart.split(':').map(Number);
+
+    if (isNaN(y) || isNaN(m) || isNaN(d)) {
+      toast({
+        title: 'Invalid Start Time',
+        description: 'Please specify a valid start date and time.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (preset === '1day') {
+      const target = new Date(y, m - 1, d, hh, mm);
+      target.setDate(target.getDate() - 1);
+      const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+      setOpensAt(formatted);
+      const [newD, newT] = formatted.split('T');
+      toast({
+        title: 'Opens 1 Day Before Start',
+        description: `Registration will open on ${newD} at ${newT}.`,
+      });
+    } else if (preset === '3days') {
+      const target = new Date(y, m - 1, d, hh, mm);
+      target.setDate(target.getDate() - 3);
+      const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+      setOpensAt(formatted);
+      const [newD, newT] = formatted.split('T');
+      toast({
+        title: 'Opens 3 Days Before Start',
+        description: `Registration will open on ${newD} at ${newT}.`,
+      });
+    } else if (preset === '1week') {
+      const target = new Date(y, m - 1, d, hh, mm);
+      target.setDate(target.getDate() - 7);
+      const formatted = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+      setOpensAt(formatted);
+      const [newD, newT] = formatted.split('T');
+      toast({
+        title: 'Opens 1 Week Before Start',
+        description: `Registration will open on ${newD} at ${newT}.`,
+      });
+    }
   };
 
   // Expiration presets with zero timezone distortion
@@ -788,18 +931,24 @@ export const AdminEventEditorPage: React.FC = () => {
       // Handle attached form
       if (hasForm && savedEventId) {
         const parsedSubLimit = submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit);
+        const parsedOpensAt = opensAt ? new Date(opensAt).toISOString() : null;
+        const parsedExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
 
         const formSchema: FormSchema & {
           sheets_url?: string;
           is_open?: boolean;
+          opens_at?: string | null;
           submission_limit?: number | null;
+          show_submission_count?: boolean;
           email_config?: EmailDraftConfig;
           qr_config?: QrCodeConfig;
         } = {
           fields: formFields,
           is_open: isRegistrationOpen,
-          expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          opens_at: parsedOpensAt,
+          expires_at: parsedExpiresAt,
           submission_limit: parsedSubLimit,
+          show_submission_count: showSubmissionCount,
           email_config: emailConfig,
           qr_config: qrConfig,
         };
@@ -811,16 +960,20 @@ export const AdminEventEditorPage: React.FC = () => {
           event_id: savedEventId,
           title: formTitle.trim() || `${title.trim()} Registration`,
           schema: formSchema,
-          expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          opens_at: parsedOpensAt,
+          expires_at: parsedExpiresAt,
           submission_limit: parsedSubLimit,
+          show_submission_count: showSubmissionCount,
         };
 
         if (existingFormId) {
           await formService.updateForm(existingFormId, {
             title: formPayload.title,
             schema: formPayload.schema,
+            opens_at: formPayload.opens_at,
             expires_at: formPayload.expires_at,
             submission_limit: formPayload.submission_limit,
+            show_submission_count: formPayload.show_submission_count,
           });
         } else {
           await formService.createForm(formPayload);
@@ -1382,7 +1535,9 @@ export const AdminEventEditorPage: React.FC = () => {
                         placeholder="Write content, details, requirements or formatted markdown..."
                         value={sec.content}
                         onChange={(e) => handleUpdateSection(idx, { content: e.target.value })}
-                        className="w-full px-3.5 py-2 rounded-xl border border-input bg-card text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-google-green resize-y leading-relaxed"
+                        data-lenis-prevent="true"
+                        onWheel={(e) => e.stopPropagation()}
+                        className="w-full px-3.5 py-2 rounded-xl border border-input bg-card text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-google-green resize-y leading-relaxed overscroll-contain"
                       />
                     </div>
                   )}
@@ -1484,6 +1639,134 @@ export const AdminEventEditorPage: React.FC = () => {
             >
               {isRegistrationOpen ? 'Close Registrations' : 'Open Registrations'}
             </button>
+          </div>
+
+          {/* Form Opening Date & Time Picker (opens_at) */}
+          <div className="p-5 rounded-2xl bg-muted/40 border border-border space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-google-blue" />
+                <span>Registration Opening Time (`opens_at`)</span>
+              </label>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                When students can begin registering
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <div className="relative flex items-center">
+                <input
+                  ref={opensInputRef}
+                  type="datetime-local"
+                  value={opensAt}
+                  onChange={(e) => setOpensAt(e.target.value)}
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                />
+                <button
+                  type="button"
+                  onClick={() => opensInputRef.current?.showPicker?.()}
+                  className="absolute left-3 p-0.5 text-google-blue hover:scale-110 transition-transform"
+                  title="Open Calendar Date Picker"
+                >
+                  <Calendar className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyOpensPreset('now')}
+                  className="px-2.5 py-1.5 rounded-lg border border-google-blue/40 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs"
+                >
+                  <span> Now (Open Immediately)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyOpensPreset('1day')}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition-colors"
+                >
+                  1 Day Before
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyOpensPreset('3days')}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition-colors"
+                >
+                  3 Days Before
+                </button>
+                {opensAt && (
+                  <button
+                    type="button"
+                    onClick={() => applyOpensPreset('clear')}
+                    className="px-2.5 py-1.5 rounded-lg border border-destructive/30 bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-medium transition-colors"
+                  >
+                    Clear (Always Open)
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Live Remaining Time Badge or Status */}
+            {opensAt ? (
+              (() => {
+                const target = new Date(opensAt);
+                const now = new Date();
+                const isFuture = !isNaN(target.getTime()) && target > now;
+                const remaining = calculateRemainingTime(opensAt, now);
+
+                return (
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between gap-2 text-xs transition-all ${
+                      isFuture
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                        : 'bg-google-green/10 border-google-green/30 text-google-green'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 shrink-0" />
+                      <span>
+                        {isFuture ? (
+                          <>
+                            <strong>Registration Scheduled:</strong> Opens in{' '}
+                            <span className="font-mono font-bold">{remaining.formatted}</span> (
+                            {target.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}{' '}
+                            at{' '}
+                            {target.toLocaleTimeString('en-US', {
+                              hour: 'numeric',
+                              minute: '2-digit',
+                              hour12: true,
+                            })}
+                            )
+                          </>
+                        ) : (
+                          <>
+                            <strong>Registration is Open:</strong> Opening time arrived on{' '}
+                            {target.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}{' '}
+                            at{' '}
+                            {target.toLocaleTimeString('en-US', {
+                              hour: 'numeric',
+                              minute: '2-digit',
+                              hour12: true,
+                            })}
+                            .
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                No opening schedule set: Registration is open immediately upon event creation.
+              </p>
+            )}
           </div>
 
           {/* Form Expiration Date & Time Picker */}
@@ -1698,6 +1981,55 @@ export const AdminEventEditorPage: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Toggle: Show Live Count to Users */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-background/80 border border-border/80">
+              <div className="space-y-0.5 pr-4">
+                <div className="flex items-center gap-2">
+                  {showSubmissionCount ? (
+                    <Eye className="w-4 h-4 text-google-green shrink-0" />
+                  ) : (
+                    <EyeOff className="w-4 h-4 text-muted-foreground shrink-0" />
+                  )}
+                  <label
+                    htmlFor="toggle-show-count"
+                    className="text-xs font-semibold text-foreground cursor-pointer select-none"
+                    onClick={() => setShowSubmissionCount((prev) => !prev)}
+                  >
+                    Show Registration Count to Users
+                  </label>
+                  <span
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                      showSubmissionCount
+                        ? 'bg-google-green/10 text-google-green border-google-green/30'
+                        : 'bg-muted text-muted-foreground border-border'
+                    }`}
+                  >
+                    {showSubmissionCount ? 'Visible to Public' : 'Hidden / Private'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  When enabled, students can see the live registered count and remaining spots on the event card and details page. When disabled, the count is hidden from students.
+                </p>
+              </div>
+
+              <button
+                id="toggle-show-count"
+                type="button"
+                role="switch"
+                aria-checked={showSubmissionCount}
+                onClick={() => setShowSubmissionCount((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-google-green/30 ${
+                  showSubmissionCount ? 'bg-google-green' : 'bg-muted-foreground/30'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    showSubmissionCount ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* Form Questions List */}
@@ -1722,14 +2054,14 @@ export const AdminEventEditorPage: React.FC = () => {
                     setFormFields(DEFAULT_FORM_FIELDS);
                     toast({
                       title: 'Standard Questions Loaded',
-                      description: 'Reset to standard defaults: Name, Email, Phone, Department, and Year of Study.',
+                      description: 'Reset to standard defaults: Name, Email, Phone, Roll Number, Department, and Year of Study.',
                     });
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-yellow/40 bg-google-yellow/10 text-google-yellow hover:bg-google-yellow/20 text-xs font-semibold transition-all shadow-sm"
-                  title="Reset to 5 standard dashboard questions (Name, Email, Phone, Department, Year)"
+                  title="Reset to 6 standard dashboard questions (Name, Email, Phone, Roll Number, Department, Year)"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Load Default 5 Questions</span>
+                  <span>Load Default Questions</span>
                 </button>
 
                 <button
@@ -1760,6 +2092,22 @@ export const AdminEventEditorPage: React.FC = () => {
                 className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
               >
                 + Phone Number
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const exists = formFields.some(f => f.name === 'roll_no');
+                  if (exists) {
+                    toast({ title: 'Already added', description: 'Roll Number is already in the form.' });
+                    return;
+                  }
+                  const rollField = DEFAULT_FORM_FIELDS.find(f => f.name === 'roll_no');
+                  if (rollField) setFormFields(prev => [...prev, { ...rollField, id: `f_${Date.now()}` }]);
+                }}
+                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
+              >
+                + Roll Number
               </button>
 
               <button
@@ -1797,7 +2145,7 @@ export const AdminEventEditorPage: React.FC = () => {
 
             {formFields.length === 0 ? (
               <div className="text-center py-6 px-4 border border-dashed rounded-2xl bg-muted/20 text-muted-foreground text-xs">
-                No questions configured. Click "Load Default 5 Questions" to add standard registration fields.
+                No questions configured. Click "Load Default Questions" to add standard registration fields.
               </div>
             ) : (
               <div className="space-y-3">
@@ -2075,10 +2423,16 @@ export const AdminEventEditorPage: React.FC = () => {
                       value={emailConfig.body}
                       onChange={(e) => setEmailConfig((prev) => ({ ...prev, body: e.target.value }))}
                       placeholder="Write your custom HTML email draft here..."
-                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-mono leading-relaxed shadow-sm"
+                      data-lenis-prevent="true"
+                      onWheel={(e) => e.stopPropagation()}
+                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-mono leading-relaxed shadow-sm overscroll-contain"
                     />
                   ) : (
-                    <div className="p-4 sm:p-5 rounded-2xl border border-border bg-white text-slate-900 shadow-sm max-h-[550px] overflow-y-auto">
+                    <div
+                      data-lenis-prevent="true"
+                      onWheel={(e) => e.stopPropagation()}
+                      className="p-4 sm:p-5 rounded-2xl border border-border bg-white text-slate-900 shadow-sm max-h-[550px] overflow-y-auto overscroll-contain"
+                    >
                       <div
                         className="text-xs leading-relaxed"
                         dangerouslySetInnerHTML={{
@@ -2181,11 +2535,16 @@ export const AdminEventEditorPage: React.FC = () => {
                 <div className="p-3.5 rounded-xl bg-background border border-border/80 font-mono text-[11px] text-muted-foreground whitespace-pre leading-relaxed overflow-x-auto">
 {`GDG EVENT TICKET
 ==============================
-Event: ${title || 'GDG Event'}
+Event: ${title || 'GDG Tech Summit 2026'}
 Ticket ID: TKT-DEMO1234
 Name: Alex Johnson
 Email: alex.johnson@campus.edu
+${formFields
+  .filter((f) => f.name !== 'full_name' && f.name !== 'email' && f.name !== 'ticket_id')
+  .map((f) => `${f.label || f.name}: ${getDemoFieldValue(f)}`)
+  .join('\n')}
 Date: ${startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'}
+Time: ${startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}
 Venue: ${location || 'Campus Main Auditorium'}
 ==============================
 Google Developer Groups On Campus`}
@@ -2200,53 +2559,159 @@ Google Developer Groups On Campus`}
                     Quick Preset Formats:
                   </span>
                   <div className="flex flex-wrap gap-2">
-                    {QR_PAYLOAD_PRESETS.map((preset) => (
-                      <button
-                        key={preset.name}
-                        type="button"
-                        onClick={() => {
-                          setQrConfig((prev) => ({ ...prev, content: preset.content }));
-                          toast({ title: 'Preset Loaded', description: preset.name });
-                        }}
-                        className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs"
-                      >
-                        {preset.name}
-                      </button>
-                    ))}
+                    {(() => {
+                      const customLines = formFields
+                        .filter((f) => f.name !== 'full_name' && f.name !== 'email' && f.name !== 'ticket_id')
+                        .map((f) => `${f.label || f.name}: {{${f.name || f.id}}}`)
+                        .join('\n');
+
+                      const presets = [
+                        {
+                          name: 'Full Ticket & All Form Details (Default)',
+                          content: `GDG EVENT TICKET
+==============================
+Event: {{event_title}}
+Ticket ID: {{ticket_id}}
+Name: {{name}}
+Email: {{email}}
+${customLines ? customLines + '\n' : ''}Date: {{date}}
+Time: {{time}}
+Venue: {{venue}}
+Pass: {{ticket_link}}
+==============================
+Google Developer Groups On Campus`,
+                        },
+                        {
+                          name: 'Form Responses Summary',
+                          content: `GDG EVENT TICKET - {{ticket_id}}
+==============================
+Attendee: {{name}}
+Email: {{email}}
+Event: {{event_title}}
+------------------------------
+FORM RESPONSES:
+{{all_form_answers}}
+------------------------------
+Date: {{date}} | Venue: {{venue}}
+Pass: {{ticket_link}}`,
+                        },
+                        {
+                          name: 'Check-in URL Only',
+                          content: '{{ticket_link}}',
+                        },
+                        {
+                          name: 'Compact Ticket Code',
+                          content: formFields.some((f) => (f.name || '').toLowerCase().includes('dept'))
+                            ? 'GDG-PASS|{{ticket_id}}|{{email}}|{{department}}'
+                            : 'GDG-PASS|{{ticket_id}}|{{email}}',
+                        },
+                      ];
+
+                      return presets.map((preset) => (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() => {
+                            setQrConfig((prev) => ({ ...prev, content: preset.content }));
+                            toast({ title: 'Preset Loaded', description: preset.name });
+                          }}
+                          className="px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs"
+                        >
+                          {preset.name}
+                        </button>
+                      ));
+                    })()}
                   </div>
                 </div>
 
                 {/* Variable helper tags */}
-                <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
+                <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-3">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono block">
                     Dynamic QR Variables (Click to append):
                   </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { tag: '{{ticket_id}}', label: 'Ticket ID' },
-                      { tag: '{{ticket_link}}', label: 'Check-in URL' },
-                      { tag: '{{name}}', label: 'Attendee Name' },
-                      { tag: '{{email}}', label: 'Email' },
-                      { tag: '{{event_title}}', label: 'Event Title' },
-                      { tag: '{{venue}}', label: 'Venue' },
-                      { tag: '{{date}}', label: 'Date' },
-                    ].map(({ tag, label }) => (
+
+                  {/* Group 1: Attendee Form Fields & Responses */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-google-green flex items-center gap-1.5">
+                      <FileText className="w-3 h-3" />
+                      <span>Attendee Form Responses (What user filled):</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
                       <button
-                        key={tag}
                         type="button"
                         onClick={() => {
                           setQrConfig((prev) => ({
                             ...prev,
-                            content: prev.content ? `${prev.content} ${tag}` : tag,
+                            content: prev.content ? `${prev.content}\n{{all_form_answers}}` : '{{all_form_answers}}',
                           }));
-                          toast({ title: 'Tag Inserted', description: `Added ${tag} to QR payload.` });
+                          toast({ title: 'Tag Inserted', description: 'Added {{all_form_answers}}' });
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-google-green/10 hover:bg-google-green/20 border border-google-green/30 text-[11px] font-mono font-bold text-google-green transition-all shadow-xs"
+                        title="Outputs all questions and answers filled by user"
                       >
-                        <span className="text-google-green font-bold">{tag}</span>
-                        <span className="text-[10px] text-muted-foreground">({label})</span>
+                        <Sparkles className="w-3 h-3" />
+                        <span>{'{{all_form_answers}}'}</span>
+                        <span className="text-[10px] opacity-80 font-normal">(All Responses Block)</span>
                       </button>
-                    ))}
+
+                      {formFields.map((field) => {
+                        const varTag = `{{${field.name || field.id}}}`;
+                        return (
+                          <button
+                            key={field.id || field.name}
+                            type="button"
+                            onClick={() => {
+                              setQrConfig((prev) => ({
+                                ...prev,
+                                content: prev.content ? `${prev.content} ${varTag}` : varTag,
+                              }));
+                              toast({ title: 'Tag Inserted', description: `Added ${varTag} to QR payload.` });
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                          >
+                            <span className="text-google-green font-bold">{varTag}</span>
+                            <span className="text-[10px] text-muted-foreground">({field.label || field.name})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Group 2: Ticket & Event Details */}
+                  <div className="space-y-1.5 pt-2 border-t border-border/50">
+                    <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-google-blue flex items-center gap-1.5">
+                      <Tag className="w-3 h-3" />
+                      <span>Ticket &amp; Event Details:</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { tag: '{{ticket_id}}', label: 'Ticket ID' },
+                        { tag: '{{ticket_link}}', label: 'Check-in URL' },
+                        { tag: '{{name}}', label: 'Attendee Name' },
+                        { tag: '{{email}}', label: 'Email' },
+                        { tag: '{{event_title}}', label: 'Event Title' },
+                        { tag: '{{venue}}', label: 'Venue' },
+                        { tag: '{{date}}', label: 'Date' },
+                        { tag: '{{time}}', label: 'Time' },
+                        { tag: '{{registered_at}}', label: 'Registration Time' },
+                      ].map(({ tag, label }) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            setQrConfig((prev) => ({
+                              ...prev,
+                              content: prev.content ? `${prev.content} ${tag}` : tag,
+                            }));
+                            toast({ title: 'Tag Inserted', description: `Added ${tag} to QR payload.` });
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                        >
+                          <span className="text-google-blue font-bold">{tag}</span>
+                          <span className="text-[10px] text-muted-foreground">({label})</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -2257,14 +2722,16 @@ Google Developer Groups On Campus`}
                       QR Code Scanned Payload Content
                     </label>
                     <textarea
-                      rows={6}
+                      rows={8}
                       value={qrConfig.content}
                       onChange={(e) => setQrConfig((prev) => ({ ...prev, content: e.target.value }))}
                       placeholder="e.g. {{ticket_link}} or TICKET:{{ticket_id}}|USER:{{email}}"
-                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-green font-mono leading-relaxed shadow-sm"
+                      data-lenis-prevent="true"
+                      onWheel={(e) => e.stopPropagation()}
+                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-green font-mono leading-relaxed shadow-sm overscroll-contain"
                     />
                     <p className="text-[11px] text-muted-foreground">
-                      Whatever you type here is exactly what gets encoded into the QR code and read when scanned.
+                      Whatever you type here is exactly what gets encoded into the attendee's QR code and read by scanner apps at entrance check-in.
                     </p>
                   </div>
 
@@ -2275,15 +2742,8 @@ Google Developer Groups On Campus`}
                     </span>
                     <div className="p-2.5 bg-white rounded-xl border border-border shadow-xs">
                       <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=130x130&format=png&margin=2&data=${encodeURIComponent(
-                          (qrConfig.content || 'GDG-PASS')
-                            .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-DEMO1234')
-                            .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
-                            .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
-                            .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Event')
-                            .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Auditorium')
-                            .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Oct 14, 2026')
-                            .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-DEMO1234')
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&format=png&margin=2&data=${encodeURIComponent(
+                          populateSampleQrPayload(qrConfig.content || 'GDG-PASS')
                         )}`}
                         alt="Scannable QR Test"
                         className="w-28 h-28 rounded-lg"

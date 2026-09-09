@@ -7,10 +7,19 @@ const EmailQueueService = require('./emailQueueService');
  */
 function interpolateVariables(template, vars) {
   if (!template) return '';
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (match, key) => {
-    const lowerKey = key.toLowerCase();
-    if (vars[lowerKey] !== undefined && vars[lowerKey] !== null) {
-      return vars[lowerKey];
+  const lowerVars = {};
+  for (const [k, v] of Object.entries(vars || {})) {
+    lowerVars[k.toLowerCase()] = v;
+    lowerVars[k.toLowerCase().replace(/[^a-z0-9_]/g, '')] = v;
+  }
+  return template.replace(/\{\{\s*([a-zA-Z0-9_\s\/-]+)\s*\}\}/g, (match, key) => {
+    const rawKey = key.trim().toLowerCase();
+    const cleanKey = rawKey.replace(/[^a-z0-9_]/g, '');
+    if (lowerVars[rawKey] !== undefined && lowerVars[rawKey] !== null) {
+      return lowerVars[rawKey];
+    }
+    if (lowerVars[cleanKey] !== undefined && lowerVars[cleanKey] !== null) {
+      return lowerVars[cleanKey];
     }
     return match;
   });
@@ -336,8 +345,18 @@ const EmailService = {
       const qrConfig = form?.schema?.qr_config || {};
 
       if (qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()) {
+        const formattedAnswersLines = fields
+          .filter((f) => f.name !== 'email' && f.name !== 'full_name' && f.name !== 'ticket_id' && f.name !== 'email_sent')
+          .map((f) => {
+            const val = answers[f.name] !== undefined ? answers[f.name] : (answers[f.id] !== undefined ? answers[f.id] : '');
+            return (val !== undefined && val !== null && val !== '') ? `${f.label || f.name}: ${val}` : null;
+          })
+          .filter(Boolean)
+          .join('\n');
+
         const qrVars = {
           name: attendeeName || 'Attendee',
+          full_name: attendeeName || 'Attendee',
           email: to,
           event_title: rawEventTitle,
           ticket_id: rawTicketId,
@@ -346,8 +365,24 @@ const EmailService = {
           time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
           ticket_link: digitalPassLink,
           event_link: eventLink,
+          registered_at: new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US'),
+          all_form_answers: formattedAnswersLines,
+          all_answers: formattedAnswersLines,
+          form_answers: formattedAnswersLines,
+          form_responses: formattedAnswersLines,
           ...answers,
         };
+
+        // Also add field labels as keys so {{Department / Branch}} or {{department}} both work
+        fields.forEach((f) => {
+          const val = answers[f.name] !== undefined ? answers[f.name] : (answers[f.id] !== undefined ? answers[f.id] : '');
+          if (val !== undefined && val !== null) {
+            qrVars[f.name] = val;
+            if (f.id) qrVars[f.id] = val;
+            if (f.label) qrVars[f.label] = val;
+          }
+        });
+
         fullQrText = interpolateVariables(qrConfig.content, qrVars);
       } else {
         const qrLines = [

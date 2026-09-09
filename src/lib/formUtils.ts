@@ -1,6 +1,6 @@
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from './profileConstants';
 
-export type RegistrationState = 'open' | 'registered' | 'closed' | 'full' | 'hidden';
+export type RegistrationState = 'open' | 'registered' | 'closed' | 'full' | 'hidden' | 'upcoming';
 
 export type EventFieldType = 'markdown' | 'text' | 'key_value' | 'link' | 'list';
 
@@ -83,6 +83,14 @@ export const DEFAULT_FORM_FIELDS: FormField[] = [
     placeholder: 'e.g. +91 9876543210',
   },
   {
+    id: 'f_roll_no',
+    name: 'roll_no',
+    label: 'Roll Number',
+    type: 'text',
+    required: true,
+    placeholder: 'e.g. 240801202',
+  },
+  {
     id: 'f_department',
     name: 'department',
     label: 'Department',
@@ -104,8 +112,10 @@ export const DEFAULT_FORM_FIELDS: FormField[] = [
 
 export interface FormSchema {
   fields: FormField[];
+  opens_at?: string | null;
   expires_at?: string | null;
   submission_limit?: number | null;
+  show_submission_count?: boolean;
   description?: string;
   [key: string]: any;
 }
@@ -115,8 +125,11 @@ export interface EventForm {
   event_id: string;
   title: string;
   schema: FormSchema;
+  opens_at?: string | null;
+  is_upcoming?: boolean;
   expires_at?: string | null;
   submission_limit?: number | null;
+  show_submission_count?: boolean;
   submission_count?: number;
   is_full?: boolean;
   created_by?: string;
@@ -140,20 +153,22 @@ export interface FormSubmission {
  * 1. If explicit manual closed state (isOpen === false), return "closed"
  * 2. Hide registration completely if now > expires_at + 24 hours
  * 3. If past deadline, show "closed" badge
- * 4. If registered, show "registered" badge
- * 5. If event capacity / slot limit is reached, show "full"
- * 6. Otherwise, show "open" (Register / Fill Form active)
+ * 4. If registered, show "registered" badge (user can view ticket pass)
+ * 5. If opening time (opens_at) is set and in the future, return "upcoming"
+ * 6. If event capacity / slot limit is reached, show "full"
+ * 7. Otherwise, show "open" (Register / Fill Form active)
  */
 export function getEventRegistrationState(params: {
   isRegistered: boolean;
   isOpen?: boolean | null;
+  opensAt?: string | null;
   expiresAt?: string | null;
   isFull?: boolean | null;
   submissionLimit?: number | null;
   submissionCount?: number | null;
   now?: Date;
 }): RegistrationState {
-  const { isRegistered, isOpen, expiresAt, isFull, submissionLimit, submissionCount, now = new Date() } = params;
+  const { isRegistered, isOpen, opensAt, expiresAt, isFull, submissionLimit, submissionCount, now = new Date() } = params;
 
   // 1. Explicit manual closed toggle set by admin
   if (isOpen === false) {
@@ -183,7 +198,15 @@ export function getEventRegistrationState(params: {
     return 'registered';
   }
 
-  // 4. Check if event capacity / slot limit is full
+  // 4. Check if registration has not opened yet (scheduled future opens_at)
+  if (opensAt) {
+    const openDate = new Date(opensAt);
+    if (!isNaN(openDate.getTime()) && now < openDate) {
+      return 'upcoming';
+    }
+  }
+
+  // 5. Check if event capacity / slot limit is full
   const reachedCapacity = isFull === true || (
     submissionLimit !== undefined &&
     submissionLimit !== null &&
@@ -198,6 +221,102 @@ export function getEventRegistrationState(params: {
   }
 
   return 'open';
+}
+
+export interface RemainingCountdown {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  totalMs: number;
+  isPast: boolean;
+  formatted: string;
+  formattedShort: string;
+}
+
+/**
+ * Calculates live remaining countdown time until a target ISO datetime.
+ */
+export function calculateRemainingTime(targetIso?: string | null, now = new Date()): RemainingCountdown {
+  if (!targetIso) {
+    return {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      totalMs: 0,
+      isPast: true,
+      formatted: 'Passed',
+      formattedShort: 'Passed',
+    };
+  }
+
+  const target = new Date(targetIso);
+  if (isNaN(target.getTime())) {
+    return {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      totalMs: 0,
+      isPast: true,
+      formatted: 'Invalid date',
+      formattedShort: 'Invalid date',
+    };
+  }
+
+  const diffMs = target.getTime() - now.getTime();
+  if (diffMs <= 0) {
+    return {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      totalMs: 0,
+      isPast: true,
+      formatted: 'Now',
+      formattedShort: 'Now',
+    };
+  }
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  let formatted = '';
+  if (days > 0) {
+    formatted = `${days}d ${hours}h ${minutes}m`;
+  } else if (hours > 0) {
+    formatted = `${hours}h ${minutes}m ${seconds}s`;
+  } else if (minutes > 0) {
+    formatted = `${minutes}m ${seconds}s`;
+  } else {
+    formatted = `${seconds}s`;
+  }
+
+  let formattedShort = '';
+  if (days > 0) {
+    formattedShort = `${days}d ${hours}h`;
+  } else if (hours > 0) {
+    formattedShort = `${hours}h ${minutes}m`;
+  } else if (minutes > 0) {
+    formattedShort = `${minutes}m`;
+  } else {
+    formattedShort = `${seconds}s`;
+  }
+
+  return {
+    days,
+    hours,
+    minutes,
+    seconds,
+    totalMs: diffMs,
+    isPast: false,
+    formatted,
+    formattedShort,
+  };
 }
 
 /**
@@ -272,7 +391,7 @@ export function formatEventDateRange(
     if (sameDay) return startStr;
 
     const endStr = end.toLocaleDateString('en-US', formatOpts);
-    return `From ${startStr} to ${endStr}`;
+    return `${startStr} - ${endStr}`;
   } catch {
     return 'Date TBA';
   }
