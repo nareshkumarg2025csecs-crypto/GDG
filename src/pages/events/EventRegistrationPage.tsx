@@ -571,6 +571,8 @@ export const EventRegistrationPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
   // Event Slot Full View
   if (regState === 'full') {
     const limit = form?.submission_limit || form?.schema?.submission_limit;
