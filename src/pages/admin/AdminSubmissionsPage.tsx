@@ -465,9 +465,26 @@ export const AdminSubmissionsPage: React.FC = () => {
                       </td>
                       {fields.map((f) => {
                         const val = sub.answers ? sub.answers[f.name || f.id] : null;
+                        const isFileLink =
+                          f.type === 'file' ||
+                          (typeof val === 'string' && val.includes('drive.google.com')) ||
+                          (typeof val === 'object' && val !== null && Boolean(val.webViewLink || val.url));
+                        const linkUrl = typeof val === 'object' && val !== null ? (val.webViewLink || val.url) : val;
+
                         return (
                           <td key={f.id} className="py-3.5 px-4 max-w-xs truncate">
-                            {val !== undefined && val !== null ? (
+                            {isFileLink && linkUrl ? (
+                              <a
+                                href={String(linkUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-colors shadow-xs"
+                                title="Open uploaded file in Google Drive"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>View in Drive</span>
+                              </a>
+                            ) : val !== undefined && val !== null ? (
                               typeof val === 'boolean' ? (
                                 val ? 'Yes' : 'No'
                               ) : (

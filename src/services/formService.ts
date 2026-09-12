@@ -123,4 +123,32 @@ export const formService = {
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
     return `${baseUrl}/api/forms/ticket/${encodeURIComponent(ticketId)}/qr-download`;
   },
+
+  async uploadRegistrationFile(
+    formId: string,
+    file: File,
+    fieldName?: string
+  ): Promise<{
+    message: string;
+    file: {
+      id: string;
+      name: string;
+      original_name: string;
+      webViewLink: string;
+      webContentLink?: string;
+      size: number;
+      mimeType: string;
+    };
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (fieldName) {
+      formData.append('fieldName', fieldName);
+    }
+
+    return apiRequest(`/api/forms/${formId}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };

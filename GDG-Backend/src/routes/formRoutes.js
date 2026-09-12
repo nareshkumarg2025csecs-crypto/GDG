@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   createForm,
@@ -12,12 +13,18 @@ const {
   syncSheetForAdmin,
   getTicketPass,
   downloadTicketQr,
+  uploadFormFile,
 } = require('../controllers/formController');
 const {
   validateCreateForm,
   validateSubmitForm,
 } = require('../middleware/validator');
 const { formSubmissionLimiter } = require('../middleware/rateLimiter');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB max limit
+});
 
 const router = express.Router();
 
@@ -30,6 +37,14 @@ router.get('/ticket/:ticketId/qr-download', downloadTicketQr);
 
 // Single Form View (public — anyone can see form structure)
 router.get('/:id', getFormById);
+
+// Upload Registration File to Google Drive (Authenticated)
+router.post(
+  '/:formId/upload',
+  requireAuth,
+  upload.single('file'),
+  uploadFormFile
+);
 
 // Submit Form (Students / Authenticated with strict rate limiter)
 router.post(

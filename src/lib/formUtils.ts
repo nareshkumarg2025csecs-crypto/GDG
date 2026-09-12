@@ -47,7 +47,7 @@ export interface FormField {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'checkbox';
+  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'checkbox' | 'file';
   required?: boolean;
   placeholder?: string;
   options?: string[];
@@ -55,6 +55,8 @@ export interface FormField {
   maxLength?: number;
   min?: number;
   max?: number;
+  max_file_size_mb?: number;
+  allowed_file_types?: string;
 }
 
 export const DEFAULT_FORM_FIELDS: FormField[] = [

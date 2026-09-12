@@ -31,7 +31,7 @@ const securityConfig = {
     },
     generalApi: {
       windowMs: 15 * 60 * 1000,
-      max: parseInt(process.env.GENERAL_API_RATE_LIMIT, 10) || 200,
+      max: parseInt(process.env.GENERAL_API_RATE_LIMIT, 10) || 5000,
     },
   },
 

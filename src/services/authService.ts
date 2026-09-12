@@ -147,6 +147,47 @@ export const authService = {
       token,
     });
   },
+
+  async getDriveStatus(token?: string | null): Promise<DriveStatusResponse> {
+    return apiRequest<DriveStatusResponse>('/api/auth/google/drive-status', {
+      method: 'GET',
+      token,
+    });
+  },
+
+  async getDriveAuthUrl(): Promise<DriveAuthUrlResponse> {
+    return apiRequest<DriveAuthUrlResponse>('/api/auth/google/drive-auth-url', {
+      method: 'GET',
+    });
+  },
+
+  async setDriveFolder(
+    folderInput: string,
+    token?: string | null
+  ): Promise<{ message: string; folderId: string; folderName: string; folderUrl: string }> {
+    return apiRequest<{ message: string; folderId: string; folderName: string; folderUrl: string }>(
+      '/api/auth/google/drive-folder',
+      {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ folder_input: folderInput }),
+      }
+    );
+  },
+
+  async clearDriveFolder(token?: string | null): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>('/api/auth/google/drive-folder', {
+      method: 'DELETE',
+      token,
+    });
+  },
+
+  async disconnectDrive(token?: string | null): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>('/api/auth/google/drive-disconnect', {
+      method: 'POST',
+      token,
+    });
+  },
 };
 
 export interface GmailStatusResponse {
@@ -178,3 +219,28 @@ export interface GmailAuthUrlResponse {
   redirect_uri: string;
 }
 
+export interface DriveStatusResponse {
+  message: string;
+  status: 'healthy' | 'warning' | 'quota_exceeded' | 'not_configured' | 'error';
+  isConfigured: boolean;
+  isDedicatedAccount?: boolean;
+  isInstitutional?: boolean;
+  email?: string | null;
+  displayName?: string | null;
+  storageLimitBytes?: number | null;
+  storageUsedBytes: number;
+  usageInDriveBytes?: number;
+  usageInTrashBytes?: number;
+  domainPooledLimitBytes?: number | null;
+  domainPooledUsedBytes?: number | null;
+  usagePercentage: number;
+  folderId?: string | null;
+  folderName?: string | null;
+  folderUrl?: string | null;
+}
+
+export interface DriveAuthUrlResponse {
+  message: string;
+  auth_url: string;
+  redirect_uri: string;
+}

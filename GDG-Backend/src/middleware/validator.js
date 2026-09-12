@@ -121,9 +121,7 @@ const validateCreateForm = [
   body('event_id')
     .trim()
     .notEmpty()
-    .withMessage('event_id is required')
-    .isUUID()
-    .withMessage('event_id must be a valid UUID'),
+    .withMessage('event_id is required'),
   body('title')
     .trim()
     .notEmpty()

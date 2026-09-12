@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,6 +16,9 @@ import {
   Mail,
   MailCheck,
   Users,
+  UploadCloud,
+  Paperclip,
+  Trash2,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
@@ -169,6 +172,10 @@ export const EventRegistrationPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, profile, isAuthenticated, updateProfile } = useAuth();
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+  const userRef = useRef(user);
+  userRef.current = user;
 
   const ticketParam = searchParams.get('ticket') || searchParams.get('ticket_id');
 
@@ -186,6 +193,86 @@ export const EventRegistrationPage: React.FC = () => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [confirmationEmailTo, setConfirmationEmailTo] = useState<string | null>(null);
+  const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const [uploadedFilesMeta, setUploadedFilesMeta] = useState<Record<string, { name: string; size: number }>>({});
+
+  // File upload handler for 'file' type fields
+  const handleFileUpload = async (field: FormField, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !form?.id) return;
+
+    // 1. Client-side size limit check
+    const maxMb = field.max_file_size_mb || 10;
+    const maxBytes = maxMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast({
+        title: 'File too large',
+        description: `Selected file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Maximum allowed size is ${maxMb}MB.`,
+        variant: 'destructive',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    // 2. Client-side allowed types check
+    if (field.allowed_file_types && field.allowed_file_types !== '*' && field.allowed_file_types !== '') {
+      const allowed = field.allowed_file_types
+        .split(',')
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+      const fileName = file.name.toLowerCase();
+      const fileType = (file.type || '').toLowerCase();
+
+      const isMatch = allowed.some((rule) => {
+        if (rule.startsWith('.')) return fileName.endsWith(rule);
+        if (rule.endsWith('/*')) return fileType.startsWith(rule.slice(0, -1));
+        return fileType === rule;
+      });
+
+      if (!isMatch) {
+        toast({
+          title: 'Invalid file type',
+          description: `Please select a file matching: ${field.allowed_file_types}`,
+          variant: 'destructive',
+        });
+        e.target.value = '';
+        return;
+      }
+    }
+
+    // 3. Upload to backend -> Google Drive
+    try {
+      setUploadingField(field.name);
+      const res = await formService.uploadRegistrationFile(form.id, file, field.name);
+      if (res?.file?.webViewLink) {
+        handleAnswerChange(field.name, res.file.webViewLink);
+        setUploadedFilesMeta((prev) => ({
+          ...prev,
+          [field.name]: {
+            name: file.name,
+            size: file.size,
+          },
+        }));
+        toast({
+          title: 'File Attached',
+          description: `${file.name} attached successfully.`,
+        });
+      }
+    } catch (err: any) {
+      let cleanMsg = err.message || 'Could not upload file. Please try again.';
+      if (cleanMsg.includes('{') || cleanMsg.includes('500') || cleanMsg.includes('Google Drive file upload failed')) {
+        cleanMsg = 'Could not upload file to storage. Please try again or notify the coordinator.';
+      }
+      toast({
+        title: 'File upload failed',
+        description: cleanMsg,
+        variant: 'destructive',
+      });
+    } finally {
+      setUploadingField(null);
+      e.target.value = '';
+    }
+  };
 
   // Load Event and Form Details
   useEffect(() => {
@@ -213,37 +300,24 @@ export const EventRegistrationPage: React.FC = () => {
           }
         }
 
-        const [eventRes, formsRes, subsRes, calRes, dashRes] = await Promise.all([
+        // 1. Only await essential resources needed to render the form immediately
+        const [eventRes, formsRes, subsRes] = await Promise.all([
           eventService.getEventById(id),
           formService.getFormsByEvent(id),
           isAuthenticated
             ? formService.getMySubmissions().catch(() => ({ submissions: [] }))
             : Promise.resolve({ submissions: [] }),
-          isAuthenticated
-            ? eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] }))
-            : Promise.resolve({ event_ids: [] }),
-          isAuthenticated
-            ? dashboardService.getDashboard().catch(() => null)
-            : Promise.resolve(null),
         ]);
-
-        const activeProfile = dashRes?.dashboard || profile;
-        if (dashRes?.dashboard) {
-          updateProfile(dashRes.dashboard);
-        }
-
-        if (calRes?.event_ids && Array.isArray(calRes.event_ids) && calRes.event_ids.includes(id)) {
-          setIsCalendarAdded(true);
-        }
 
         setEvent(eventRes.event);
 
+        let attachedForm: EventForm | null = null;
         if (formsRes.forms && formsRes.forms.length > 0) {
-          const attachedForm = formsRes.forms[0];
+          attachedForm = formsRes.forms[0];
           setForm(attachedForm);
 
           const userSub = (subsRes.submissions || []).find(
-            (s) => s.form_id === attachedForm.id
+            (s) => s.form_id === attachedForm!.id
           );
 
           if (userSub) {
@@ -252,12 +326,50 @@ export const EventRegistrationPage: React.FC = () => {
             setSubmissionId(userSub.id);
             setAnswers(userSub.answers || {});
           } else {
+            // Immediately autofill from current auth state (no waiting for network!)
             const initialAnswers: Record<string, any> = {};
             (attachedForm.schema?.fields || []).forEach((field) => {
-              initialAnswers[field.name] = getDefaultFieldValue(field, activeProfile, user);
+              initialAnswers[field.name] = getDefaultFieldValue(field, profileRef.current, userRef.current);
             });
             setAnswers(initialAnswers);
           }
+        }
+
+        // 2. Non-blocking background sync for fresh dashboard profile and calendar
+        if (isAuthenticated) {
+          dashboardService
+            .getDashboard()
+            .then((dashRes) => {
+              if (dashRes?.dashboard) {
+                updateProfile(dashRes.dashboard);
+                if (attachedForm) {
+                  setAnswers((prev) => {
+                    const updated = { ...prev };
+                    let changed = false;
+                    (attachedForm!.schema?.fields || []).forEach((field) => {
+                      if (!updated[field.name]) {
+                        const val = getDefaultFieldValue(field, dashRes.dashboard, userRef.current);
+                        if (val) {
+                          updated[field.name] = val;
+                          changed = true;
+                        }
+                      }
+                    });
+                    return changed ? updated : prev;
+                  });
+                }
+              }
+            })
+            .catch(() => {});
+
+          eventService
+            .getMyCalendarEvents()
+            .then((calRes) => {
+              if (calRes?.event_ids && Array.isArray(calRes.event_ids) && calRes.event_ids.includes(id)) {
+                setIsCalendarAdded(true);
+              }
+            })
+            .catch(() => {});
         }
       } catch (err: any) {
         toast({
@@ -272,7 +384,7 @@ export const EventRegistrationPage: React.FC = () => {
     };
 
     loadData();
-  }, [id, isAuthenticated, navigate, profile, ticketParam, updateProfile, user]);
+  }, [id, ticketParam, isAuthenticated]);
 
   // Reactive prefill
   useEffect(() => {
@@ -1053,6 +1165,99 @@ export const EventRegistrationPage: React.FC = () => {
                       </label>
                     </div>
                   )}
+
+                  {/* File Upload */}
+                  {field.type === 'file' && (() => {
+                    const currentVal = answers[field.name];
+                    const meta = uploadedFilesMeta[field.name];
+                    const isUploading = uploadingField === field.name;
+
+                    if (currentVal) {
+                      return (
+                        <div className="p-3.5 rounded-xl border border-google-green/30 bg-google-green/5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-google-green/15 text-google-green flex items-center justify-center shrink-0">
+                              <CheckCircle2 className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-foreground truncate">
+                                {meta?.name || 'File Attached'}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground font-mono">
+                                {meta?.size ? `${(meta.size / (1024 * 1024)).toFixed(2)} MB • ` : ''}
+                                <span className="text-google-green font-medium">Attached successfully</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAnswerChange(field.name, '');
+                              setUploadedFilesMeta((prev) => {
+                                const next = { ...prev };
+                                delete next[field.name];
+                                return next;
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-xs font-semibold text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                            title="Remove attached file"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="relative">
+                        <label
+                          className={`w-full flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
+                            isUploading
+                              ? 'border-google-blue bg-google-blue/5 pointer-events-none'
+                              : fieldError
+                              ? 'border-destructive/60 bg-destructive/5 hover:border-destructive'
+                              : 'border-border hover:border-google-blue/50 hover:bg-muted/30 bg-muted/10'
+                          }`}
+                        >
+                          <input
+                            type="file"
+                            className="sr-only"
+                            disabled={isUploading}
+                            accept={field.allowed_file_types && field.allowed_file_types !== '*' ? field.allowed_file_types : undefined}
+                            onChange={(e) => handleFileUpload(field, e)}
+                          />
+
+                          {isUploading ? (
+                            <div className="flex flex-col items-center gap-2 text-center py-1">
+                              <Loader2 className="w-6 h-6 text-google-blue animate-spin" />
+                              <span className="text-xs font-semibold text-foreground">
+                                Uploading file...
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                Please wait while your file is securely attached
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5 text-center">
+                              <div className="w-10 h-10 rounded-xl bg-google-blue/10 text-google-blue flex items-center justify-center shadow-xs">
+                                <UploadCloud className="w-5 h-5" />
+                              </div>
+                              <div className="space-y-0.5">
+                                <p className="text-xs font-semibold text-foreground">
+                                  Click or drag file to attach
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Allowed: <span className="font-mono font-medium text-foreground/80">{field.allowed_file_types && field.allowed_file_types !== '*' ? field.allowed_file_types : 'Any format'}</span> • Max size: <span className="font-mono font-medium text-foreground/80">{field.max_file_size_mb || 10} MB</span>
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </label>
+                      </div>
+                    );
+                  })()}
 
                   {fieldError && <p className="text-xs text-destructive mt-1">{fieldError}</p>}
                 </div>

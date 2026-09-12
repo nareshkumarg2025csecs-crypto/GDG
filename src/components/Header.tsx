@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { useEasterEggStore } from '@/store/easterEggStore';
 import { UserAvatar } from '@/components/common/UserAvatar';
+import { HeaderNotifications } from '@/components/HeaderNotifications';
 
 // --- Constants & Data ---
 
@@ -464,6 +465,11 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             )}
             <span className="text-white hidden sm:inline">{isAdmin ? "Admin Events" : "Events"}</span>
           </Link>
+
+          {/* New Event Notifications (Desktop & Mobile Responsive for both Guests and Authenticated Users) */}
+          <div className="ml-1 flex items-center">
+            <HeaderNotifications activeColor={activeColor} />
+          </div>
 
           {/* Mobile Menu Toggle Button */}
           <motion.button

@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { logActivity } = require('../services/activityLogService');
 const GoogleSheetsService = require('../services/googleSheetsService');
+const GoogleDriveService = require('../services/googleDriveService');
 const EmailService = require('../services/emailService');
 
 /**
@@ -25,14 +26,17 @@ const validateFormAnswers = (schema, answers) => {
     return { isValid: true, errors: [] };
   }
 
+  // Iterate over each field defined in schema
   for (const field of schema.fields) {
     const fieldName = field.name || field.id;
-    if (!fieldName) continue;
-
     const value = answers[fieldName];
-    const isProvided = value !== undefined && value !== null && value !== '';
 
-    // 1. Required Check
+    // 1. Check Required Constraint
+    const isProvided =
+      value !== undefined &&
+      value !== null &&
+      (typeof value === 'string' ? value.trim() !== '' : true);
+
     if (field.required && !isProvided) {
       errors.push(`Field '${field.label || fieldName}' is required.`);
       continue;
@@ -99,6 +103,16 @@ const validateFormAnswers = (schema, answers) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (typeof value !== 'string' || !emailRegex.test(value)) {
           errors.push(`Field '${field.label || fieldName}' must be a valid email address.`);
+        }
+        break;
+
+      case 'file':
+        if (typeof value !== 'string' || !value.trim()) {
+          if (typeof value === 'object' && value !== null && (value.url || value.webViewLink)) {
+            // Valid file object structure
+          } else {
+            errors.push(`Field '${field.label || fieldName}' requires a valid file attachment URL.`);
+          }
         }
         break;
 
@@ -1155,6 +1169,136 @@ const downloadTicketQr = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/forms/:formId/upload
+ * Authenticated: Uploads a file for a form field to Google Drive into an event-specific folder.
+ */
+const uploadFormFile = async (req, res) => {
+  try {
+    const { formId } = req.params;
+    const { fieldName } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file was uploaded.' });
+    }
+
+    // 1. Verify form exists
+    const { data: form, error: formErr } = await supabaseAdmin
+      .from('forms')
+      .select('*')
+      .eq('id', formId)
+      .single();
+
+    if (formErr || !form) {
+      return res.status(404).json({ error: 'Form not found.' });
+    }
+
+    // 2. Fetch event title for folder naming
+    const { data: event } = await supabaseAdmin
+      .from('events')
+      .select('id, title')
+      .eq('id', form.event_id)
+      .maybeSingle();
+
+    // 3. Find field schema and validate size & type limits
+    const fields = form.schema?.fields || [];
+    const targetField = fields.find(
+      (f) => f.name === fieldName || f.id === fieldName || f.type === 'file'
+    );
+
+    if (targetField) {
+      // Validate max file size
+      const maxMb = targetField.max_file_size_mb || 10;
+      const maxBytes = maxMb * 1024 * 1024;
+      if (req.file.size > maxBytes) {
+        return res.status(400).json({
+          error: `File size exceeds the limit of ${maxMb}MB.`,
+          max_size_mb: maxMb,
+          actual_size_bytes: req.file.size,
+        });
+      }
+
+      // Validate allowed file types if specified
+      if (targetField.allowed_file_types && targetField.allowed_file_types !== '*' && targetField.allowed_file_types !== '') {
+        const allowed = targetField.allowed_file_types
+          .split(',')
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean);
+
+        const fileName = (req.file.originalname || '').toLowerCase();
+        const mime = (req.file.mimetype || '').toLowerCase();
+
+        const isAllowed = allowed.some((rule) => {
+          if (rule.startsWith('.')) {
+            return fileName.endsWith(rule);
+          }
+          if (rule.endsWith('/*')) {
+            const prefix = rule.slice(0, -1);
+            return mime.startsWith(prefix);
+          }
+          return mime === rule;
+        });
+
+        if (!isAllowed) {
+          return res.status(400).json({
+            error: `Invalid file type. Allowed types: ${targetField.allowed_file_types}`,
+            allowed_types: targetField.allowed_file_types,
+          });
+        }
+      }
+    }
+
+    // 4. Resolve Google Drive access token from club/admin storage (NEVER student's personal account)
+    const accessToken = await GoogleDriveService.getDriveAccessToken(form.created_by);
+    if (!accessToken) {
+      return res.status(503).json({
+        error: 'Event file uploads are currently unavailable because the club Google Drive storage is not connected. Please notify an administrator to connect storage in the Admin Portal.',
+        code: 'STORAGE_NOT_CONFIGURED',
+      });
+    }
+
+    // 5. Get or create dedicated event folder in Google Drive
+    const eventTitle = event?.title || form.title || 'Event';
+    const { folderId } = await GoogleDriveService.getOrCreateEventFolder(accessToken, eventTitle, form.event_id);
+
+    // 6. Upload file to event folder
+    const attendeeName = req.user.profile?.full_name || req.user.email || 'Student';
+    const uploadedFile = await GoogleDriveService.uploadFileToEventFolder({
+      accessToken,
+      folderId,
+      fileName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      buffer: req.file.buffer,
+      attendeeName,
+    });
+
+    return res.status(200).json({
+      message: 'File uploaded to Google Drive successfully.',
+      file: uploadedFile,
+    });
+  } catch (error) {
+    console.error('uploadFormFile error:', error);
+    const msg = error.message || '';
+    if (msg.includes('storageQuotaExceeded') || msg.includes('storage quota has been exceeded')) {
+      return res.status(507).json({
+        error: 'Google Drive storage is full. Please notify event coordinators to switch the storage account.',
+        code: 'STORAGE_QUOTA_EXCEEDED',
+      });
+    }
+
+    if (msg.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT') || msg.includes('insufficient authentication scopes')) {
+      return res.status(503).json({
+        error: 'Google Drive storage permission issue. Please reconnect the storage account with full Drive permissions in the Admin Portal.',
+        code: 'INSUFFICIENT_STORAGE_SCOPES',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Unable to upload file to Google Drive. Please try again or contact the event coordinator.',
+    });
+  }
+};
+
 module.exports = {
   createForm,
   getFormsByEvent,
@@ -1169,4 +1313,5 @@ module.exports = {
   validateFormAnswers,
   getTicketPass,
   downloadTicketQr,
+  uploadFormFile,
 };

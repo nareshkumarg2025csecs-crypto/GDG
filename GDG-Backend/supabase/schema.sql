@@ -378,6 +378,55 @@ CREATE POLICY "Admins can view gmail service tokens"
 
 
 -- ==============================================================================
+-- 11b. Google Drive Service Tokens Table (System-wide Dedicated Storage Account)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.drive_service_tokens (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    refresh_token TEXT,
+    email TEXT,
+    folder_id TEXT,
+    folder_name TEXT,
+    folder_url TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Safe column additions if table already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'drive_service_tokens' 
+          AND column_name = 'folder_id'
+    ) THEN
+        ALTER TABLE public.drive_service_tokens ADD COLUMN folder_id TEXT;
+        ALTER TABLE public.drive_service_tokens ADD COLUMN folder_name TEXT;
+        ALTER TABLE public.drive_service_tokens ADD COLUMN folder_url TEXT;
+    END IF;
+
+    -- Allow refresh_token to be optional if admin configures folder before OAuth connect
+    ALTER TABLE public.drive_service_tokens ALTER COLUMN refresh_token DROP NOT NULL;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+
+-- Enable RLS on drive_service_tokens (Server-side service role & admins only)
+ALTER TABLE public.drive_service_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can view drive service tokens" ON public.drive_service_tokens;
+CREATE POLICY "Admins can view drive service tokens"
+    ON public.drive_service_tokens
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+        )
+    );
+
+
+-- ==============================================================================
 -- 12. Email Queue Table (Fault-tolerant Async Staging for Registration Emails)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.email_queue (

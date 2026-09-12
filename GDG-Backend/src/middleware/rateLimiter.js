@@ -115,12 +115,23 @@ const studentSignupLimiter = rateLimit({
 });
 
 // 4. General API Limiter
+const shouldSkipGeneral = (req) => {
+  if (process.env.NODE_ENV === 'test' && !req.headers['x-test-rate-limit']) {
+    return true;
+  }
+  // Do not rate limit in local development
+  if (process.env.NODE_ENV === 'development') {
+    return true;
+  }
+  return false;
+};
+
 const generalApiLimiter = rateLimit({
   windowMs: securityConfig.rateLimits.generalApi.windowMs,
   max: securityConfig.rateLimits.generalApi.max,
   keyGenerator: ipKeyGenerator,
   handler: rateLimitHandler,
-  skip: shouldSkip,
+  skip: shouldSkipGeneral,
   standardHeaders: true,
   legacyHeaders: false,
 });

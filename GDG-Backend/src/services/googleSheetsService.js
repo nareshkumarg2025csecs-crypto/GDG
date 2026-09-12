@@ -152,6 +152,9 @@ class GoogleSheetsService {
         const val = sub.answers ? sub.answers[f.name || f.id] : '';
         if (val === null || val === undefined) return '';
         if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+        if (typeof val === 'object' && val !== null) {
+          return val.webViewLink || val.url || JSON.stringify(val);
+        }
         return String(val);
       });
 

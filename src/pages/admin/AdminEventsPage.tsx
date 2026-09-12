@@ -36,6 +36,7 @@ import {
   stripMarkdown,
 } from '@/lib/formUtils';
 import { GmailAuthCard } from '@/components/admin/GmailAuthCard';
+import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
 
 
 export const AdminEventsPage: React.FC = () => {
@@ -94,6 +95,13 @@ export const AdminEventsPage: React.FC = () => {
       toast({
         title: 'Gmail API Connected Successfully',
         description: 'The refresh token was updated and queued confirmation emails are being sent.',
+      });
+      // Clean up the URL query
+      navigate('/admin/events', { replace: true });
+    } else if (params.get('drive_auth') === 'success') {
+      toast({
+        title: 'Google Drive Storage Connected',
+        description: 'The dedicated storage account is active. Event file uploads will now be stored in this Drive.',
       });
       // Clean up the URL query
       navigate('/admin/events', { replace: true });
@@ -246,6 +254,9 @@ export const AdminEventsPage: React.FC = () => {
 
         {/* Gmail API OAuth Health & Queue Management Card */}
         <GmailAuthCard onQueueUpdated={loadData} />
+
+        {/* Google Drive Dedicated Storage Account & Quota Card */}
+        <DriveStorageAuthCard onStatusUpdated={loadData} />
 
         {/* Quick Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
