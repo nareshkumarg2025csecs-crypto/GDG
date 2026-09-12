@@ -12,6 +12,12 @@ const {
   getGmailStatus,
   drainGmailQueue,
   validateAdminCode,
+  getDriveOAuthUrl,
+  handleDriveOAuthCallback,
+  getDriveStatus,
+  setDriveFolder,
+  clearDriveFolder,
+  disconnectDriveAccount,
 } = require('../controllers/authController');
 const {
   getGoogleLinkUrl,
@@ -87,6 +93,14 @@ router.get('/google/gmail-auth-url', getGmailOAuthUrl);
 router.get('/google/gmail-callback', handleGmailOAuthCallback);
 router.get('/google/gmail-status', requireAuth, requireRole('admin'), getGmailStatus);
 router.post('/google/gmail-drain-queue', requireAuth, requireRole('admin'), drainGmailQueue);
+
+// Dedicated Google Drive Storage Authorization & Quota Telemetry
+router.get('/google/drive-auth-url', getDriveOAuthUrl);
+router.get('/google/drive-callback', handleDriveOAuthCallback);
+router.get('/google/drive-status', requireAuth, requireRole('admin'), getDriveStatus);
+router.post('/google/drive-folder', requireAuth, requireRole('admin'), setDriveFolder);
+router.delete('/google/drive-folder', requireAuth, requireRole('admin'), clearDriveFolder);
+router.post('/google/drive-disconnect', requireAuth, requireRole('admin'), disconnectDriveAccount);
 
 module.exports = router;
 

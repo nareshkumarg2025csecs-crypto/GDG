@@ -5,6 +5,7 @@ const { validateAdminSignupCode } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
 const GoogleCalendarService = require('../services/googleCalendarService');
+const GoogleDriveService = require('../services/googleDriveService');
 const GmailApiService = require('../services/gmailApiService');
 const EmailQueueService = require('../services/emailQueueService');
 
@@ -344,6 +345,7 @@ const handleLogin = async (req, res, expectedRole) => {
         full_name: profile.full_name,
         role: profile.role,
         details: profile.details,
+        created_at: profile.created_at,
       },
     });
   } catch (error) {
@@ -430,10 +432,26 @@ const getGoogleOAuthUrl = async (req, res) => {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     const redirectUrl = `${clientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
 
+    // Admin provides all needed scopes (drive, spreadsheets, calendar).
+    // Students ONLY accept the very needed ones (calendar.events and profile).
+    const scopesString = role === 'admin'
+      ? 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive'
+      : 'https://www.googleapis.com/auth/calendar.events';
+
+    const requestedScopes = role === 'admin'
+      ? [
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/drive',
+        ]
+      : [
+          'https://www.googleapis.com/auth/calendar.events',
+        ];
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        scopes: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar',
+        scopes: scopesString,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
@@ -453,12 +471,7 @@ const getGoogleOAuthUrl = async (req, res) => {
       url: data?.url,
       provider: 'google',
       role_requested: role || 'student',
-      scopes: [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/calendar.events',
-        'https://www.googleapis.com/auth/calendar',
-      ],
+      scopes: requestedScopes,
     });
   } catch (error) {
     console.error('getGoogleOAuthUrl error:', error);
@@ -620,7 +633,12 @@ const escapeHtml = (str) => {
  */
 const handleGmailOAuthCallback = async (req, res) => {
   try {
-    const { code, error } = req.query;
+    const { code, error, state } = req.query;
+
+    // Route Drive storage authorizations that reused the pre-authorized callback URI
+    if (state === 'drive') {
+      return handleDriveOAuthCallback(req, res);
+    }
     if (error) {
       return res.status(400).send(`
         <div style="font-family: sans-serif; padding: 30px; text-align: center;">
@@ -646,26 +664,11 @@ const handleGmailOAuthCallback = async (req, res) => {
     const refreshToken = tokens.refresh_token;
 
     if (refreshToken) {
-      // 1. Save to dedicated DB table and clear cache
+      // 1. Save to dedicated DB table (gmail_service_tokens)
       await GmailApiService.saveRefreshToken(refreshToken);
+      console.log('[GmailOAuth] Gmail refresh token saved successfully to database');
 
-      // 2. Also update .env file for local development persistence
-      const envPath = path.resolve(__dirname, '../../.env');
-      try {
-        let envContent = fs.readFileSync(envPath, 'utf8');
-        if (envContent.includes('GMAIL_REFRESH_TOKEN=')) {
-          envContent = envContent.replace(/GMAIL_REFRESH_TOKEN=.*/g, `GMAIL_REFRESH_TOKEN=${refreshToken}`);
-        } else {
-          envContent += `\n# Gmail API Refresh Token (Scope: https://www.googleapis.com/auth/gmail.send)\nGMAIL_REFRESH_TOKEN=${refreshToken}\n`;
-        }
-        fs.writeFileSync(envPath, envContent, 'utf8');
-        process.env.GMAIL_REFRESH_TOKEN = refreshToken;
-        console.log('[GmailOAuth] GMAIL_REFRESH_TOKEN saved successfully to .env and database');
-      } catch (fileErr) {
-        console.warn('Could not write GMAIL_REFRESH_TOKEN to .env file:', fileErr.message);
-      }
-
-      // 3. Automatically drain any pending queued registration emails
+      // 2. Automatically drain any pending queued registration emails
       EmailQueueService.drainQueue().catch((drainErr) => {
         console.warn('[GmailOAuth] Background queue drain error:', drainErr.message);
       });
@@ -801,6 +804,217 @@ const validateAdminCode = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/auth/google/drive-auth-url
+ * Generates and returns or redirects to Google OAuth consent page requesting Google Drive scopes
+ */
+const getDriveOAuthUrl = async (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    // Use the pre-authorized gmail-callback with state=drive to avoid redirect_uri_mismatch in Google Console.
+    // Also allows dedicated drive-callback if explicitly requested (?dedicated=true).
+    const useDedicated = req.query.dedicated === 'true';
+    const redirectUri = useDedicated
+      ? `${protocol}://${host}/api/auth/google/drive-callback`
+      : `${protocol}://${host}/api/auth/google/gmail-callback`;
+    const state = useDedicated ? null : 'drive';
+
+    const url = GoogleDriveService.getAuthUrl(redirectUri, state);
+
+    if (req.query.redirect === 'true') {
+      return res.redirect(url);
+    }
+
+    return res.status(200).json({
+      message: 'Drive storage authorization URL generated.',
+      auth_url: url,
+      redirect_uri: redirectUri,
+    });
+  } catch (err) {
+    console.error('getDriveOAuthUrl error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/auth/google/drive-callback
+ * Handles Google OAuth callback, exchanges code for refresh token for Google Drive, and updates config.
+ */
+const handleDriveOAuthCallback = async (req, res) => {
+  try {
+    const { code, error, state } = req.query;
+    if (error) {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Authorization Denied or Failed</h2>
+          <p>${escapeHtml(error)}</p>
+        </div>
+      `);
+    }
+    if (!code) {
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Missing Authorization Code</h2>
+          <p>No code returned by Google OAuth.</p>
+        </div>
+      `);
+    }
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    // Match the redirectUri used during the authorization request
+    const redirectUri = (state === 'drive' || req.originalUrl.includes('gmail-callback'))
+      ? `${protocol}://${host}/api/auth/google/gmail-callback`
+      : `${protocol}://${host}/api/auth/google/drive-callback`;
+
+    const tokens = await GoogleDriveService.exchangeCodeForTokens(code, redirectUri);
+    const refreshToken = tokens.refresh_token;
+
+    if (refreshToken) {
+      // 1. Save to dedicated DB table and cache
+      await GoogleDriveService.saveRefreshToken(refreshToken, tokens.email);
+
+      // 2. Also update .env file for local development persistence
+      const envPath = path.resolve(__dirname, '../../.env');
+      try {
+        let envContent = fs.readFileSync(envPath, 'utf8');
+        if (envContent.includes('GDRIVE_REFRESH_TOKEN=')) {
+          envContent = envContent.replace(/GDRIVE_REFRESH_TOKEN=.*/g, `GDRIVE_REFRESH_TOKEN=${refreshToken}`);
+        } else {
+          envContent += `\n# Dedicated Google Drive Storage Refresh Token\nGDRIVE_REFRESH_TOKEN=${refreshToken}\n`;
+        }
+        fs.writeFileSync(envPath, envContent, 'utf8');
+        process.env.GDRIVE_REFRESH_TOKEN = refreshToken;
+        console.log('[DriveOAuth] GDRIVE_REFRESH_TOKEN saved successfully to .env and database');
+      } catch (fileErr) {
+        console.warn('Could not write GDRIVE_REFRESH_TOKEN to .env file:', fileErr.message);
+      }
+    }
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Google Drive Storage Connected</title>
+        <meta http-equiv="refresh" content="3;url=${clientUrl}/admin/events?drive_auth=success" />
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+          .card { background: #1e293b; padding: 40px; border-radius: 24px; text-align: center; max-width: 480px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
+          h1 { color: #34d399; font-size: 24px; margin: 0 0 10px 0; }
+          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 16px 0; }
+          .badge { display: inline-block; background: rgba(52, 211, 153, 0.15); color: #34d399; padding: 6px 18px; border-radius: 50px; font-weight: bold; font-size: 12px; margin-bottom: 20px; border: 1px solid rgba(52, 211, 153, 0.3); }
+          .scope-box { background: #0f172a; padding: 12px 16px; border-radius: 12px; font-family: monospace; font-size: 13px; color: #60a5fa; word-break: break-all; margin: 20px 0; border: 1px solid #1e293b; }
+          a { display: inline-block; background: #4285F4; color: #ffffff; padding: 12px 28px; border-radius: 50px; text-decoration: none; font-weight: bold; font-size: 13px; transition: opacity 0.2s; }
+          a:hover { opacity: 0.9; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge">✓ Google Drive Connected</div>
+          <h1>Storage Account Linked!</h1>
+          <p>The GDG platform is now connected to Google Drive storage${tokens.email ? ` (<b>${escapeHtml(tokens.email)}</b>)` : ''}. All event attendee file uploads will be saved here.</p>
+          <div class="scope-box">https://www.googleapis.com/auth/drive</div>
+          <p style="font-size: 12px; color: #64748b;">Redirecting back to the Admin Portal in 3 seconds...</p>
+          <a href="${clientUrl}/admin/events?drive_auth=success">Return to Admin Portal Now &rarr;</a>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error('handleDriveOAuthCallback error:', err);
+    return res.status(500).send(`
+      <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+        <h2 style="color: #ef4444;">Exchange Error</h2>
+        <p>${escapeHtml(err.message)}</p>
+      </div>
+    `);
+  }
+};
+
+/**
+ * GET /api/auth/google/drive-status
+ * Authenticated / Admin-only: Returns real-time Google Drive storage quota and connected email.
+ */
+const getDriveStatus = async (req, res) => {
+  try {
+    const status = await GoogleDriveService.checkStorageStatus();
+    return res.status(200).json({
+      message: 'Drive storage status retrieved.',
+      ...status,
+    });
+  } catch (err) {
+    console.error('getDriveStatus error:', err);
+    return res.status(500).json({
+      status: 'error',
+      message: err.message,
+    });
+  }
+};
+
+/**
+ * POST /api/auth/google/drive-folder
+ * Authenticated / Admin-only: Configures a designated Google Drive public/shared folder for attendee uploads.
+ */
+const setDriveFolder = async (req, res) => {
+  try {
+    const { folder_input } = req.body;
+    if (!folder_input || typeof folder_input !== 'string' || !folder_input.trim()) {
+      return res.status(400).json({ error: 'Please provide a valid Google Drive folder link or folder ID.' });
+    }
+
+    const result = await GoogleDriveService.setCustomFolder(folder_input.trim());
+    return res.status(200).json({
+      message: 'Designated Google Drive folder updated successfully.',
+      ...result,
+    });
+  } catch (err) {
+    console.error('setDriveFolder error:', err);
+    return res.status(400).json({
+      error: err.message || 'Failed to configure Google Drive folder.',
+    });
+  }
+};
+
+/**
+ * DELETE /api/auth/google/drive-folder
+ * Authenticated / Admin-only: Clears the custom designated Google Drive folder, returning to Drive root.
+ */
+const clearDriveFolder = async (req, res) => {
+  try {
+    await GoogleDriveService.clearCustomFolder();
+    return res.status(200).json({
+      message: 'Designated Google Drive folder cleared. Uploads will now be stored in the account Drive root.',
+    });
+  } catch (err) {
+    console.error('clearDriveFolder error:', err);
+    return res.status(500).json({
+      error: err.message || 'Failed to clear designated Google Drive folder.',
+    });
+  }
+};
+
+/**
+ * POST /api/auth/google/drive-disconnect
+ * Authenticated / Admin-only: Disconnects the connected Google Drive storage account and clears tokens.
+ */
+const disconnectDriveAccount = async (req, res) => {
+  try {
+    await GoogleDriveService.disconnectStorageAccount();
+    return res.status(200).json({
+      message: 'Google Drive storage account disconnected successfully.',
+    });
+  } catch (err) {
+    console.error('disconnectDriveAccount error:', err);
+    return res.status(500).json({
+      error: err.message || 'Failed to disconnect Google Drive storage account.',
+    });
+  }
+};
+
 module.exports = {
   studentSignup,
   adminSignup,
@@ -814,5 +1028,11 @@ module.exports = {
   getGmailStatus,
   drainGmailQueue,
   validateAdminCode,
+  getDriveOAuthUrl,
+  handleDriveOAuthCallback,
+  getDriveStatus,
+  setDriveFolder,
+  clearDriveFolder,
+  disconnectDriveAccount,
 };
 

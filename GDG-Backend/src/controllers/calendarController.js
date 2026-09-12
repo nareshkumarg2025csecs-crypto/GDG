@@ -116,12 +116,25 @@ const getGoogleLinkUrl = async (req, res) => {
       return res.status(500).json({ error: 'Server misconfiguration: SUPABASE_URL is not set.' });
     }
 
-    // Build the Supabase Google OAuth redirect URL with calendar scopes.
-    // This works for BOTH email+password users (link_identity=true flag) and existing Google users.
+    // Admin provides all scopes (calendar, spreadsheets, drive).
+    // Students only accept the strictly necessary calendar & profile permissions.
+    const isAdmin = req.user?.role === 'admin';
+    const scopesList = isAdmin
+      ? [
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive',
+        ]
+      : [
+          'email',
+          'profile',
+          'https://www.googleapis.com/auth/calendar.events',
+        ];
+
     const redirectTo = encodeURIComponent(`${clientUrl}/auth/callback?link_identity=true`);
-    const scopes = encodeURIComponent(
-      'email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar'
-    );
+    const scopes = encodeURIComponent(scopesList.join(' '));
 
     // Supabase's authorize endpoint for providers
     const oauthUrl =
@@ -136,12 +149,7 @@ const getGoogleLinkUrl = async (req, res) => {
       message: 'Google identity linking URL generated.',
       url: oauthUrl,
       provider: 'google',
-      scopes: [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/calendar.events',
-        'https://www.googleapis.com/auth/calendar',
-      ],
+      scopes: scopesList,
     });
   } catch (error) {
     console.error('getGoogleLinkUrl error:', error);

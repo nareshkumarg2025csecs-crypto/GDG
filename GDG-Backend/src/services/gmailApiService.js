@@ -82,7 +82,6 @@ class GmailApiService {
     // Reset memory cache
     cachedAccessToken = null;
     tokenExpiresAt = 0;
-    process.env.GMAIL_REFRESH_TOKEN = refreshToken;
 
     try {
       await supabaseAdmin

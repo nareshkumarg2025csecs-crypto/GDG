@@ -59,6 +59,7 @@ import {
   DEFAULT_QR_PAYLOAD_PRESET,
   QR_PAYLOAD_PRESETS,
 } from '@/lib/emailTemplates';
+import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
 
 export interface EmailDraftConfig {
   mode: 'default' | 'custom';
@@ -268,6 +269,7 @@ export const AdminEventEditorPage: React.FC = () => {
     if (field.options && field.options.length > 0) return field.options[0];
     if (field.type === 'number') return '42';
     if (field.type === 'checkbox' || field.type === 'boolean') return 'Yes';
+    if (field.type === 'file') return 'https://drive.google.com/file/d/sample-file/view';
     return 'Confirmed Response';
   };
 
@@ -2141,6 +2143,28 @@ export const AdminEventEditorPage: React.FC = () => {
               >
                 + Year of Study (1st - 4th Year)
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setFormFields((prev) => [
+                    ...prev,
+                    {
+                      id: `f_${Date.now()}`,
+                      name: `attachment_${Date.now().toString(36)}`,
+                      label: 'File Attachment / Resume',
+                      type: 'file',
+                      required: false,
+                      max_file_size_mb: 10,
+                      allowed_file_types: '.pdf,.png,.jpg,.jpeg',
+                    },
+                  ]);
+                  toast({ title: 'Question Added', description: 'Added File Upload question.' });
+                }}
+                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-medium text-foreground transition-colors"
+              >
+                + File Upload
+              </button>
             </div>
 
             {formFields.length === 0 ? (
@@ -2192,6 +2216,8 @@ export const AdminEventEditorPage: React.FC = () => {
                           onChange={(e) =>
                             handleUpdateField(idx, {
                               type: e.target.value as FormField['type'],
+                              max_file_size_mb: e.target.value === 'file' ? (field.max_file_size_mb || 10) : field.max_file_size_mb,
+                              allowed_file_types: e.target.value === 'file' ? (field.allowed_file_types || '*') : field.allowed_file_types,
                             })
                           }
                           className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
@@ -2202,6 +2228,7 @@ export const AdminEventEditorPage: React.FC = () => {
                           <option value="email">Email</option>
                           <option value="select">Dropdown Select</option>
                           <option value="checkbox">Checkbox (Yes/No)</option>
+                          <option value="file">File Upload</option>
                         </select>
                       </div>
                     </div>
@@ -2211,6 +2238,48 @@ export const AdminEventEditorPage: React.FC = () => {
                         options={field.options || []}
                         onChange={(opts) => handleUpdateField(idx, { options: opts })}
                       />
+                    )}
+
+                    {field.type === 'file' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-muted/40 border border-border/60">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                            Allowed File Types
+                          </label>
+                          <select
+                            value={field.allowed_file_types || '*'}
+                            onChange={(e) => handleUpdateField(idx, { allowed_file_types: e.target.value })}
+                            className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
+                          >
+                            <option value="*">Any File (*)</option>
+                            <option value=".pdf">PDF Documents only (.pdf)</option>
+                            <option value=".pdf,.docx,.doc">Documents (.pdf, .docx, .doc)</option>
+                            <option value=".png,.jpg,.jpeg,.webp">Images (.png, .jpg, .jpeg, .webp)</option>
+                            <option value=".pdf,.png,.jpg,.jpeg">PDF &amp; Images</option>
+                            <option value=".zip,.rar">Archives (.zip, .rar)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                            Max File Size Limit
+                          </label>
+                          <select
+                            value={field.max_file_size_mb || 10}
+                            onChange={(e) => handleUpdateField(idx, { max_file_size_mb: Number(e.target.value) })}
+                            className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
+                          >
+                            <option value={2}>2 MB</option>
+                            <option value={5}>5 MB</option>
+                            <option value={10}>10 MB (Default)</option>
+                            <option value={25}>25 MB</option>
+                          </select>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <DriveStorageAuthCard compact={true} />
+                        </div>
+                      </div>
                     )}
 
                     <div className="flex items-center gap-2 pt-0.5">
