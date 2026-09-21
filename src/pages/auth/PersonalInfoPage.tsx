@@ -68,7 +68,7 @@ export const PersonalInfoPage: React.FC = () => {
   useEffect(() => {
     if (!isLoading) {
       if (!isAuthenticated) {
-        navigate('/auth', { replace: true });
+        navigate('/login', { replace: true });
       } else if (profile?.role === 'admin') {
         navigate('/', { replace: true });
       }

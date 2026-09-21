@@ -203,7 +203,7 @@ jest.mock('../src/config/supabase', () => {
         return {
           insert: jest.fn((rows) => {
             const row = Array.isArray(rows) ? rows[0] : rows;
-            const id = `form-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+            const id = require('crypto').randomUUID();
             const form = { id, ...row };
             mockForms.set(id, form);
             return { select: () => ({ single: async () => ({ data: form, error: null }) }) };
@@ -255,23 +255,58 @@ jest.mock('../src/config/supabase', () => {
         return {
           insert: jest.fn((rows) => {
             const row = Array.isArray(rows) ? rows[0] : rows;
-            const id = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+            const id = require('crypto').randomUUID();
             const submission = { id, ...row };
             mockSubmissions.set(id, submission);
             return { select: () => ({ single: async () => ({ data: submission, error: null }) }) };
           }),
+          select: jest.fn(() => {
+            const builder = {
+              filters: [],
+              eq: function (col, val) {
+                this.filters.push({ col, val });
+                return this;
+              },
+              in: function (col, vals) {
+                this.filters.push({ col, vals, isIn: true });
+                return this;
+              },
+              order: function () {
+                return this;
+              },
+              single: async function () {
+                const item = Array.from(mockSubmissions.values()).find((s) =>
+                  this.filters.every((f) => (f.isIn ? f.vals.includes(s[f.col]) : s[f.col] === f.val))
+                );
+                return item ? { data: item, error: null } : { data: null, error: { message: 'Not found' } };
+              },
+              maybeSingle: async function () {
+                const item = Array.from(mockSubmissions.values()).find((s) =>
+                  this.filters.every((f) => (f.isIn ? f.vals.includes(s[f.col]) : s[f.col] === f.val))
+                );
+                return { data: item || null, error: null };
+              },
+              then: function (resolve) {
+                const items = Array.from(mockSubmissions.values()).filter((s) =>
+                  this.filters.length === 0 ||
+                  this.filters.every((f) => (f.isIn ? f.vals.includes(s[f.col]) : s[f.col] === f.val))
+                );
+                return resolve({ data: items, error: null });
+              },
+            };
+            return builder;
+          }),
+          update: jest.fn(() => ({
+            eq: jest.fn(() => Promise.resolve({ data: null, error: null })),
+          })),
+        };
+      }
+
+      if (table === 'user_calendar_events') {
+        return {
+          upsert: jest.fn(() => Promise.resolve({ data: null, error: null })),
           select: jest.fn(() => ({
-            eq: jest.fn((col, val) => ({
-              order: jest.fn(() => ({
-                then: (resolve) =>
-                  resolve({
-                    data: Array.from(mockSubmissions.values()).filter(
-                      (s) => s.form_id === val || s.user_id === val
-                    ),
-                    error: null,
-                  }),
-              })),
-            })),
+            eq: jest.fn(() => Promise.resolve({ data: [], error: null })),
           })),
         };
       }

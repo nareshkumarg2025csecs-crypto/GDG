@@ -9,7 +9,11 @@ const { sanitizeInput } = require('./middleware/cleanInput');
 const { generalApiLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config({ override: true });
+} else {
+  dotenv.config();
+}
 
 const app = express();
 
@@ -30,6 +34,12 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server, unit tests)
       if (!origin) return callback(null, true);
+
+      // In development or local testing, allow requests from LAN IPs (e.g. mobile on 192.168.x.x or 10.x.x.x)
+      const isLocalOrLAN = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
+      if (isLocalOrLAN) {
+        return callback(null, true);
+      }
 
       const isAllowed = allowedOrigins.some(
         (allowed) => allowed === origin || allowed === '*'

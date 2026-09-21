@@ -106,4 +106,21 @@ export const eventService = {
       { method: 'POST' }
     );
   },
+
+  async uploadPoster(
+    file: File,
+    eventId?: string
+  ): Promise<{ message: string; url: string; path: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (eventId) {
+      formData.append('eventId', eventId);
+    }
+
+    return apiRequest<{ message: string; url: string; path: string }>('/api/events/upload-poster', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };
+

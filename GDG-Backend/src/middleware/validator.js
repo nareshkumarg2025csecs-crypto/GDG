@@ -148,10 +148,34 @@ const validateSubmitForm = [
   validate,
 ];
 
+const validateForgotPassword = [
+  body('email')
+    .trim()
+    .isEmail()
+    .withMessage('Valid email is required')
+    .normalizeEmail(),
+  validate,
+];
+
+const validateResetPassword = [
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/[A-Za-z]/)
+    .withMessage('Password must contain at least one letter')
+    .matches(/\d/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/)
+    .withMessage('Password must contain at least one symbol or special character'),
+  validate,
+];
+
 module.exports = {
   validateStudentSignup,
   validateAdminSignup,
   validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
   validateCreateEvent,
   validateUpdateEvent,
   validateCreateForm,

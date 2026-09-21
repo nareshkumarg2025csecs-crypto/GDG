@@ -26,6 +26,9 @@ import {
   Hash,
   Building2,
   ChevronDown,
+  Download,
+  Loader2,
+  XCircle,
 } from 'lucide-react';
 import EventTicketPass from '@/components/events/EventTicketPass';
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
@@ -35,6 +38,7 @@ import { useAuthStore } from '@/store/authStore';
 import { dashboardService } from '@/services/dashboardService';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
+import { certificateService } from '@/services/certificateService';
 import { toast } from '@/hooks/use-toast';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import Header from '@/components/Header';
@@ -50,7 +54,7 @@ import {
 } from '@/lib/formUtils';
 
 export const StudentDashboardPage: React.FC = () => {
-  const { profile, user, isAuthenticated, role } = useAuth();
+  const { profile, user, isAuthenticated, role, token } = useAuth();
   const updateStoreProfile = useAuthStore((s) => s.updateProfile);
 
   // Profile Edit State
@@ -76,6 +80,7 @@ export const StudentDashboardPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'registered' | 'participated'>('registered');
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
   const [selectedTicketData, setSelectedTicketData] = useState<{ event: ClubEvent; submission: FormSubmission } | null>(null);
+  const [downloadingCertificateId, setDownloadingCertificateId] = useState<string | null>(null);
 
   // Sync profile data into local state
   const syncProfileFields = (p = profile) => {
@@ -122,33 +127,19 @@ export const StudentDashboardPage: React.FC = () => {
         // Fallback to existing auth store profile
       }
 
-      // 2. Fetch events, user's submissions, and calendar reminders in parallel
-      const [eventsRes, subsRes, calRes] = await Promise.all([
+      // 2. Fetch events, user's submissions, calendar reminders, and forms summary in parallel
+      const [eventsRes, subsRes, calRes, formsSummaryRes] = await Promise.all([
         eventService.listEvents().catch(() => ({ events: [] })),
         formService.getMySubmissions().catch(() => ({ submissions: [] })),
         eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] })),
+        formService.getFormsSummary().catch(() => ({ formsByEvent: {} })),
       ]);
 
       const fetchedEvents = eventsRes.events || [];
       setEvents(fetchedEvents);
       setMySubmissions(subsRes.submissions || []);
       setAddedCalendarEventIds(calRes.event_ids || []);
-
-      // 3. Fetch forms for events to map submission form_ids to events
-      const formMap: Record<string, EventForm> = {};
-      await Promise.all(
-        fetchedEvents.map(async (ev) => {
-          try {
-            const { forms } = await formService.getFormsByEvent(ev.id);
-            if (forms && forms.length > 0) {
-              formMap[ev.id] = forms[0];
-            }
-          } catch {
-            // Ignore single form failure
-          }
-        })
-      );
-      setFormsByEvent(formMap);
+      setFormsByEvent(formsSummaryRes.formsByEvent || {});
     } catch (err: any) {
       toast({
         title: 'Error loading dashboard',
@@ -237,21 +228,34 @@ export const StudentDashboardPage: React.FC = () => {
     });
 
     mySubmissions.forEach((sub) => {
-      const matchedEvent = eventByFormId[sub.form_id];
+      const matchedEvent = eventByFormId[sub.form_id] || (sub.event_id ? events.find((e) => e.id === sub.event_id) : null);
       if (!matchedEvent) return;
 
       const details = matchedEvent.details || {};
+      const startStr = details.startTime || details.start_time;
+      const eventStart = startStr ? parseEventDate(startStr) : null;
       const endStr = details.endTime || details.end_time || details.startTime || details.start_time;
       const eventEnd = endStr ? parseEventDate(endStr) : null;
-      const isPast = eventEnd ? now > eventEnd : false;
 
-      // 1. Registered (Upcoming, not yet ended)
-      if (!isPast) {
+      // Event has started if current time is equal to or past start time
+      const hasStarted = eventStart
+        ? now >= eventStart
+        : eventEnd
+        ? now >= eventEnd
+        : false;
+
+      const isPast = eventEnd ? now > eventEnd : hasStarted;
+      const isCertsIssued = Boolean(
+        details.certificates_issued || (sub as any).certificates_issued
+      );
+
+      // 1. Registered Events: Active registrations before event starts; hidden once the event starts
+      if (!hasStarted && !isCertsIssued) {
         registered.push({ event: matchedEvent, submission: sub });
       }
 
-      // 2. Participated (Admin confirmed attendance, persists regardless of time)
-      if (sub.attended === true) {
+      // 2. Participated Events: Events that have started, concluded, or attendance/certs processed
+      if (sub.attended === true || isCertsIssued || hasStarted || isPast) {
         participated.push({ event: matchedEvent, submission: sub });
       }
     });
@@ -288,6 +292,26 @@ export const StudentDashboardPage: React.FC = () => {
     }
   };
 
+  // Download Certificate for Participated Event
+  const handleDownloadCertificate = async (submissionId: string, eventTitle: string) => {
+    try {
+      setDownloadingCertificateId(submissionId);
+      await certificateService.downloadCertificate(submissionId, eventTitle, token);
+      toast({
+        title: 'Certificate Downloaded!',
+        description: `Your certificate for "${eventTitle}" downloaded successfully.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Download Failed',
+        description: err.message || 'Could not download certificate. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDownloadingCertificateId(null);
+    }
+  };
+
   const currentDetails = profile?.details || {};
   const googleAvatarUrl = currentDetails.avatar_url || currentDetails.picture;
 
@@ -295,11 +319,11 @@ export const StudentDashboardPage: React.FC = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/20">
       <Header />
 
-      <main className="flex-1 pt-28 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-8">
+      <main className="flex-1 pt-24 sm:pt-28 pb-20 px-3 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full space-y-8">
         {/* Top Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/80 pb-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold uppercase bg-google-blue/10 text-google-blue border border-google-blue/20">
                 {role === 'admin' ? 'Admin Portal' : 'Student Portal'}
               </span>
@@ -307,18 +331,28 @@ export const StudentDashboardPage: React.FC = () => {
                 Member since {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '2026'}
               </span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold font-sans tracking-tight text-foreground">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold font-sans tracking-tight text-foreground">
               Welcome, {profile?.full_name || 'Student'}!
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1 max-w-2xl">
               Manage your personal student profile and track your registered & verified GDG event participation.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+            {role === 'admin' && (
+              <Link
+                to="/admin/certificates"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-xs sm:text-sm font-bold text-white shadow-sm hover:shadow-md transition-all"
+                title="Open Certificates Studio"
+              >
+                <Award className="w-4 h-4 text-white" />
+                <span>Certificates Studio</span>
+              </Link>
+            )}
             <Link
               to="/events"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm"
             >
               <Search className="w-4 h-4 text-google-yellow" />
               <span>Browse Events</span>
@@ -754,6 +788,8 @@ export const StudentDashboardPage: React.FC = () => {
                           <img
                             src={banner}
                             alt={event.title}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
@@ -801,6 +837,7 @@ export const StudentDashboardPage: React.FC = () => {
 
                       {/* Event Details snippet */}
                       <div className="p-5 space-y-3 flex-1">
+
                         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                           {stripMarkdown(
                             details.description ||
@@ -911,13 +948,22 @@ export const StudentDashboardPage: React.FC = () => {
                   const details = event.details || {};
                   const banner = details.banner_url || details.coverImage || details.cover_image;
                   const accentColor = details.theme_color || '#34A853';
+                  const isCertsIssued = Boolean(
+                    details.certificates_issued || (submission as any).certificates_issued
+                  );
 
                   return (
                     <motion.div
                       key={event.id}
                       initial={{ opacity: 0, y: 15 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex flex-col justify-between rounded-3xl border bg-card text-card-foreground shadow-md hover:shadow-xl transition-all overflow-hidden border-google-green/30"
+                      className={`flex flex-col justify-between rounded-3xl border bg-card text-card-foreground shadow-md hover:shadow-xl transition-all overflow-hidden ${
+                        submission.attended
+                          ? 'border-google-green/30'
+                          : isCertsIssued
+                          ? 'border-rose-500/30'
+                          : 'border-amber-500/30'
+                      }`}
                     >
                       {/* Banner Image or Header */}
                       {banner ? (
@@ -925,6 +971,8 @@ export const StudentDashboardPage: React.FC = () => {
                           <img
                             src={banner}
                             alt={event.title}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
@@ -935,10 +983,29 @@ export const StudentDashboardPage: React.FC = () => {
                             >
                               {details.category || 'Event'}
                             </span>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-green text-white shadow-sm">
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              <span>Attended & Verified</span>
-                            </span>
+                            {submission.attended ? (
+                              submission.certificate_sent ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-600 text-white shadow-sm">
+                                  <Award className="w-3.5 h-3.5" />
+                                  <span>Certificate Sent</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-green text-white shadow-sm">
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Attended & Verified</span>
+                                </span>
+                              )
+                            ) : isCertsIssued ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-600 text-white shadow-sm">
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Not Attended</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-sm">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Event Underway</span>
+                              </span>
+                            )}
                           </div>
                           <div className="absolute bottom-3 left-3 right-3">
                             <h3 className="text-base font-bold text-white line-clamp-1 font-sans">
@@ -959,10 +1026,29 @@ export const StudentDashboardPage: React.FC = () => {
                             >
                               {details.category || 'Event'}
                             </span>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-green text-white shadow-sm">
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                              <span>Attended</span>
-                            </span>
+                            {submission.attended ? (
+                              submission.certificate_sent ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-600 text-white shadow-sm">
+                                  <Award className="w-3.5 h-3.5" />
+                                  <span>Certificate Sent</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-green text-white shadow-sm">
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Attended</span>
+                                </span>
+                              )
+                            ) : isCertsIssued ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-600 text-white shadow-sm">
+                                <XCircle className="w-3.5 h-3.5" />
+                                <span>Not Attended</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-sm">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Event Underway</span>
+                              </span>
+                            )}
                           </div>
                           <h3 className="text-base font-bold text-foreground line-clamp-1 font-sans">
                             {event.title}
@@ -972,10 +1058,73 @@ export const StudentDashboardPage: React.FC = () => {
 
                       {/* Event Details */}
                       <div className="p-5 space-y-3 flex-1">
-                        <div className="p-2.5 rounded-xl bg-google-green/10 border border-google-green/20 text-google-green flex items-center gap-2 text-xs font-semibold">
-                          <CheckCircle2 className="w-4 h-4 shrink-0" />
-                          <span>Official Participation Confirmed</span>
-                        </div>
+                        {submission.attended ? (
+                          submission.certificate_sent ? (
+                            <div className="p-3 rounded-2xl bg-gradient-to-br from-emerald-500/15 via-emerald-500/10 to-transparent border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 space-y-2.5">
+                              <div className="flex items-center justify-between gap-2 text-xs font-semibold">
+                                <div className="flex items-center gap-2">
+                                  <Award className="w-4 h-4 text-emerald-500 shrink-0" />
+                                  <span>Certificate Issued & Sent</span>
+                                </div>
+                                {submission.certificate_sent_at && (
+                                  <span className="text-[10px] font-mono opacity-80">
+                                    {new Date(submission.certificate_sent_at).toLocaleDateString(undefined, {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Download Certificate Action Button - Always PDF */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadCertificate(submission.id, event.title)}
+                                disabled={downloadingCertificateId === submission.id}
+                                className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white text-xs font-bold transition-all shadow-sm hover:shadow disabled:opacity-50"
+                                title="Download official Certificate document (PDF)"
+                              >
+                                {downloadingCertificateId === submission.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Downloading PDF...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Download Certificate (PDF)</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 rounded-xl bg-google-green/10 border border-google-green/20 text-google-green flex items-center gap-2 text-xs font-semibold">
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                              <span>Official Participation Confirmed</span>
+                            </div>
+                          )
+                        ) : isCertsIssued ? (
+                          <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-600 dark:text-rose-400 space-y-1">
+                            <div className="flex items-center gap-2 text-xs font-bold">
+                              <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                              <span>You did not attend this event</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
+                              Certificates were issued to attended participants. Since attendance was not marked as present, a certificate was not awarded.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400 space-y-1">
+                            <div className="flex items-center gap-2 text-xs font-bold">
+                              <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+                              <span>Event has started</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
+                              This event is underway. Attendance records and certificates will be updated after conclusion.
+                            </p>
+                          </div>
+                        )}
 
                         <div className="space-y-1.5 text-xs text-muted-foreground pt-1">
                           <div className="flex items-center gap-2">
@@ -998,22 +1147,54 @@ export const StudentDashboardPage: React.FC = () => {
 
                       {/* Card Footer */}
                       <div className="p-3.5 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTicketData({ event, submission })}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                          title="View and Download Ticket QR Code"
-                        >
-                          <QrCode className="w-3.5 h-3.5 text-google-green" />
-                          <span>QR Pass</span>
-                        </button>
-                        <Link
-                          to={`/events/${event.id}`}
-                          className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
-                        >
-                          <span>View Event</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTicketData({ event, submission })}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                            title="View and Download Ticket QR Code"
+                          >
+                            <QrCode className="w-3.5 h-3.5 text-google-green" />
+                            <span>QR Pass</span>
+                          </button>
+
+                          {submission.attended && submission.certificate_sent && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadCertificate(submission.id, event.title)}
+                              disabled={downloadingCertificateId === submission.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
+                              title="Download Certificate (PDF)"
+                            >
+                              {downloadingCertificateId === submission.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5" />
+                              )}
+                              <span>Download PDF</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {role === 'admin' && (
+                            <Link
+                              to="/admin/certificates"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-all shadow-sm"
+                              title="Open Certificate Studio"
+                            >
+                              <Award className="w-3.5 h-3.5" />
+                              <span>Certificates</span>
+                            </Link>
+                          )}
+                          <Link
+                            to={`/events/${event.id}`}
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                          >
+                            <span>View Event</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </Link>
+                        </div>
                       </div>
                     </motion.div>
                   );

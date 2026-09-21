@@ -66,23 +66,21 @@ const MessageSection = () => {
       const lines = linesRef.current.filter(Boolean);
       if (!lines.length || !stickyRef.current) return;
 
-      lines.forEach((line, i) => {
+      lines.forEach((line) => {
         gsap.fromTo(
           line,
-          { y: 50, opacity: 0, clipPath: 'inset(0 0 100% 0)' },
+          { y: 30, opacity: 0 },
           {
             y: 0,
             opacity: 1,
-            clipPath: 'inset(0 0 0% 0)',
-            duration: 0.8,
-            ease: 'power3.out',
+            duration: 0.6,
+            ease: 'power2.out',
             force3D: true, // Forces GPU acceleration via transform3d
             scrollTrigger: {
-              trigger: stickyRef.current,
-              start: `top+=${i * 70}px center`,
-              end: `top+=${i * 70 + 180}px center`,
-              toggleActions: 'play none none reverse',
-              scrub: false,
+              trigger: line,
+              start: 'top 88%',
+              toggleActions: 'play none none none',
+              once: true,
             },
           },
         );
@@ -97,13 +95,13 @@ const MessageSection = () => {
   };
 
   return (
-    <div ref={outerRef} className="relative" style={{ minHeight: '115vh' }}>
+    <div ref={outerRef} className="relative min-h-screen md:min-h-[115vh]">
       <div
         ref={stickyRef}
-        className="sticky top-0 h-screen flex flex-col items-center justify-center overflow-hidden bg-background"
+        className="relative md:sticky top-0 min-h-screen md:h-screen flex flex-col items-center justify-center overflow-hidden bg-background py-16 md:py-0"
       >
-        {/* Large decorative geometric shapes */}
-        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+        {/* Large decorative geometric shapes (Desktop only for smooth mobile performance) */}
+        <div className="absolute inset-0 pointer-events-none select-none overflow-hidden hidden md:block">
           {/* Giant rotating ring */}
           <motion.div
             animate={{ rotate: 360 }}
@@ -120,11 +118,11 @@ const MessageSection = () => {
 
           {/* Gradient mesh blobs for visual depth */}
           <div
-            className="absolute top-[10%] left-[5%] w-[30vw] h-[30vw] rounded-full blur-[120px]"
+            className="absolute top-[10%] left-[5%] w-[30vw] h-[30vw] rounded-full blur-[100px]"
             style={{ background: isDark ? 'rgba(66,133,244,0.06)' : 'rgba(66,133,244,0.04)' }}
           />
           <div
-            className="absolute bottom-[15%] right-[10%] w-[25vw] h-[25vw] rounded-full blur-[100px]"
+            className="absolute bottom-[15%] right-[10%] w-[25vw] h-[25vw] rounded-full blur-[90px]"
             style={{ background: isDark ? 'rgba(52,168,83,0.06)' : 'rgba(52,168,83,0.04)' }}
           />
         </div>
@@ -132,7 +130,7 @@ const MessageSection = () => {
         {/* Background GDG watermark */}
         <motion.div
           style={{ y: bgY, rotate: bgRotate }}
-          className="absolute right-[-10%] top-1/2 -translate-y-1/2 select-none pointer-events-none"
+          className="absolute right-[-10%] top-1/2 -translate-y-1/2 select-none pointer-events-none hidden sm:block"
         >
           <span
             className="font-display leading-none"
@@ -149,31 +147,33 @@ const MessageSection = () => {
           </span>
         </motion.div>
 
-        {/* Floating orbs – more varied */}
-        {[
-          { x: '15%', y: '18%', size: 14, color: '#4285F4', dur: 4, delay: 0 },
-          { x: '78%', y: '25%', size: 10, color: '#EA4335', dur: 5, delay: 0.5 },
-          { x: '25%', y: '75%', size: 16, color: '#FBBC04', dur: 4.5, delay: 1 },
-          { x: '70%', y: '72%', size: 18, color: '#34A853', dur: 5.5, delay: 1.5 },
-          { x: '50%', y: '12%', size: 8, color: '#EA4335', dur: 3.5, delay: 0.3 },
-          { x: '88%', y: '55%', size: 6, color: '#4285F4', dur: 6, delay: 2 },
-        ].map((orb, i) => (
-          <motion.div
-            key={i}
-            animate={{ y: [0, i % 2 === 0 ? -25 : 20, 0] }}
-            transition={{ duration: orb.dur, repeat: Infinity, ease: 'easeInOut', delay: orb.delay }}
-            className="absolute rounded-full"
-            style={{
-              left: orb.x,
-              top: orb.y,
-              width: orb.size,
-              height: orb.size,
-              backgroundColor: orb.color,
-              filter: isDark ? `drop-shadow(0 0 ${orb.size * 3}px ${orb.color})` : 'none',
-              opacity: isDark ? 1 : 0.6,
-            }}
-          />
-        ))}
+        {/* Floating orbs (Desktop only to prevent mobile CPU throttling) */}
+        <div className="hidden md:block pointer-events-none">
+          {[
+            { x: '15%', y: '18%', size: 14, color: '#4285F4', dur: 4, delay: 0 },
+            { x: '78%', y: '25%', size: 10, color: '#EA4335', dur: 5, delay: 0.5 },
+            { x: '25%', y: '75%', size: 16, color: '#FBBC04', dur: 4.5, delay: 1 },
+            { x: '70%', y: '72%', size: 18, color: '#34A853', dur: 5.5, delay: 1.5 },
+            { x: '50%', y: '12%', size: 8, color: '#EA4335', dur: 3.5, delay: 0.3 },
+            { x: '88%', y: '55%', size: 6, color: '#4285F4', dur: 6, delay: 2 },
+          ].map((orb, i) => (
+            <motion.div
+              key={i}
+              animate={{ y: [0, i % 2 === 0 ? -25 : 20, 0] }}
+              transition={{ duration: orb.dur, repeat: Infinity, ease: 'easeInOut', delay: orb.delay }}
+              className="absolute rounded-full"
+              style={{
+                left: orb.x,
+                top: orb.y,
+                width: orb.size,
+                height: orb.size,
+                backgroundColor: orb.color,
+                filter: isDark ? `drop-shadow(0 0 ${orb.size * 3}px ${orb.color})` : 'none',
+                opacity: isDark ? 1 : 0.6,
+              }}
+            />
+          ))}
+        </div>
 
         {/* Main Content */}
         <div className="container mx-auto px-6 relative z-10 max-w-6xl">

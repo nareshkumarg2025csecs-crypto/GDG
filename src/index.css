@@ -102,13 +102,13 @@
 
   /* DARK MODE OVERRIDES */
   .dark {
-    --background: 5 5 5;
-    --foreground: 255 255 255;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card-bg: 18 18 18;
-    --card-border: 38 38 38;
-    --text-primary: 255 255 255;
-    --text-secondary: 163 163 163;
+    --card-bg: 0 0% 7%;
+    --card-border: 0 0% 15%;
+    --text-primary: 0 0% 98%;
+    --text-secondary: 0 0% 65%;
     --accent-glow: 0.3;
 
     /* Updated Base Colors for Neon Noir */
@@ -170,8 +170,8 @@
   h4,
   h5,
   h6 {
-    font-family: 'Bebas Neue', sans-serif;
-    letter-spacing: 0.05em;
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.01em;
   }
 
   ::selection {
@@ -294,18 +294,85 @@
         hsl(var(--track-line) / 0.3) 81px);
   }
 
-  /* Premium scrollbar */
+  /* =========================================================================
+     MODERN GLOBAL SCROLLBARS
+     Slim, elegant, rounded scrollbars for all screens, elements, and containers
+     ========================================================================= */
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  }
+
+  /* WebKit & Blink browsers (Chrome, Edge, Safari, Opera) */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.28);
+    border-radius: 9999px;
+    transition: background-color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.55);
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.45);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Custom scrollbar utility overrides */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--lime) / 0.45) transparent;
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
 
-  .scrollbar-none {
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--lime) / 0.45);
+    border-radius: 9999px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--lime));
+  }
+
+  .scrollbar-none,
+  .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
 
-  .scrollbar-none::-webkit-scrollbar {
+  .scrollbar-none::-webkit-scrollbar,
+  .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
 
@@ -314,15 +381,6 @@
     outline: 2px solid #4285F4;
     outline-offset: 2px;
     border-radius: 4px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: hsl(var(--carbon));
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--lime));
-    border-radius: 3px;
   }
 
   /* Horizontal scroll snap */
@@ -897,10 +955,37 @@ body::after {
   text-transform: uppercase;
 }
 
-/* Hide native cursor when custom cursor is active */
+/* Hide native cursor when custom cursor is active, but keep text caret on editable inputs */
 body.custom-cursor-active,
 body.custom-cursor-active * {
   cursor: none !important;
+}
+
+body.custom-cursor-active input,
+body.custom-cursor-active textarea,
+body.custom-cursor-active select,
+body.custom-cursor-active [contenteditable="true"] {
+  cursor: text !important;
+}
+
+/* Custom cursor click ripple shockwave */
+@keyframes cursor-ripple {
+  0% {
+    width: 8px;
+    height: 8px;
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    width: 64px;
+    height: 64px;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+}
+
+.cursor-ripple-active {
+  animation: cursor-ripple 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Stagger delay helpers */

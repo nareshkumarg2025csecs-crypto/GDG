@@ -146,6 +146,9 @@ export interface FormSubmission {
   attended?: boolean;
   ticket_id?: string;
   email_sent?: boolean;
+  certificate_sent?: boolean;
+  certificate_sent_at?: string | null;
+  certificate_id?: string | null;
   submitted_at: string;
 }
 

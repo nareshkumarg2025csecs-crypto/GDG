@@ -229,7 +229,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                         <div className="flex justify-between items-end">
                             <div className="flex-1 min-w-0 mr-2">
                                 <p className="text-[10px] font-mono tracking-[0.3em] mb-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>// {member.codename}</p>
-                                <h4 className="font-display text-lg leading-tight break-words" style={{ color: 'rgb(var(--foreground))', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
+                                <h4 className="font-display text-lg leading-tight break-words text-foreground" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
                                 <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.role}</p>
                             </div>
                             <div className="flex gap-2">
@@ -332,8 +332,8 @@ function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps)
                 className="absolute inset-0 opacity-[0.03]"
                 style={{
                     backgroundImage: `
-                        linear-gradient(rgb(var(--foreground)) 1px, transparent 1px),
-                        linear-gradient(90deg, rgb(var(--foreground)) 1px, transparent 1px)
+                        linear-gradient(hsl(var(--foreground)) 1px, transparent 1px),
+                        linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)
                     `,
                     backgroundSize: '60px 60px',
                 }}
@@ -360,10 +360,10 @@ function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps)
                     >
                         {section.label}
                     </p>
-                    <h2 className="text-5xl md:text-7xl font-display text-[rgb(var(--foreground))] transition-colors duration-300">
+                    <h2 className="text-5xl md:text-7xl font-display text-foreground transition-colors duration-300">
                         {section.name}
                     </h2>
-                    <p className="text-[rgb(var(--foreground))]/40 text-sm mt-2">
+                    <p className="text-muted-foreground text-sm mt-2">
                         {section.description}
                     </p>
                 </div>
@@ -433,7 +433,7 @@ export default function TeamPage() {
             {/* Hero Section */}
             <section className="py-20 md:py-32 relative overflow-hidden bg-background transition-colors duration-300">
                 <div className="absolute inset-0 opacity-[0.03]" style={{
-                    backgroundImage: `linear-gradient(rgb(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--foreground)) 1px, transparent 1px)`,
+                    backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
                     backgroundSize: '40px 40px',
                 }} />
 
@@ -443,10 +443,10 @@ export default function TeamPage() {
                             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                             <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
                         </div>
-                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-display text-[rgb(var(--foreground))] mb-2 transition-colors duration-300">
-                            CORE <span style={{ color: theme === 'light' ? 'rgb(var(--text-primary-raw))' : '#4285F4', textShadow: theme === 'light' ? 'none' : `0 0 40px #4285F460` }}>TEAM</span>
+                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 transition-colors duration-300">
+                            CORE <span style={{ color: theme === 'light' ? 'hsl(var(--foreground))' : '#4285F4', textShadow: theme === 'light' ? 'none' : `0 0 40px #4285F460` }}>TEAM</span>
                         </h1>
-                        <p className="text-[rgb(var(--foreground))]/30 font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {teamMembers.length} OPERATIVES ASSIGNED</p>
+                        <p className="text-muted-foreground font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {teamMembers.length} OPERATIVES ASSIGNED</p>
                     </motion.div>
                 </div>
             </section>
@@ -461,7 +461,7 @@ export default function TeamPage() {
                         }}>
                             // LEADERSHIP
                         </p>
-                        <h2 className="text-4xl md:text-6xl font-display text-[rgb(var(--foreground))]">
+                        <h2 className="text-4xl md:text-6xl font-display text-foreground">
                             GDG on Campus leadership team
                         </h2>
                     </div>

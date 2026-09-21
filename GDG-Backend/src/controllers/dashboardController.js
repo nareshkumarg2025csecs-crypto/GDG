@@ -1,4 +1,10 @@
 const { supabaseAdmin } = require('../config/supabase');
+const { BoundedMap } = require('../utils/boundedCache');
+const { invalidateAuthCache } = require('../middleware/auth');
+
+// In-memory notifications cache (TTL: 60s, capped to 500 users) to eliminate repetitive PostgREST queries and reduce Supabase egress
+const NOTIF_CACHE_TTL = 60 * 1000;
+const notificationsCache = new BoundedMap(500);
 
 /**
  * GET /api/dashboard
@@ -93,6 +99,10 @@ const updateDashboard = async (req, res) => {
       });
     }
 
+    // Invalidate caches so next request retrieves fresh profile
+    invalidateAuthCache(userId);
+    notificationsCache.delete(userId);
+
     return res.status(200).json({
       message: 'Dashboard updated successfully.',
       dashboard: updatedProfile,
@@ -105,7 +115,111 @@ const updateDashboard = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/dashboard/notifications
+ * Authenticated: Synthesizes real-time user notifications:
+ * - Attendance verification (when marked present)
+ * - Certificate dispatch (when certificate email is sent)
+ */
+const getUserNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const now = Date.now();
+
+    // Fast-path: return cached notifications if within TTL (cuts Supabase egress)
+    const cached = notificationsCache.get(userId);
+    if (cached && cached.expiresAt > now) {
+      return res.status(200).json(cached.data);
+    }
+
+    // Fetch user submissions with related forms and events (limit to recent 25 to prevent statement timeouts)
+    // Egress optimization: select only events(id, title) - omitting heavy `details` jsonb payload
+    const { data: submissions, error: subError } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false })
+      .limit(25);
+
+    if (subError) {
+      console.warn('getUserNotifications submissions query returned non-critical notice:', subError.message);
+    }
+
+    const notifications = [];
+
+    if (submissions && submissions.length > 0) {
+      for (const sub of submissions) {
+        const eventTitle = sub.forms?.events?.title || sub.forms?.title || 'GDG Event';
+        const eventId = sub.forms?.events?.id || sub.forms?.event_id || null;
+
+        // 1. Attendance Notification (when user marked present)
+        if (sub.attended) {
+          const attendedTime = sub.answers?.attended_at || sub.submitted_at;
+          notifications.push({
+            id: `attendance_${sub.id}`,
+            type: 'attendance',
+            title: 'Attendance Marked Present',
+            message: `You were marked present for "${eventTitle}". Your attendance has been verified!`,
+            timestamp: attendedTime,
+            event_id: eventId,
+            event_title: eventTitle,
+            action_url: '/dashboard',
+            metadata: {
+              submission_id: sub.id,
+              ticket_id: sub.ticket_id || sub.answers?.ticket_id,
+            },
+          });
+        }
+
+        // 2. Certificate Sent Notification (when certificate email dispatched)
+        if (sub.certificate_sent) {
+          const sentTime = sub.certificate_sent_at || sub.submitted_at;
+          notifications.push({
+            id: `certificate_${sub.id}`,
+            type: 'certificate',
+            title: 'Certificate Dispatched & Sent',
+            message: `Your certificate of participation for "${eventTitle}" has been generated and sent to your email.`,
+            timestamp: sentTime,
+            event_id: eventId,
+            event_title: eventTitle,
+            certificate_id: sub.certificate_id,
+            action_url: '/dashboard',
+            metadata: {
+              submission_id: sub.id,
+              certificate_id: sub.certificate_id,
+            },
+          });
+        }
+      }
+    }
+
+    // Sort descending by timestamp
+    notifications.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const responsePayload = {
+      success: true,
+      count: notifications.length,
+      notifications,
+    };
+
+    // Store in cache for 30 seconds
+    notificationsCache.set(userId, {
+      data: responsePayload,
+      expiresAt: now + NOTIF_CACHE_TTL,
+    });
+
+    return res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('getUserNotifications error:', error);
+    return res.status(500).json({
+      error: 'Failed to retrieve notifications.',
+    });
+  }
+};
+
 module.exports = {
   getDashboard,
   updateDashboard,
+  getUserNotifications,
 };
+

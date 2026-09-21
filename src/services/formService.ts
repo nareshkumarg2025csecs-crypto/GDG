@@ -25,6 +25,12 @@ export interface SubmissionsListResponse {
 }
 
 export const formService = {
+  async getFormsSummary(): Promise<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }> {
+    return apiRequest<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }>('/api/forms/summary', {
+      method: 'GET',
+    });
+  },
+
   async getFormsByEvent(eventId: string): Promise<FormsListResponse> {
     return apiRequest<FormsListResponse>(`/api/events/${eventId}/forms`, {
       method: 'GET',
@@ -120,7 +126,7 @@ export const formService = {
   },
 
   getTicketQrDownloadUrl(ticketId: string): string {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
     return `${baseUrl}/api/forms/ticket/${encodeURIComponent(ticketId)}/qr-download`;
   },
 

@@ -17,8 +17,10 @@ import AdminEventsPage from "./pages/admin/AdminEventsPage";
 import AdminEventEditorPage from "./pages/admin/AdminEventEditorPage";
 import AdminSubmissionsPage from "./pages/admin/AdminSubmissionsPage";
 import AdminGatewayPage from "./pages/admin/AdminGatewayPage";
+import { AdminCertificatesPage } from "./pages/admin/AdminCertificatesPage";
 import StudentDashboardPage from "./pages/dashboard/StudentDashboardPage";
 import PersonalInfoPage from "./pages/auth/PersonalInfoPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
@@ -118,16 +120,26 @@ const App = () => {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/admin/certificates"
+                  element={
+                    <ProtectedRoute requiredRole="admin">
+                      <AdminCertificatesPage />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* Secret Admin Gateway Route */}
                 <Route path="/admin-gdg" element={<AdminGatewayPage />} />
 
                 {/* Auth Routes */}
+                <Route path="/auth" element={<Navigate to="/login" replace />} />
                 <Route path="/login" element={<AuthPage defaultMode="login" />} />
                 <Route path="/signup" element={<AuthPage defaultMode="signup" />} />
                 <Route path="/auth/login" element={<AuthPage defaultMode="login" />} />
                 <Route path="/auth/signup" element={<AuthPage defaultMode="signup" />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

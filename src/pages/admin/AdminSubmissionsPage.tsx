@@ -21,6 +21,7 @@ import {
   Mail,
   MailCheck,
   Tag,
+  Award,
 } from 'lucide-react';
 import { formService } from '@/services/formService';
 import { eventService } from '@/services/eventService';
@@ -322,6 +323,16 @@ export const AdminSubmissionsPage: React.FC = () => {
                 </a>
               </>
             )}
+
+            {/* Certificates Studio Navigation */}
+            <Link
+              to="/admin/certificates"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-semibold shadow-sm hover:bg-blue-500/20 transition-all"
+              title="Open Certificates Studio"
+            >
+              <Award className="w-4 h-4 text-blue-500" />
+              <span>Certificates</span>
+            </Link>
 
             {/* Export CSV → Google Sheets compatible */}
             <button

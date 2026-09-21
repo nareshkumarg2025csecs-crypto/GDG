@@ -786,18 +786,18 @@ function UIOverlay({ activeBay, baysData }: UIOverlayProps) {
                         RESTRICTED ACCESS // CLEARANCE LEVEL: CORE
                     </p>
                 </div>
-                <h2 className="text-4xl md:text-5xl font-display text-[rgb(var(--foreground))] transition-colors duration-300">
-                    CORE <span style={{ color: bayData?.color ? bayData.color : 'rgb(var(--text-primary-raw))' }}>TEAM</span>
+                <h2 className="text-4xl md:text-5xl font-display text-foreground transition-colors duration-300">
+                    CORE <span style={{ color: bayData?.color ? bayData.color : 'hsl(var(--foreground))' }}>TEAM</span>
                 </h2>
                 {bayData && (
-                    <p className="text-[rgb(var(--foreground))]/40 font-mono text-xs mt-2 transition-colors duration-300">
+                    <p className="text-muted-foreground font-mono text-xs mt-2 transition-colors duration-300">
                         SELECTED // {bayData.members.length} OPERATIVES IN {bayData.name}
                     </p>
                 )}
             </div>
 
             {/* Bottom status */}
-            <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[10px] font-mono text-[rgb(var(--foreground))]/30 transition-colors duration-300">
+            <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[10px] font-mono text-muted-foreground/60 transition-colors duration-300">
                 <span>SYSTEM: <span className="text-green-600">ONLINE</span></span>
                 <span>SELECT BAY TO VIEW OPERATIVES</span>
             </div>
@@ -862,7 +862,12 @@ export function TeamGarage3D({ membersByBay, layoutMode, bayMeta, cameraConfig }
                     fov: resolvedCameraConfig.fov,
                 }}
                 dpr={[1, 2]}
-                gl={{ antialias: true }}
+                gl={{ antialias: true, powerPreference: "default" }}
+                onCreated={({ gl }) => {
+                    gl.domElement.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault();
+                    }, false);
+                }}
             >
                 <Suspense fallback={<Loader colors={loaderColors} />}>
                     <Scene
@@ -881,7 +886,7 @@ export function TeamGarage3D({ membersByBay, layoutMode, bayMeta, cameraConfig }
             {activeBay && (
                 <button
                     onClick={() => setActiveBay(null)}
-                    className="absolute top-6 right-6 px-4 py-2 font-mono text-xs text-[rgb(var(--foreground))]/50 hover:text-[rgb(var(--foreground))] border border-[rgb(var(--foreground))]/20 hover:border-[rgb(var(--foreground))]/40 rounded transition-all z-20"
+                    className="absolute top-6 right-6 px-4 py-2 font-mono text-xs text-muted-foreground hover:text-foreground border border-border hover:border-foreground/40 rounded transition-all z-20"
                 >
                     ← BACK TO OVERVIEW
                 </button>

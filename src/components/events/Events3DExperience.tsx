@@ -333,7 +333,12 @@ export function Events3DExperience({ isMobile = false }: Events3DExperienceProps
                     gl={{
                         antialias: true,
                         alpha: false,
-                        powerPreference: 'high-performance',
+                        powerPreference: 'default',
+                    }}
+                    onCreated={({ gl }) => {
+                        gl.domElement.addEventListener('webglcontextlost', (e) => {
+                            e.preventDefault();
+                        }, false);
                     }}
                 >
                     <Suspense fallback={<Loader />}>

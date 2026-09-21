@@ -531,13 +531,14 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               type="button"
               disabled={isDownloadingPass || !qrDataUrl}
               onClick={handleDownloadTicketPass}
+              aria-label="Download full ticket pass as PNG"
               className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-bold text-xs text-white shadow-sm hover:shadow transition-all disabled:opacity-50"
               style={{
                 background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
                 boxShadow: '0 2px 8px rgba(66, 133, 244, 0.25)',
               }}
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{isDownloadingPass ? 'Generating...' : 'Download Pass (PNG)'}</span>
             </button>
 
@@ -546,10 +547,11 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               type="button"
               disabled={!qrDataUrl}
               onClick={handleDownloadQR}
+              aria-label="Download QR code only"
               className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-border bg-background hover:bg-muted font-semibold text-xs text-foreground transition-all shadow-sm disabled:opacity-50"
               title="Download QR code only"
             >
-              <QrCode className="w-3.5 h-3.5 text-google-green" />
+              <QrCode className="w-3.5 h-3.5 text-google-green" aria-hidden="true" />
               <span className="hidden sm:inline">QR Only</span>
               <span className="sm:hidden">QR</span>
             </button>
@@ -558,17 +560,18 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
           {/* Copy Details */}
           <button
             type="button"
+            aria-label="Copy ticket details to clipboard"
             onClick={handleCopyDetails}
             className="self-end sm:self-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted/50 shrink-0"
           >
             {copied ? (
               <>
-                <Check className="w-3 h-3 text-google-green" />
+                <Check className="w-3 h-3 text-google-green" aria-hidden="true" />
                 <span className="text-google-green font-semibold">Copied!</span>
               </>
             ) : (
               <>
-                <Copy className="w-3 h-3" />
+                <Copy className="w-3 h-3" aria-hidden="true" />
                 <span>Copy Text</span>
               </>
             )}

@@ -1,4 +1,17 @@
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+export const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return (import.meta.env.VITE_API_URL as string).replace(/\/+$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const { protocol, hostname } = window.location;
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return `${protocol}//${hostname}:5000`;
+    }
+  }
+  return 'http://localhost:5000';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
@@ -22,7 +35,9 @@ export async function apiRequest<T = any>(
 ): Promise<T> {
   const { token, headers = {}, body, ...rest } = options;
 
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const baseUrl = getApiBaseUrl();
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  let url = `${baseUrl}${cleanEndpoint}`;
 
   const requestHeaders: Record<string, string> = {
     Accept: 'application/json',
@@ -47,7 +62,20 @@ export async function apiRequest<T = any>(
       body,
     });
   } catch (err: any) {
-    throw new ApiError(0, err.message || 'Network error: Unable to connect to the server.');
+    // If direct host connection fails (e.g. mobile LAN port blocked), fallback to Vite proxy via relative endpoint
+    if (url.startsWith('http') && typeof window !== 'undefined') {
+      try {
+        response = await fetch(cleanEndpoint, {
+          ...rest,
+          headers: requestHeaders,
+          body,
+        });
+      } catch (fallbackErr: any) {
+        throw new ApiError(0, fallbackErr.message || 'Network error: Unable to connect to the server.');
+      }
+    } else {
+      throw new ApiError(0, err.message || 'Network error: Unable to connect to the server.');
+    }
   }
 
   let data: any = null;

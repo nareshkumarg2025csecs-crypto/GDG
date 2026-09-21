@@ -35,25 +35,25 @@ const Footer = () => {
         }}
       />
 
-      {/* Rotating decorative rings */}
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 70, repeat: Infinity, ease: 'linear' }}
-        className="absolute -top-40 -right-40 w-80 h-80 rounded-full pointer-events-none"
-        style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(31,31,31,0.04)'}` }}
-      />
-      <motion.div
-        animate={{ rotate: -360 }}
-        transition={{ duration: 90, repeat: Infinity, ease: 'linear' }}
-        className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : 'rgba(31,31,31,0.03)'}` }}
-      />
-
-      {/* Ambient glow */}
-      <div
-        className="absolute top-20 right-20 w-[300px] h-[300px] rounded-full blur-[150px] pointer-events-none"
-        style={{ background: isDark ? 'radial-gradient(circle, #4285F412 0%, transparent 70%)' : 'transparent' }}
-      />
+      {/* Rotating decorative rings & ambient glow (Desktop only for smooth mobile performance) */}
+      <div className="hidden md:block pointer-events-none">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 70, repeat: Infinity, ease: 'linear' }}
+          className="absolute -top-40 -right-40 w-80 h-80 rounded-full"
+          style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(31,31,31,0.04)'}` }}
+        />
+        <motion.div
+          animate={{ rotate: -360 }}
+          transition={{ duration: 90, repeat: Infinity, ease: 'linear' }}
+          className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full"
+          style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : 'rgba(31,31,31,0.03)'}` }}
+        />
+        <div
+          className="absolute top-20 right-20 w-[300px] h-[300px] rounded-full blur-[150px]"
+          style={{ background: isDark ? 'radial-gradient(circle, #4285F412 0%, transparent 70%)' : 'transparent' }}
+        />
+      </div>
 
       <div className="container mx-auto px-6 md:px-12 relative z-10 max-w-7xl">
         {/* Large editorial brand headline with letter stagger */}
@@ -208,6 +208,8 @@ const Footer = () => {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             whileHover={{ scale: 1.08, y: -4 }}
             whileTap={{ scale: 0.94 }}
+            aria-label="Scroll back to top"
+            type="button"
             className="btn-shimmer mt-5 md:mt-0 w-12 h-12 rounded-2xl flex items-center justify-center border transition-all"
             data-physics
             style={{
@@ -221,7 +223,7 @@ const Footer = () => {
                 : '0 8px 25px rgba(31,31,31,0.15)',
             }}
           >
-            <ArrowUp className="w-5 h-5" />
+            <ArrowUp className="w-5 h-5" aria-hidden="true" />
           </motion.button>
         </div>
       </div>

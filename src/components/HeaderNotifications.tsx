@@ -9,14 +9,31 @@ import {
   ChevronRight,
   ExternalLink,
   X,
+  Award,
+  ShieldCheck,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { eventService } from '@/services/eventService';
+import { dashboardService, type AppNotification } from '@/services/dashboardService';
+import { formService } from '@/services/formService';
 import type { ClubEvent } from '@/lib/formUtils';
 
 interface HeaderNotificationsProps {
   activeColor?: string;
+}
+
+export interface UnifiedNotification {
+  id: string;
+  type: 'attendance' | 'certificate' | 'event';
+  title: string;
+  message: string;
+  timestamp: string;
+  category?: string;
+  eventId?: string | null;
+  eventTitle?: string;
+  certificateId?: string | null;
+  actionUrl: string;
 }
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -68,23 +85,25 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
   const { user, profile, isAuthenticated } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [personalNotifications, setPersonalNotifications] = useState<UnifiedNotification[]>([]);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'alerts' | 'events'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [lastOpenedAt, setLastOpenedAt] = useState<number>(0);
-  const [readEventIds, setReadEventIds] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lastFetchTimeRef = useRef<number>(0);
   const navigate = useNavigate();
 
   // Storage key: user-scoped for authenticated users, guest-scoped for unauthenticated visitors
   const storageKeyPrefix = isAuthenticated && user?.id ? user.id : 'guest';
   const userStorageKey = `gdg_notifications_last_opened_${storageKeyPrefix}`;
-  const userReadEventsKey = `gdg_read_event_ids_${storageKeyPrefix}`;
+  const userReadIdsKey = `gdg_read_notification_ids_${storageKeyPrefix}`;
 
   // Determine user registration timestamp for authenticated users
-  // Authenticated users ONLY receive notifications for events created after their account registration
+  // Authenticated users only receive generic event notifications for events created after registration
   const userRegistrationTime = useMemo(() => {
     if (!isAuthenticated || !user?.id) return 0;
 
-    // 1. Primary: profile created_at from database
     const rawCreatedAt = profile?.created_at || (user as any)?.created_at;
     if (rawCreatedAt) {
       const parsed = new Date(rawCreatedAt).getTime();
@@ -93,7 +112,6 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       }
     }
 
-    // 2. Fallback: persisted initial registration/session timestamp in localStorage
     const storageKey = `gdg_user_registered_time_${user.id}`;
     try {
       const stored = localStorage.getItem(storageKey);
@@ -109,56 +127,173 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
     }
   }, [isAuthenticated, user?.id, profile?.created_at, (user as any)?.created_at]);
 
-  // Load stored state on mount or when user changes
+  // Load stored read states on mount or when user changes
   useEffect(() => {
     try {
       const storedLastOpened = localStorage.getItem(userStorageKey);
-      if (storedLastOpened) {
-        setLastOpenedAt(parseInt(storedLastOpened, 10));
-      } else {
-        setLastOpenedAt(0);
-      }
+      setLastOpenedAt(storedLastOpened ? parseInt(storedLastOpened, 10) : 0);
 
-      const storedReadIds = localStorage.getItem(userReadEventsKey);
-      if (storedReadIds) {
-        const parsed = JSON.parse(storedReadIds);
+      const storedRead = localStorage.getItem(userReadIdsKey);
+      if (storedRead) {
+        const parsed = JSON.parse(storedRead);
         if (Array.isArray(parsed)) {
-          setReadEventIds(new Set(parsed));
+          setReadIds(new Set(parsed));
         } else {
-          setReadEventIds(new Set());
+          setReadIds(new Set());
         }
       } else {
-        setReadEventIds(new Set());
+        setReadIds(new Set());
       }
     } catch {
-      // ignore storage errors
+      // ignore
     }
-  }, [userStorageKey, userReadEventsKey]);
+  }, [userStorageKey, userReadIdsKey]);
 
-  // Fetch events list for both unauthenticated and authenticated users
-  const fetchEvents = async () => {
+  // Main data fetch: events + attendance/certificate notifications
+  // Background interval polls ONLY personal notifications (includeEvents = false) to drastically preserve Supabase egress
+  const fetchAllNotifications = async (includeEvents = true) => {
     try {
       setIsLoading(true);
-      const res = await eventService.listEvents();
-      if (res?.events) {
-        // Sort descending by created_at
-        const sorted = [...res.events].sort((a, b) => {
+
+      // 1. Fetch Events (only on mount, manual refresh, or window focus)
+      const eventsPromise = includeEvents
+        ? eventService.listEvents().catch(() => ({ events: [] }))
+        : Promise.resolve(null);
+
+      // 2. Fetch Personal Notifications (if authenticated)
+      let personalPromise: Promise<UnifiedNotification[]> = Promise.resolve([]);
+      if (isAuthenticated) {
+        personalPromise = dashboardService
+          .getNotifications()
+          .then((res) => {
+            if (res?.notifications && Array.isArray(res.notifications)) {
+              return res.notifications.map((n) => ({
+                id: n.id,
+                type: n.type,
+                title: n.title,
+                message: n.message,
+                timestamp: n.timestamp,
+                eventId: n.event_id,
+                eventTitle: n.event_title,
+                certificateId: n.certificate_id,
+                actionUrl: n.action_url || '/dashboard',
+              }));
+            }
+            return [];
+          })
+          .catch(async () => {
+            // Fallback: Synthesize from getMySubmissions()
+            try {
+              const subRes = await formService.getMySubmissions();
+              const synthesized: UnifiedNotification[] = [];
+              if (subRes?.submissions) {
+                for (const sub of subRes.submissions) {
+                  const evTitle = (sub as any).event_title || 'GDG Event';
+                  const evId = (sub as any).event_id || null;
+
+                  if (sub.attended) {
+                    synthesized.push({
+                      id: `attendance_${sub.id}`,
+                      type: 'attendance',
+                      title: 'Attendance Marked Present',
+                      message: `You were marked present for "${evTitle}". Your attendance has been verified!`,
+                      timestamp: (sub as any).attended_at || sub.submitted_at,
+                      eventId: evId,
+                      eventTitle: evTitle,
+                      actionUrl: '/dashboard',
+                    });
+                  }
+
+                  if (sub.certificate_sent) {
+                    synthesized.push({
+                      id: `certificate_${sub.id}`,
+                      type: 'certificate',
+                      title: 'Certificate Dispatched & Sent',
+                      message: `Your certificate of participation for "${evTitle}" has been generated and sent to your email.`,
+                      timestamp: sub.certificate_sent_at || sub.submitted_at,
+                      eventId: evId,
+                      eventTitle: evTitle,
+                      certificateId: sub.certificate_id,
+                      actionUrl: '/dashboard',
+                    });
+                  }
+                }
+              }
+              return synthesized;
+            } catch {
+              return [];
+            }
+          });
+      }
+
+      const [eventsRes, personalList] = await Promise.all([eventsPromise, personalPromise]);
+
+      if (eventsRes?.events) {
+        const sortedEvents = [...eventsRes.events].sort((a, b) => {
           const tA = new Date(a.created_at || a.details?.startTime || 0).getTime();
           const tB = new Date(b.created_at || b.details?.startTime || 0).getTime();
           return tB - tA;
         });
-        setEvents(sorted);
+        setEvents(sortedEvents);
       }
+
+      setPersonalNotifications(personalList);
     } catch (err) {
-      console.warn('Failed to fetch events for notifications:', err);
+      console.warn('Failed to fetch notifications:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Initial fetch and auto-refresh on window focus or 90s polling (paused when tab is hidden)
   useEffect(() => {
-    fetchEvents();
-  }, []);
+    fetchAllNotifications(true);
+    lastFetchTimeRef.current = Date.now();
+
+    const handleFocus = () => {
+      const now = Date.now();
+      // Throttle window focus refetch: require at least 90s since last fetch to protect Supabase egress
+      if (now - lastFetchTimeRef.current >= 90000) {
+        lastFetchTimeRef.current = now;
+        fetchAllNotifications(false);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      const now = Date.now();
+      if (document.visibilityState === 'visible' && now - lastFetchTimeRef.current >= 90000) {
+        lastFetchTimeRef.current = now;
+        fetchAllNotifications(false);
+      }
+    };
+
+    const handleForceRefresh = () => {
+      lastFetchTimeRef.current = Date.now();
+      fetchAllNotifications(true);
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('gdg:notifications-refresh', handleForceRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let interval: NodeJS.Timeout | null = null;
+    if (isAuthenticated) {
+      // 90 seconds interval (only runs if tab is active to preserve Supabase egress)
+      interval = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          lastFetchTimeRef.current = Date.now();
+          fetchAllNotifications(false);
+        }
+      }, 90000);
+    }
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('gdg:notifications-refresh', handleForceRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (interval) clearInterval(interval);
+    };
+  }, [isAuthenticated, user?.id]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -177,8 +312,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
   }, [isOpen]);
 
   // Eligible events:
-  // - Authenticated: ONLY events created AFTER the user signed up and registered as a user
-  //   (with 60-second buffer to handle minor clock skew)
+  // - Authenticated: ONLY events created AFTER the user joined (with 60-second buffer)
   // - Unauthenticated: all recent GDG events
   const userEligibleEvents = useMemo(() => {
     if (!events.length) return [];
@@ -189,22 +323,49 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
         return eventCreatedTime >= userRegistrationTime - 60000;
       });
     }
-    // For unauthenticated visitors, all events are eligible
     return events;
   }, [events, isAuthenticated, userRegistrationTime]);
 
-  // Determine unread events:
-  // An eligible event is unread if:
-  // 1. Its ID has not been marked as read in readEventIds, AND
-  // 2. If opened previously, it was created after lastOpenedAt
-  // 3. If never opened yet:
-  //    - Authenticated users: all events created since registration are unread
-  //    - Guests: events created in the last 14 days are unread
-  const unreadEvents = useMemo(() => {
-    if (!userEligibleEvents.length) return [];
-    return userEligibleEvents.filter((event) => {
-      if (readEventIds.has(event.id)) return false;
-      const createdTime = new Date(event.created_at).getTime();
+  // Combine into unified notification list
+  const unifiedNotifications = useMemo(() => {
+    const eventItems: UnifiedNotification[] = userEligibleEvents.map((ev) => ({
+      id: `event_${ev.id}`,
+      type: 'event',
+      title: ev.title,
+      message: ev.details?.description || 'Newly announced event in Google Developer Group.',
+      timestamp: ev.created_at,
+      category: ev.details?.category || 'Event',
+      eventId: ev.id,
+      eventTitle: ev.title,
+      actionUrl: `/events/${ev.id}`,
+    }));
+
+    const combined = [...personalNotifications, ...eventItems];
+    return combined.sort((a, b) => {
+      const tA = new Date(a.timestamp).getTime();
+      const tB = new Date(b.timestamp).getTime();
+      return tB - tA;
+    });
+  }, [personalNotifications, userEligibleEvents]);
+
+  // Filtered list according to active tab
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === 'alerts') {
+      return unifiedNotifications.filter((n) => n.type === 'attendance' || n.type === 'certificate');
+    }
+    if (activeFilter === 'events') {
+      return unifiedNotifications.filter((n) => n.type === 'event');
+    }
+    return unifiedNotifications;
+  }, [unifiedNotifications, activeFilter]);
+
+  // Unread items logic:
+  // Unread if ID not in readIds AND created after lastOpenedAt (or last 14 days)
+  const unreadItems = useMemo(() => {
+    if (!unifiedNotifications.length) return [];
+    return unifiedNotifications.filter((item) => {
+      if (readIds.has(item.id)) return false;
+      const createdTime = new Date(item.timestamp).getTime();
       if (lastOpenedAt > 0) {
         return createdTime > lastOpenedAt;
       }
@@ -214,12 +375,14 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
       return createdTime > fourteenDaysAgo || isNaN(createdTime);
     });
-  }, [userEligibleEvents, readEventIds, lastOpenedAt, isAuthenticated]);
+  }, [unifiedNotifications, readIds, lastOpenedAt, isAuthenticated]);
 
-  const unreadCount = unreadEvents.length;
+  const unreadCount = unreadItems.length;
   const hasUnread = unreadCount > 0;
 
-  // When user opens the popover, update lastOpenedAt and persist for this user/guest
+  const alertsCount = personalNotifications.length;
+  const eventsCount = userEligibleEvents.length;
+
   const handleToggle = () => {
     const nextState = !isOpen;
     setIsOpen(nextState);
@@ -237,31 +400,31 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
 
   const handleMarkAllAsRead = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const allIds = new Set(userEligibleEvents.map((ev) => ev.id));
-    setReadEventIds(allIds);
+    const allIds = new Set(unifiedNotifications.map((n) => n.id));
+    setReadIds(allIds);
     const now = Date.now();
     setLastOpenedAt(now);
     try {
       localStorage.setItem(userStorageKey, now.toString());
-      localStorage.setItem(userReadEventsKey, JSON.stringify(Array.from(allIds)));
+      localStorage.setItem(userReadIdsKey, JSON.stringify(Array.from(allIds)));
     } catch {
       // ignore
     }
   };
 
-  const handleEventClick = (eventId: string) => {
-    setReadEventIds((prev) => {
+  const handleItemClick = (item: UnifiedNotification) => {
+    setReadIds((prev) => {
       const next = new Set(prev);
-      next.add(eventId);
+      next.add(item.id);
       try {
-        localStorage.setItem(userReadEventsKey, JSON.stringify(Array.from(next)));
+        localStorage.setItem(userReadIdsKey, JSON.stringify(Array.from(next)));
       } catch {
         // ignore
       }
       return next;
     });
     setIsOpen(false);
-    navigate(`/events/${eventId}`);
+    navigate(item.actionUrl);
   };
 
   return (
@@ -271,9 +434,9 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.92 }}
         onClick={handleToggle}
-        aria-label="View notifications about new events"
+        aria-label="View notifications about events, attendance, and certificates"
         aria-expanded={isOpen}
-        title={hasUnread ? `${unreadCount} new event notification${unreadCount > 1 ? 's' : ''}` : 'Notifications'}
+        title={hasUnread ? `${unreadCount} new notification${unreadCount > 1 ? 's' : ''}` : 'Notifications'}
         className={`relative p-2 rounded-full border transition-all duration-200 shadow-sm flex items-center justify-center ${
           isOpen
             ? 'border-blue-500/50 bg-blue-500/10 text-blue-500'
@@ -304,98 +467,269 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
             role="region"
-            aria-label="Event notifications"
-            className="fixed sm:absolute top-20 sm:top-full left-3 right-3 sm:left-auto sm:right-0 sm:mt-2.5 sm:w-96 rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden flex flex-col max-h-[82vh] sm:max-h-[560px]"
+            aria-label="Event and attendance notifications"
+            className="fixed sm:absolute top-20 sm:top-full left-3 right-3 sm:left-auto sm:right-0 sm:mt-2.5 sm:w-[420px] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden flex flex-col max-h-[84vh] sm:max-h-[580px]"
             style={{
               boxShadow: '0 20px 50px -10px rgba(0, 0, 0, 0.5)',
             }}
           >
-            {/* Header - Solid theme background */}
-            <div className="p-3.5 sm:p-4 border-b border-border flex items-center justify-between bg-card shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20 flex items-center justify-center shrink-0">
-                  <Bell className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="text-xs sm:text-sm font-bold text-foreground">Notifications</h4>
-                    {hasUnread && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-500 border border-rose-500/30">
-                        {unreadCount} New
-                      </span>
-                    )}
+            {/* Header */}
+            <div className="p-3.5 sm:p-4 border-b border-border bg-card shrink-0 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20 flex items-center justify-center shrink-0">
+                    <Bell className="w-4 h-4" />
                   </div>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    {isAuthenticated
-                      ? 'Events created since you joined'
-                      : 'Newly added and upcoming GDG events'}
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="text-xs sm:text-sm font-bold text-foreground">Notifications</h4>
+                      {hasUnread && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-500 border border-rose-500/30">
+                          {unreadCount} New
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {isAuthenticated
+                        ? 'Attendance, certificates, and event updates'
+                        : 'Newly added and upcoming GDG events'}
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-1 shrink-0">
-                {userEligibleEvents.length > 0 && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {unifiedNotifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllAsRead}
+                      aria-label="Mark all notifications as read"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-muted text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                      title="Mark all as read"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5 text-blue-500" aria-hidden="true" />
+                      <span className="hidden sm:inline">Mark read</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={handleMarkAllAsRead}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-muted text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                    title="Mark all as read"
+                    onClick={() => setIsOpen(false)}
+                    aria-label="Close notifications"
+                    className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Close notifications"
                   >
-                    <CheckCheck className="w-3.5 h-3.5 text-blue-500" />
-                    <span className="hidden sm:inline">Mark read</span>
+                    <X className="w-4 h-4" aria-hidden="true" />
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Close notifications"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                </div>
               </div>
+
+              {/* Filter Tabs (All, Alerts: Attendance & Certificates, Events) */}
+              {isAuthenticated && (
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/50 text-xs">
+                  <button
+                    type="button"
+                    aria-label={`Show all notifications (${unifiedNotifications.length})`}
+                    aria-pressed={activeFilter === 'all'}
+                    onClick={() => setActiveFilter('all')}
+                    className={`flex-1 py-1 px-2 rounded-lg font-semibold transition-all text-center ${
+                      activeFilter === 'all'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    All ({unifiedNotifications.length})
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Show alert notifications (${alertsCount})`}
+                    aria-pressed={activeFilter === 'alerts'}
+                    onClick={() => setActiveFilter('alerts')}
+                    className={`flex-1 py-1 px-2 rounded-lg font-semibold transition-all text-center flex items-center justify-center gap-1 ${
+                      activeFilter === 'alerts'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Award className="w-3 h-3 text-amber-500" aria-hidden="true" />
+                    <span>Alerts ({alertsCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Show event notifications (${eventsCount})`}
+                    aria-pressed={activeFilter === 'events'}
+                    onClick={() => setActiveFilter('events')}
+                    className={`flex-1 py-1 px-2 rounded-lg font-semibold transition-all text-center flex items-center justify-center gap-1 ${
+                      activeFilter === 'events'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Calendar className="w-3 h-3 text-blue-500" aria-hidden="true" />
+                    <span>Events ({eventsCount})</span>
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Notification Event List */}
+            {/* Notification List */}
             <div className="overflow-y-auto divide-y divide-border/50 flex-1 overscroll-contain bg-card">
               {isLoading ? (
                 <div className="p-6 text-center space-y-3 bg-card">
                   <div className="w-8 h-8 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin mx-auto" />
-                  <p className="text-xs text-muted-foreground">Checking for newly added events...</p>
+                  <p className="text-xs text-muted-foreground">Checking for notifications...</p>
                 </div>
-              ) : userEligibleEvents.length === 0 ? (
+              ) : filteredNotifications.length === 0 ? (
                 <div className="p-8 text-center space-y-2.5 bg-card">
                   <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
-                    <Calendar className="w-6 h-6 opacity-60" />
+                    <Bell className="w-6 h-6 opacity-60" />
                   </div>
                   <p className="text-xs font-semibold text-foreground">
-                    {isAuthenticated ? 'No new notifications' : 'No events found'}
+                    {activeFilter === 'alerts'
+                      ? 'No attendance or certificate alerts yet'
+                      : isAuthenticated
+                      ? 'No notifications at this time'
+                      : 'No events found'}
                   </p>
                   <p className="text-[11px] text-muted-foreground max-w-xs mx-auto leading-relaxed">
-                    {isAuthenticated
-                      ? "You're all caught up! When coordinators create new events after you joined, they'll appear here as notifications."
+                    {activeFilter === 'alerts'
+                      ? "When coordinators mark your attendance or dispatch event certificates, you'll receive real-time notifications here."
+                      : isAuthenticated
+                      ? "You're all caught up! When you attend events, receive certificates, or new events launch, notifications will appear here."
                       : "Check back soon! When the team schedules new workshops or hackathons, they'll show up here."}
                   </p>
                 </div>
               ) : (
-                userEligibleEvents.slice(0, 8).map((event) => {
+                filteredNotifications.slice(0, 10).map((item) => {
                   const isItemUnread =
-                    !readEventIds.has(event.id) &&
-                    (lastOpenedAt === 0 || new Date(event.created_at).getTime() > lastOpenedAt);
-                  const categoryStyle = getCategoryStyle(event.details?.category);
-                  const formattedDate = formatEventDate(event.details?.startTime || event.details?.start_time);
-                  const location = event.details?.location || event.details?.venue;
-                  const relativeTime = getRelativeTime(event.created_at);
+                    !readIds.has(item.id) &&
+                    (lastOpenedAt === 0 || new Date(item.timestamp).getTime() > lastOpenedAt);
+                  const relativeTime = getRelativeTime(item.timestamp);
+
+                  // 1. Attendance Verified Notification Item
+                  if (item.type === 'attendance') {
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleItemClick(item)}
+                        className={`group p-3 sm:p-3.5 transition-all cursor-pointer relative flex items-start gap-3 hover:bg-muted ${
+                          isItemUnread ? 'bg-emerald-500/10 dark:bg-emerald-950/30' : 'bg-card'
+                        }`}
+                      >
+                        <div className="relative shrink-0 mt-0.5">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all bg-emerald-500/15 border-emerald-500/30 text-emerald-500">
+                            <ShieldCheck className="w-5 h-5" />
+                          </div>
+                          {isItemUnread && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-card shadow-sm animate-pulse" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-emerald-500/15 border-emerald-500/30 text-emerald-500">
+                              Attended & Verified
+                            </span>
+                            {isItemUnread && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                NEW
+                              </span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground ml-auto">
+                              {relativeTime}
+                            </span>
+                          </div>
+
+                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-emerald-500 transition-colors line-clamp-1 leading-snug">
+                            {item.title}
+                          </h5>
+
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                            {item.message}
+                          </p>
+
+                          <div className="flex items-center gap-2 pt-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                            <span>View Attendance in Dashboard</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // 2. Certificate Sent Notification Item
+                  if (item.type === 'certificate') {
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => handleItemClick(item)}
+                        className={`group p-3 sm:p-3.5 transition-all cursor-pointer relative flex items-start gap-3 hover:bg-muted ${
+                          isItemUnread ? 'bg-amber-500/10 dark:bg-amber-950/30' : 'bg-card'
+                        }`}
+                      >
+                        <div className="relative shrink-0 mt-0.5">
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center border transition-all bg-amber-500/15 border-amber-500/30 text-amber-500">
+                            <Award className="w-5 h-5" />
+                          </div>
+                          {isItemUnread && (
+                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-card shadow-sm animate-pulse" />
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border bg-amber-500/15 border-amber-500/30 text-amber-500">
+                              Certificate Sent
+                            </span>
+                            {isItemUnread && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                NEW
+                              </span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground ml-auto">
+                              {relativeTime}
+                            </span>
+                          </div>
+
+                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-amber-500 transition-colors line-clamp-1 leading-snug">
+                            {item.title}
+                          </h5>
+
+                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                            {item.message}
+                          </p>
+
+                          <div className="flex items-center gap-2 pt-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                            <span>Open Certificate in Dashboard</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // 3. New Event Notification Item
+                  const categoryStyle = getCategoryStyle(item.category);
+                  const matchingEvent = events.find((e) => e.id === item.eventId);
+                  const formattedDate = formatEventDate(matchingEvent?.details?.startTime || matchingEvent?.details?.start_time);
+                  const location = matchingEvent?.details?.location || matchingEvent?.details?.venue;
 
                   return (
                     <div
-                      key={event.id}
-                      onClick={() => handleEventClick(event.id)}
+                      key={item.id}
+                      onClick={() => handleItemClick(item)}
                       className={`group p-3 sm:p-3.5 transition-all cursor-pointer relative flex items-start gap-3 hover:bg-muted ${
                         isItemUnread ? 'bg-blue-500/10 dark:bg-blue-950/40' : 'bg-card'
                       }`}
                     >
-                      {/* Left icon / New indicator */}
                       <div className="relative shrink-0 mt-0.5">
                         <div
                           className={`w-9 h-9 rounded-xl flex items-center justify-center border transition-all ${categoryStyle.bg} ${categoryStyle.border} ${categoryStyle.text}`}
@@ -407,13 +741,12 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                         )}
                       </div>
 
-                      {/* Content */}
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span
                             className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${categoryStyle.bg} ${categoryStyle.border} ${categoryStyle.text}`}
                           >
-                            {event.details?.category || 'Event'}
+                            {item.category || 'Event'}
                           </span>
 
                           {isItemUnread && (
@@ -429,12 +762,12 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                         </div>
 
                         <h5 className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-blue-500 transition-colors line-clamp-1 leading-snug">
-                          {event.title}
+                          {item.title}
                         </h5>
 
-                        {event.details?.description && (
+                        {item.message && (
                           <p className="text-[11px] text-muted-foreground line-clamp-1 leading-relaxed">
-                            {event.details.description}
+                            {item.message}
                           </p>
                         )}
 
@@ -454,7 +787,6 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                         </div>
                       </div>
 
-                      {/* Right Chevron */}
                       <div className="shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                       </div>
@@ -464,17 +796,8 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
               )}
             </div>
 
-            {/* Footer - Solid theme background */}
-            <div className="p-2.5 sm:p-3 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
-              <Link
-                to="/events"
-                onClick={() => setIsOpen(false)}
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-colors shadow-sm"
-              >
-                <span>Browse All Events</span>
-                <ExternalLink className="w-3 h-3 ml-0.5" />
-              </Link>
-            </div>
+
+
           </motion.div>
         )}
       </AnimatePresence>

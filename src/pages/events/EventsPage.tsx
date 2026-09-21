@@ -81,35 +81,16 @@ export const EventsPage: React.FC = () => {
         } catch {
           // ignore
         }
+      }
 
-        const formMap: Record<string, EventForm> = {};
-        await Promise.all(
-          publishedEvents.map(async (ev) => {
-            try {
-              const { forms } = await formService.getFormsByEvent(ev.id);
-              if (forms && forms.length > 0) {
-                formMap[ev.id] = forms[0];
-              }
-            } catch {
-              // ignore per-event form failure
-            }
-          })
-        );
-        setFormsByEvent(formMap);
-      } else {
-        // Fetch forms for each event anonymously (forms endpoint is public)
-        const formMap: Record<string, EventForm> = {};
-        await Promise.all(
-          publishedEvents.map(async (ev) => {
-            try {
-              const { forms } = await formService.getFormsByEvent(ev.id);
-              if (forms && forms.length > 0) formMap[ev.id] = forms[0];
-            } catch {
-              // ignore
-            }
-          })
-        );
-        setFormsByEvent(formMap);
+      // Fetch batch forms summary in 1 single fast call (cuts N queries down to 1)
+      try {
+        const summaryRes = await formService.getFormsSummary();
+        if (summaryRes?.formsByEvent) {
+          setFormsByEvent(summaryRes.formsByEvent);
+        }
+      } catch {
+        // ignore form summary failure
       }
     } catch (err: any) {
       // Don't show raw token/auth errors to the user — just fail silently for events
@@ -348,6 +329,8 @@ export const EventsPage: React.FC = () => {
                       <img
                         src={banner}
                         alt={event.title}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
@@ -457,7 +440,7 @@ export const EventsPage: React.FC = () => {
 
                       <Link
                         to={`/events/${event.id}`}
-                        className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-1"
+                        className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-2 break-words"
                       >
                         {event.title}
                       </Link>

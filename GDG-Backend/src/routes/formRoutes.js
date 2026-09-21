@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   createForm,
   getFormById,
+  getFormsSummary,
   updateForm,
   deleteForm,
   submitForm,
@@ -27,6 +28,9 @@ const upload = multer({
 });
 
 const router = express.Router();
+
+// Batch Forms Summary (Public — lightweight metadata + status keyed by event_id)
+router.get('/summary', getFormsSummary);
 
 // User Submissions
 router.get('/submissions/my', requireAuth, getMySubmissions);

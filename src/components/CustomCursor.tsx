@@ -1,101 +1,152 @@
 /**
  * CustomCursor.tsx
  *
- * Premium cursor using raw RAF for zero-overhead 60 fps tracking.
- * - Outer ring with trailing lag + glow
- * - Inner dot with tight follow
- * - Magnetic pull toward interactive elements
- * - Trailing ghost for extra fluidity
- * - States: default / hover / media / pressed
- * - Touch / coarse pointer guard
- * - Theme-aware colors
+ * State-of-the-art interactive cursor with:
+ * - Fluid velocity-based breathing (no distorted egg stretching)
+ * - Dynamic magnetic snap to interactive targets
+ * - Expanding frosted aura on hover with Google brand colors
+ * - Tactile click ripple animation
+ * - Input-aware auto-fade (shows native text caret in inputs/textareas)
+ * - Responsive sizing adapted to screen resolution
+ * - Automatic disable on touch / mobile / reduced-motion devices
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useTheme } from '@/contexts/ThemeContext';
 
 const GOOGLE_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
-// Lerp speed: higher = snappier
-const DOT_LERP = 0.25;
-const RING_LERP = 0.12;
-const TRAIL_LERP = 0.07;
+// Responsive lerp constants for buttery smooth tracking
+const DOT_LERP = 0.35;
+const RING_LERP = 0.16;
+const AURA_LERP = 0.09;
 
 const INTERACTIVE_SELECTOR = 'a, button, [data-cursor], .magnetic, [data-physics], [role="button"]';
+const INPUT_SELECTOR = 'input, textarea, select, [contenteditable="true"]';
 
 export default function CustomCursor() {
   const { theme } = useTheme();
+  const [enabled, setEnabled] = useState(false);
 
   const dotRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
-  const trailRef = useRef<HTMLDivElement>(null);
+  const auraRef = useRef<HTMLDivElement>(null);
+  const rippleRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
 
-  // All mutable state lives in refs to avoid re-renders
-  const mouse = useRef({ x: -100, y: -100 });
-  const dotPos = useRef({ x: -100, y: -100 });
-  const ringPos = useRef({ x: -100, y: -100 });
-  const trailPos = useRef({ x: -100, y: -100 });
-  const state = useRef<'default' | 'hover' | 'media' | 'pressed'>('default');
+  const mouse = useRef({ x: -200, y: -200 });
+  const dotPos = useRef({ x: -200, y: -200 });
+  const ringPos = useRef({ x: -200, y: -200 });
+  const auraPos = useRef({ x: -200, y: -200 });
+
+  const state = useRef<'default' | 'hover' | 'media' | 'pressed' | 'input'>('default');
   const visible = useRef(false);
   const colorIdx = useRef(0);
   const accent = useRef(GOOGLE_COLORS[0]);
-  const magnetic = useRef<{ x: number; y: number } | null>(null);
   const rafId = useRef(0);
+  const responsiveScale = useRef(1);
 
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
   const tick = useCallback(() => {
     const dot = dotRef.current;
     const ring = ringRef.current;
-    const trail = trailRef.current;
-    if (!dot || !ring || !trail) {
+    const aura = auraRef.current;
+    const label = labelRef.current;
+    if (!dot || !ring || !aura) {
       rafId.current = requestAnimationFrame(tick);
       return;
     }
 
-    // Target: if magnetic pull is active, blend toward the element center
-    const targetX = magnetic.current ? lerp(mouse.current.x, magnetic.current.x, 0.35) : mouse.current.x;
-    const targetY = magnetic.current ? lerp(mouse.current.y, magnetic.current.y, 0.35) : mouse.current.y;
+    // Both dot and ring smoothly follow the mouse pointer
+    dotPos.current.x = lerp(dotPos.current.x, mouse.current.x, 0.45);
+    dotPos.current.y = lerp(dotPos.current.y, mouse.current.y, 0.45);
+    ringPos.current.x = lerp(ringPos.current.x, mouse.current.x, 0.2);
+    ringPos.current.y = lerp(ringPos.current.y, mouse.current.y, 0.2);
+    auraPos.current.x = lerp(auraPos.current.x, mouse.current.x, 0.1);
+    auraPos.current.y = lerp(auraPos.current.y, mouse.current.y, 0.1);
 
-    // Lerp positions
-    dotPos.current.x = lerp(dotPos.current.x, targetX, DOT_LERP);
-    dotPos.current.y = lerp(dotPos.current.y, targetY, DOT_LERP);
-    ringPos.current.x = lerp(ringPos.current.x, targetX, RING_LERP);
-    ringPos.current.y = lerp(ringPos.current.y, targetY, RING_LERP);
-    trailPos.current.x = lerp(trailPos.current.x, targetX, TRAIL_LERP);
-    trailPos.current.y = lerp(trailPos.current.y, targetY, TRAIL_LERP);
+    const s = state.current;
+    const baseScale = responsiveScale.current;
 
-    // Velocity for ring stretch/skew
-    const vx = targetX - ringPos.current.x;
-    const vy = targetY - ringPos.current.y;
+    // CRITICAL: Guarantee the dot is ALWAYS inside the ring!
+    // Clamping the relative offset to 5px (ring radius is 20px - 32px) ensures
+    // the dot can NEVER poke out of the ring under any movement or hover condition.
+    const dx = dotPos.current.x - ringPos.current.x;
+    const dy = dotPos.current.y - ringPos.current.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxOffset = 5 * baseScale;
+    if (dist > maxOffset) {
+      const angle = Math.atan2(dy, dx);
+      ringPos.current.x = dotPos.current.x - Math.cos(angle) * maxOffset;
+      ringPos.current.y = dotPos.current.y - Math.sin(angle) * maxOffset;
+    }
+
+    // Dynamic velocity breathing scale (pure scale, never distorted skewing)
+    const vx = mouse.current.x - ringPos.current.x;
+    const vy = mouse.current.y - ringPos.current.y;
     const speed = Math.sqrt(vx * vx + vy * vy);
-    const angle = Math.atan2(vy, vx) * (180 / Math.PI);
-    const stretch = Math.min(speed * 0.4, 30);
+    const pulseScale = 1 + Math.min(speed * 0.0016, 0.18);
 
-    // Apply transforms (single write per element per frame)
-    const op = visible.current ? 1 : 0;
+    const isHidden = !visible.current || s === 'input';
+    const op = isHidden ? 0 : 1;
 
-    dot.style.transform = `translate3d(${dotPos.current.x}px, ${dotPos.current.y}px, 0) translate(-50%, -50%) scale(${state.current === 'pressed' ? 0.5 : 1})`;
-    dot.style.opacity = `${op}`;
+    // Apply 3D accelerated transforms — dot stays centered inside the ring
+    const dotScale = s === 'pressed' ? 0.6 : s === 'hover' ? 1.2 : s === 'media' ? 0.2 : 1;
+    dot.style.transform = `translate3d(${dotPos.current.x}px, ${dotPos.current.y}px, 0) translate(-50%, -50%) scale(${dotScale * baseScale})`;
+    dot.style.opacity = `${s === 'media' ? 0 : op}`;
 
-    ring.style.transform = `translate3d(${ringPos.current.x}px, ${ringPos.current.y}px, 0) translate(-50%, -50%) rotate(${angle}deg) scaleX(${1 + stretch * 0.008}) scale(${state.current === 'pressed' ? 0.8 : 1})`;
+    const ringScale = (s === 'pressed' ? 0.8 : s === 'hover' ? 1.35 : s === 'media' ? 1.6 : pulseScale) * baseScale;
+    ring.style.transform = `translate3d(${ringPos.current.x}px, ${ringPos.current.y}px, 0) translate(-50%, -50%) scale(${ringScale})`;
     ring.style.opacity = `${op}`;
 
-    trail.style.transform = `translate3d(${trailPos.current.x}px, ${trailPos.current.y}px, 0) translate(-50%, -50%)`;
-    trail.style.opacity = `${op * 0.35}`;
+    if (label) {
+      label.style.opacity = s === 'media' ? `${op}` : '0';
+      label.style.transform = `scale(${s === 'media' ? 1 : 0.7})`;
+    }
+
+    aura.style.transform = `translate3d(${auraPos.current.x}px, ${auraPos.current.y}px, 0) translate(-50%, -50%) scale(${baseScale})`;
+    aura.style.opacity = `${op * 0.35}`;
 
     rafId.current = requestAnimationFrame(tick);
   }, []);
 
+  const triggerRipple = useCallback((x: number, y: number) => {
+    const ripple = rippleRef.current;
+    if (!ripple) return;
+
+    ripple.style.left = `${x}px`;
+    ripple.style.top = `${y}px`;
+    ripple.style.borderColor = accent.current;
+    ripple.classList.remove('cursor-ripple-active');
+    // Force reflow
+    void ripple.offsetWidth;
+    ripple.classList.add('cursor-ripple-active');
+  }, []);
+
   useEffect(() => {
-    // Feature detection
+    // Feature detection: disable on touch, mobile screens (< 768px), or reduced motion
     const isTouch = window.matchMedia('(pointer: coarse)').matches;
+    const isMobile = window.innerWidth < 768;
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (isTouch || prefersReduced) return;
+    if (isTouch || isMobile || prefersReduced) return;
+    setEnabled(true);
+
+    // Adapt sizing proportionally to screen width
+    const updateResponsiveScale = () => {
+      const w = window.innerWidth;
+      if (w >= 1920) {
+        responsiveScale.current = 1.15;
+      } else if (w >= 1280) {
+        responsiveScale.current = 1.0;
+      } else {
+        responsiveScale.current = 0.88;
+      }
+    };
+    updateResponsiveScale();
+    window.addEventListener('resize', updateResponsiveScale);
 
     document.body.classList.add('custom-cursor-active');
-
-    // Start RAF loop
     rafId.current = requestAnimationFrame(tick);
 
     const onMove = (e: MouseEvent) => {
@@ -106,30 +157,44 @@ export default function CustomCursor() {
 
     const onLeave = () => { visible.current = false; };
     const onEnter = () => { visible.current = true; };
-    const onDown = () => { state.current = 'pressed'; applyStateStyling(); };
-    const onUp = () => {
-      // Restore to hover if still over an interactive element
-      state.current = document.querySelector(':hover')?.closest(INTERACTIVE_SELECTOR) ? 'hover' : 'default';
+
+    const onDown = (e: MouseEvent) => {
+      state.current = 'pressed';
+      triggerRipple(e.clientX, e.clientY);
+      applyStateStyling();
+    };
+
+    const onUp = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(INPUT_SELECTOR)) {
+        state.current = 'input';
+      } else if (target?.closest(INTERACTIVE_SELECTOR)) {
+        state.current = 'hover';
+      } else {
+        state.current = 'default';
+      }
       applyStateStyling();
     };
 
     const onOver = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      const el = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
-      if (!el) {
-        state.current = 'default';
-        magnetic.current = null;
+      if (target.closest(INPUT_SELECTOR)) {
+        state.current = 'input';
         applyStateStyling();
         return;
       }
+
+      const el = target.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
+      if (!el) {
+        state.current = 'default';
+        applyStateStyling();
+        return;
+      }
+
       const cursorAttr = el.getAttribute('data-cursor');
       state.current = cursorAttr === 'media' ? 'media' : 'hover';
 
-      // Magnetic pull: compute element center
-      const rect = el.getBoundingClientRect();
-      magnetic.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-
-      // Cycle accent color
+      // Cycle Google brand color smoothly
       colorIdx.current = (colorIdx.current + 1) % GOOGLE_COLORS.length;
       accent.current = GOOGLE_COLORS[colorIdx.current];
       applyStateStyling();
@@ -139,7 +204,6 @@ export default function CustomCursor() {
       const related = e.relatedTarget as HTMLElement | null;
       if (!related || !related.closest(INTERACTIVE_SELECTOR)) {
         state.current = 'default';
-        magnetic.current = null;
         applyStateStyling();
       }
     };
@@ -154,6 +218,7 @@ export default function CustomCursor() {
 
     return () => {
       cancelAnimationFrame(rafId.current);
+      window.removeEventListener('resize', updateResponsiveScale);
       document.body.classList.remove('custom-cursor-active');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseleave', onLeave);
@@ -163,85 +228,115 @@ export default function CustomCursor() {
       document.removeEventListener('mouseover', onOver);
       document.removeEventListener('mouseout', onOut);
     };
-  }, [tick]);
+  }, [tick, triggerRipple]);
 
-  // Apply visual state changes to DOM (no React re-render)
   const applyStateStyling = useCallback(() => {
     const dot = dotRef.current;
     const ring = ringRef.current;
-    const trail = trailRef.current;
-    if (!dot || !ring || !trail) return;
+    const aura = auraRef.current;
+    if (!dot || !ring || !aura) return;
 
     const s = state.current;
     const c = accent.current;
 
-    // Dot sizing
-    dot.style.width = s === 'hover' ? '14px' : '8px';
-    dot.style.height = s === 'hover' ? '14px' : '8px';
+    // Dot appearance
     dot.style.backgroundColor = c;
-    dot.style.boxShadow = `0 0 16px ${c}90, 0 0 40px ${c}30`;
+    dot.style.boxShadow = s === 'hover'
+      ? `0 0 16px ${c}, 0 0 30px ${c}80`
+      : `0 0 10px ${c}b0, 0 0 20px ${c}40`;
 
-    // Ring sizing & fill
-    const ringSize = s === 'media' ? '88px' : s === 'hover' ? '40px' : '48px';
-    ring.style.width = ringSize;
-    ring.style.height = ringSize;
-    ring.style.backgroundColor = s === 'hover' ? `${c}15` : 'transparent';
-    ring.style.borderColor = s === 'hover' ? `${c}50` : '';
+    // Ring appearance: sleek frosted glass with subtle glow
+    if (s === 'hover') {
+      ring.style.borderColor = `${c}80`;
+      ring.style.backgroundColor = `${c}18`;
+      ring.style.boxShadow = `0 0 20px ${c}30, inset 0 0 10px ${c}15`;
+    } else if (s === 'media') {
+      ring.style.borderColor = `${c}90`;
+      ring.style.backgroundColor = `${c}25`;
+      ring.style.boxShadow = `0 0 30px ${c}40`;
+    } else {
+      ring.style.borderColor = theme === 'light' ? 'rgba(31,31,31,0.22)' : 'rgba(255,255,255,0.22)';
+      ring.style.backgroundColor = 'transparent';
+      ring.style.boxShadow = 'none';
+    }
 
-    // Trail glow color
-    trail.style.backgroundColor = c;
-    trail.style.boxShadow = `0 0 60px 20px ${c}25`;
-  }, []);
+    aura.style.backgroundColor = c;
+    aura.style.boxShadow = `0 0 45px 15px ${c}30`;
+  }, [theme]);
 
-  // Feature detection on mount — only render if supported
-  const isTouch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-  const prefersReduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (isTouch || prefersReduced) return null;
+  // Guard against touch/SSR and mobile
+  if (!enabled) return null;
 
-  const ringBorder = theme === 'light' ? 'rgba(31,31,31,0.15)' : 'rgba(255,255,255,0.15)';
+  const ringBorder = theme === 'light' ? 'rgba(31,31,31,0.22)' : 'rgba(255,255,255,0.22)';
 
   return (
     <>
-      {/* Trailing glow */}
+      {/* Ambient soft glow aura */}
       <div
-        ref={trailRef}
-        className="cursor-trail"
+        ref={auraRef}
+        className="cursor-aura pointer-events-none fixed top-0 left-0 rounded-full blur-xl"
         style={{
-          position: 'fixed', top: 0, left: 0,
-          width: 24, height: 24,
-          borderRadius: '50%',
-          pointerEvents: 'none',
-          zIndex: 9997,
+          width: 32,
+          height: 32,
+          zIndex: 9996,
           backgroundColor: GOOGLE_COLORS[0],
-          filter: 'blur(12px)',
           opacity: 0,
           willChange: 'transform, opacity',
         }}
       />
 
-      {/* Outer ring */}
+      {/* Outer fluid precision ring with optional context badge */}
       <div
         ref={ringRef}
-        className="cursor-ring"
+        className="cursor-ring pointer-events-none fixed top-0 left-0 rounded-full flex items-center justify-center overflow-hidden"
         style={{
-          width: 48, height: 48,
+          width: 40,
+          height: 40,
           border: `1.5px solid ${ringBorder}`,
-          backdropFilter: 'blur(4px)',
-          WebkitBackdropFilter: 'blur(4px)',
-          transition: 'width 0.35s cubic-bezier(0.23,1,0.32,1), height 0.35s cubic-bezier(0.23,1,0.32,1), background-color 0.25s, border-color 0.25s',
+          backdropFilter: 'blur(2px)',
+          WebkitBackdropFilter: 'blur(2px)',
+          zIndex: 9998,
+          transition: 'width 0.3s cubic-bezier(0.23,1,0.32,1), height 0.3s cubic-bezier(0.23,1,0.32,1), background-color 0.25s, border-color 0.25s, box-shadow 0.25s',
           opacity: 0,
+          willChange: 'transform, opacity',
+        }}
+      >
+        <span
+          ref={labelRef}
+          className="text-[8px] font-mono font-bold tracking-widest uppercase select-none pointer-events-none transition-all duration-200"
+          style={{ color: '#ffffff', opacity: 0 }}
+        >
+          VIEW
+        </span>
+      </div>
+
+      {/* Inner glowing precision dot */}
+      <div
+        ref={dotRef}
+        className="cursor-dot pointer-events-none fixed top-0 left-0 rounded-full"
+        style={{
+          width: 7,
+          height: 7,
+          backgroundColor: GOOGLE_COLORS[0],
+          boxShadow: `0 0 10px ${GOOGLE_COLORS[0]}b0`,
+          zIndex: 9999,
+          transition: 'transform 0.2s cubic-bezier(0.23,1,0.32,1), background-color 0.2s, box-shadow 0.2s',
+          opacity: 0,
+          willChange: 'transform, opacity',
         }}
       />
 
-      {/* Inner dot */}
+      {/* Click ripple animation element */}
       <div
-        ref={dotRef}
-        className="cursor-dot"
+        ref={rippleRef}
+        className="cursor-ripple pointer-events-none fixed rounded-full -translate-x-1/2 -translate-y-1/2"
         style={{
-          width: 8, height: 8,
-          backgroundColor: GOOGLE_COLORS[0],
-          boxShadow: `0 0 16px ${GOOGLE_COLORS[0]}90, 0 0 40px ${GOOGLE_COLORS[0]}30`,
-          transition: 'width 0.25s cubic-bezier(0.23,1,0.32,1), height 0.25s cubic-bezier(0.23,1,0.32,1), background-color 0.15s',
+          zIndex: 9997,
+          borderWidth: 1.5,
+          borderStyle: 'solid',
+          borderColor: GOOGLE_COLORS[0],
+          width: 10,
+          height: 10,
           opacity: 0,
         }}
       />

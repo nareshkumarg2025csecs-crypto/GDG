@@ -628,7 +628,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
                 href={data.folderUrl || `https://drive.google.com/drive/folders/${data.folderId}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 text-xs font-semibold transition-colors border border-blue-500/20 shadow-sm flex-1 sm:flex-initial"
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-colors border border-google-blue/20 shadow-sm flex-1 sm:flex-initial"
               >
                 <FolderCheck className="w-3.5 h-3.5" />
                 <span>Open Folder</span>
@@ -655,14 +655,14 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
               value={folderInput}
               onChange={(e) => setFolderInput(e.target.value)}
               placeholder="Paste Google Drive shared folder link (e.g. https://drive.google.com/drive/folders/...) or folder ID"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background/80 text-foreground placeholder:text-muted-foreground text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all shadow-inner"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background/80 text-foreground placeholder:text-muted-foreground text-xs font-mono focus:outline-none focus:ring-2 focus:ring-google-blue/40 focus:border-google-blue transition-all shadow-inner"
             />
           </div>
 
           <button
             type="submit"
             disabled={isSavingFolder || !folderInput.trim()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/20 whitespace-nowrap w-full sm:w-auto"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-google-blue/20 whitespace-nowrap w-full sm:w-auto"
           >
             {isSavingFolder ? (
               <RefreshCw className="w-3.5 h-3.5 animate-spin" />

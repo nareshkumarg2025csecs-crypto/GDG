@@ -88,7 +88,22 @@ export const AuthCallback: React.FC = () => {
           throw new Error('OAuth authorization code flow requires direct server callback.');
         }
 
-        // 3. Sync profile with backend API (only for full Google Login)
+        const isRecovery =
+          searchParams.get('type') === 'recovery' ||
+          hashParams.get('type') === 'recovery';
+
+        if (isRecovery) {
+          navigate(`/auth/reset-password#access_token=${accessToken}`, { replace: true });
+          return;
+        }
+
+        const isEmailVerification =
+          searchParams.get('type') === 'signup' ||
+          hashParams.get('type') === 'signup' ||
+          searchParams.get('type') === 'magiclink' ||
+          hashParams.get('type') === 'magiclink';
+
+        // 3. Sync profile with backend API (creates or retrieves profile row)
         const syncResponse = await syncGoogleOAuth(
           {
             provider_token: providerToken,
@@ -103,12 +118,19 @@ export const AuthCallback: React.FC = () => {
         sessionStorage.removeItem('pending_admin_code');
 
         setStatus('success');
-        toast({
-          title: `Welcome, ${syncResponse.profile.full_name || syncResponse.profile.email}!`,
-          description: 'Successfully authenticated with Google.',
-        });
+        if (isEmailVerification) {
+          toast({
+            title: 'Email Verified Successfully! 🎉',
+            description: `Welcome, ${syncResponse.profile.full_name || 'Student'}! Redirecting to student onboarding...`,
+          });
+        } else {
+          toast({
+            title: `Welcome, ${syncResponse.profile.full_name || syncResponse.profile.email}!`,
+            description: 'Successfully authenticated with Google.',
+          });
+        }
 
-        // Redirect to onboarding if personal info is incomplete (roll_no / department missing)
+        // Redirect to onboarding if email verification flow or if personal info is incomplete
         const hasCompletedInfo =
           Boolean(syncResponse.profile?.details?.roll_no) &&
           Boolean(syncResponse.profile?.details?.department);
@@ -122,7 +144,7 @@ export const AuthCallback: React.FC = () => {
           if (syncResponse.profile.role === 'admin') {
             localStorage.removeItem('auth_redirect_url');
             navigate(targetUrl, { replace: true });
-          } else if (!hasCompletedInfo && syncResponse.profile.role === 'student') {
+          } else if (isEmailVerification || (!hasCompletedInfo && syncResponse.profile.role === 'student')) {
             // Keep targetUrl in storage so onboarding forwards there upon saving
             if (targetUrl && targetUrl !== '/' && targetUrl !== '/onboarding') {
               localStorage.setItem('auth_redirect_url', targetUrl);
@@ -134,14 +156,20 @@ export const AuthCallback: React.FC = () => {
           }
         }, 1200);
       } catch (err: any) {
-        console.error('Google OAuth callback error:', err);
+        console.error('Authentication callback error:', err);
         setStatus('error');
-        setErrorMessage(err.message || 'Failed to complete Google authentication.');
+        setErrorMessage(err.message || 'Failed to complete authentication verification.');
       }
     };
 
     handleAuthCallback();
   }, [location, searchParams, syncGoogleOAuth, navigate]);
+
+  const isVerifying =
+    searchParams.get('type') === 'signup' ||
+    location.hash.includes('type=signup') ||
+    searchParams.get('type') === 'magiclink' ||
+    location.hash.includes('type=magiclink');
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-google-blue/30 relative">
@@ -153,9 +181,13 @@ export const AuthCallback: React.FC = () => {
         {status === 'loading' && (
           <div className="space-y-4 py-6">
             <div className="w-12 h-12 border-4 border-google-blue/30 border-t-google-blue rounded-full animate-spin mx-auto" />
-            <h2 className="text-xl font-bold font-sans">Connecting your Google Account</h2>
+            <h2 className="text-xl font-bold font-sans">
+              {isVerifying ? 'Verifying Your Email...' : 'Connecting your Google Account'}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Verifying credentials and setting up your GDG profile...
+              {isVerifying
+                ? 'Confirming credentials and redirecting to student onboarding...'
+                : 'Verifying credentials and setting up your GDG profile...'}
             </p>
           </div>
         )}
@@ -165,8 +197,14 @@ export const AuthCallback: React.FC = () => {
             <div className="w-12 h-12 rounded-full bg-google-green/10 text-google-green flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold font-sans text-foreground">Authentication Complete!</h2>
-            <p className="text-sm text-muted-foreground">Redirecting you to the GDG portal...</p>
+            <h2 className="text-xl font-bold font-sans text-foreground">
+              {isVerifying ? 'Email Verified Successfully!' : 'Authentication Complete!'}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isVerifying
+                ? 'Redirecting to student onboarding...'
+                : 'Redirecting you to the GDG portal...'}
+            </p>
           </div>
         )}
 

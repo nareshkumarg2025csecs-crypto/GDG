@@ -65,19 +65,28 @@ const HERO_WORDS = [
 const HeroSection = () => {
   const containerRef = useRef<HTMLElement>(null);
   const { theme } = useTheme();
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ['start start', 'end start'],
   });
 
-  const y = useTransform(scrollYProgress, [0, 1], [0, 280]);
+  const y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : 280]);
   const opacity = useTransform(scrollYProgress, [0, 0.55], [1, 0]);
-  const scale = useTransform(scrollYProgress, [0, 0.5], [1, 0.88]);
+  const scale = useTransform(scrollYProgress, [0, 0.5], [1, isMobile ? 1 : 0.88]);
 
-  // Per-line parallax offsets
-  const line0y = useTransform(scrollYProgress, [0, 1], [0, -80]);
-  const line1y = useTransform(scrollYProgress, [0, 1], [0, -50]);
-  const line2y = useTransform(scrollYProgress, [0, 1], [0, -20]);
+  // Per-line parallax offsets (disabled on mobile for zero layout shifts)
+  const line0y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : -80]);
+  const line1y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : -50]);
+  const line2y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : -20]);
 
   const stats = [
     { value: 50, suffix: '+', label: 'Events Hosted', color: '#4285F4' },
@@ -92,32 +101,57 @@ const HeroSection = () => {
     <section
       ref={containerRef}
       id="home"
-      className="relative h-screen flex flex-col overflow-hidden bg-background"
+      className="relative min-h-screen lg:h-screen flex flex-col overflow-hidden bg-background"
     >
       {/* SEO title */}
       <h1 className="sr-only">Google Developer Groups</h1>
 
-      {/* WebGL Fluid Canvas Background */}
-      <div className="absolute inset-0 z-0">
-        <Suspense fallback={<CanvasLoader />}>
-          <FluidCanvas />
-        </Suspense>
-      </div>
-
-      {/* Subtle gradient for legibility */}
+      {/* Dynamic Theme-Aware Google Ambient Aurora Background */}
       <div
-        className="absolute inset-0 z-10 pointer-events-none"
+        className="absolute inset-0 z-0 pointer-events-none transition-colors duration-700 overflow-hidden"
         style={{
           background: isDark
-            ? 'linear-gradient(135deg, rgba(5,5,5,0.6) 0%, transparent 60%, rgba(5,5,5,0.4) 100%)'
-            : 'linear-gradient(135deg, rgba(250,250,250,0.7) 0%, transparent 60%, rgba(250,250,250,0.5) 100%)',
+            ? `
+              radial-gradient(ellipse 65% 50% at 20% 25%, rgba(66, 133, 244, 0.18) 0%, transparent 70%),
+              radial-gradient(ellipse 60% 45% at 85% 20%, rgba(234, 67, 53, 0.15) 0%, transparent 70%),
+              radial-gradient(ellipse 70% 55% at 65% 80%, rgba(251, 188, 4, 0.13) 0%, transparent 70%),
+              radial-gradient(ellipse 65% 50% at 20% 80%, rgba(52, 168, 83, 0.15) 0%, transparent 70%),
+              #050505
+            `
+            : `
+              radial-gradient(ellipse 65% 50% at 20% 25%, rgba(66, 133, 244, 0.12) 0%, transparent 70%),
+              radial-gradient(ellipse 60% 45% at 85% 20%, rgba(234, 67, 53, 0.09) 0%, transparent 70%),
+              radial-gradient(ellipse 70% 55% at 65% 80%, rgba(251, 188, 4, 0.09) 0%, transparent 70%),
+              radial-gradient(ellipse 65% 50% at 20% 80%, rgba(52, 168, 83, 0.10) 0%, transparent 70%),
+              #FAFAFA
+            `,
         }}
-      />
+      >
+        {/* Subtle digital tech grid */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: isDark
+              ? 'linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px)'
+              : 'linear-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 0, 0, 0.035) 1px, transparent 1px)',
+            backgroundSize: '40px 40px',
+          }}
+        />
+      </div>
+
+      {/* 3D Floating Particle Constellation & Developer Accents (Desktop only for silky 120Hz mobile performance) */}
+      {!isMobile && (
+        <div className="absolute inset-0 z-10 pointer-events-none">
+          <Suspense fallback={null}>
+            <FluidCanvas />
+          </Suspense>
+        </div>
+      )}
 
       {/* Main content — editorial split */}
       <motion.div
-        style={{ y, opacity, scale }}
-        className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end px-6 md:px-12 lg:px-16 pb-32 pt-28 max-w-[1600px] mx-auto w-full gap-12 lg:gap-0"
+        style={isMobile ? undefined : { y, opacity, scale }}
+        className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end px-5 sm:px-8 md:px-12 lg:px-16 pb-24 md:pb-32 pt-24 md:pt-28 max-w-[1600px] mx-auto w-full gap-8 lg:gap-0"
       >
         {/* Left: editorial giant headline (7/12 cols) */}
         <div className="flex-1 min-w-0">
@@ -126,7 +160,7 @@ const HeroSection = () => {
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.6, duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
-            className="flex items-center gap-3 mb-6"
+            className="flex items-center gap-3 mb-4 md:mb-6"
           >
             <span
               className="section-eyebrow"
@@ -158,7 +192,7 @@ const HeroSection = () => {
                   }}
                   className="font-display leading-none block select-none"
                   style={{
-                    fontSize: 'clamp(4rem, 14vw, 12rem)',
+                    fontSize: 'clamp(2.75rem, 11.5vw, 11rem)',
                     letterSpacing: '0.02em',
                     WebkitTextStroke: i === 2 ? `2px ${word.color}` : '0',
                     color: i === 2 ? 'transparent' : (isDark ? '#ffffff' : '#1F1F1F'),

@@ -64,6 +64,9 @@ export default function TeamFilters({ className }: TeamFiltersProps) {
 
             <div className="flex flex-wrap gap-2">
                 <motion.button
+                    type="button"
+                    aria-label="Show all team members"
+                    aria-pressed={!selectedDepartment}
                     onClick={() => setSelectedDepartment(null)}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -83,6 +86,9 @@ export default function TeamFilters({ className }: TeamFiltersProps) {
                     return (
                         <motion.button
                             key={dept}
+                            type="button"
+                            aria-label={`Filter by ${dept} department`}
+                            aria-pressed={isSelected}
                             onClick={() => handleDepartmentClick(dept)}
                             whileHover={{ scale: 1.05, x: 2 }}
                             whileTap={{ scale: 0.95 }}
@@ -125,6 +131,8 @@ export default function TeamFilters({ className }: TeamFiltersProps) {
                         )}
                     </p>
                     <button
+                        type="button"
+                        aria-label="Clear all active filters"
                         onClick={clearFilters}
                         className="text-white/40 hover:text-white underline underline-offset-2 transition-colors"
                     >

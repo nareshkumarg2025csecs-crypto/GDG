@@ -56,7 +56,7 @@ export function useKonami() {
         toast({
             title: "🎮 KONAMI CODE ACTIVATED",
             description: "Physics mode enabled! Elements are now falling...",
-            duration: 4000,
+            duration: 2000,
         })
     }, [toast])
 
@@ -68,7 +68,7 @@ export function useKonami() {
         toast({
             title: "🚀 GDG MODE ACTIVATED",
             description: "Welcome to the inner circle! 🥳",
-            duration: 4000,
+            duration: 2000,
         })
     }, [toast])
 

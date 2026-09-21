@@ -82,6 +82,7 @@ jest.mock('../src/config/supabase', () => {
               full_name: row.full_name,
               role: row.role,
               details: row.details || {},
+              is_email_verified: row.is_email_verified !== undefined ? row.is_email_verified : true,
               created_at: new Date().toISOString(),
             };
             mockProfiles.set(row.id, profile);

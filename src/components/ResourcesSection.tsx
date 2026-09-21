@@ -37,19 +37,21 @@ const ResourcesSection = () => {
         }}
       />
 
-      {/* Floating accent dots */}
-      <motion.div
-        style={{ x: dot1x, backgroundColor: '#4285F4', boxShadow: isDark ? '0 0 20px #4285F4' : 'none' }}
-        className="absolute top-40 left-10 w-2.5 h-2.5 rounded-full"
-      />
-      <motion.div
-        style={{ x: dot2x, backgroundColor: '#EA4335', boxShadow: isDark ? '0 0 20px #EA4335' : 'none' }}
-        className="absolute top-60 right-20 w-3.5 h-3.5 rounded-full"
-      />
-      <motion.div
-        style={{ x: dot1x, backgroundColor: '#FBBC04', boxShadow: isDark ? '0 0 15px #FBBC04' : 'none' }}
-        className="absolute bottom-40 left-1/4 w-2 h-2 rounded-full"
-      />
+      {/* Floating accent dots (Desktop only to prevent mobile scroll-listener overhead) */}
+      <div className="hidden md:block pointer-events-none">
+        <motion.div
+          style={{ x: dot1x, backgroundColor: '#4285F4', boxShadow: isDark ? '0 0 20px #4285F4' : 'none' }}
+          className="absolute top-40 left-10 w-2.5 h-2.5 rounded-full"
+        />
+        <motion.div
+          style={{ x: dot2x, backgroundColor: '#EA4335', boxShadow: isDark ? '0 0 20px #EA4335' : 'none' }}
+          className="absolute top-60 right-20 w-3.5 h-3.5 rounded-full"
+        />
+        <motion.div
+          style={{ x: dot1x, backgroundColor: '#FBBC04', boxShadow: isDark ? '0 0 15px #FBBC04' : 'none' }}
+          className="absolute bottom-40 left-1/4 w-2 h-2 rounded-full"
+        />
+      </div>
 
       <div className="container mx-auto px-6 md:px-12 relative z-10 max-w-7xl">
         {/* Section header */}
@@ -74,7 +76,7 @@ const ResourcesSection = () => {
               className="font-display leading-none"
               style={{
                 fontSize: 'clamp(3rem, 9vw, 8rem)',
-                color: 'rgb(var(--foreground))',
+                color: 'hsl(var(--foreground))',
               }}
             >
               LEARN &amp;{' '}
@@ -158,7 +160,7 @@ const ResourcesSection = () => {
 
               {/* Expanding top accent bar */}
               <div
-                className="h-[2px] w-0 group-hover:w-full transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                className="h-[2px] w-0 group-hover:w-full transition-all duration-500 ease-premium"
                 style={{ backgroundColor: res.color }}
               />
 

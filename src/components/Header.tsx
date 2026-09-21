@@ -1,5 +1,5 @@
 import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence } from 'framer-motion';
-import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard } from 'lucide-react';
+import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard, Award } from 'lucide-react';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -87,8 +87,8 @@ const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, t
         )}
         <motion.div className={`absolute inset-0 rounded-full transition-opacity duration-300 ${transparent ? 'opacity-0' : 'opacity-0'}`} />
         <motion.span className={`relative z-10 transition-colors duration-300 ${isActive
-          ? 'text-[rgb(var(--foreground))]'
-          : 'text-[rgb(var(--foreground))]/70 group-hover:text-[rgb(var(--foreground))]'
+          ? 'text-foreground font-semibold'
+          : 'text-foreground/70 group-hover:text-foreground'
           }`}>
           {children}
         </motion.span>
@@ -103,7 +103,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [isHidden, setIsHidden] = useState(false);
-  const [lastScrollY, setLastScrollY] = useState(0);
+  const lastScrollYRef = useRef(0);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const logoTapHistoryRef = useRef<number[]>([]);
   const { scrollY } = useScroll();
@@ -186,15 +186,21 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   };
 
   useMotionValueEvent(scrollY, "change", (latest) => {
-    const direction = latest > lastScrollY ? "down" : "up";
+    const diff = latest - lastScrollYRef.current;
+    lastScrollYRef.current = latest;
+
+    const shouldBeScrolled = latest > 50;
+    setScrolled((prev) => (prev !== shouldBeScrolled ? shouldBeScrolled : prev));
+
     if (latest > 50) {
-      setScrolled(true);
-      setIsHidden(direction === "down" && latest > 300);
+      if (diff > 5 && latest > 300) {
+        setIsHidden((prev) => (!prev ? true : prev));
+      } else if (diff < -5) {
+        setIsHidden((prev) => (prev ? false : prev));
+      }
     } else {
-      setScrolled(false);
-      setIsHidden(false);
+      setIsHidden((prev) => (prev ? false : prev));
     }
-    setLastScrollY(latest);
   });
 
   // Helper to toggle between transparent and solid styles
@@ -209,38 +215,36 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
         }}
         animate={isHidden ? "hidden" : "visible"}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="fixed top-0 left-0 right-0 z-50 flex justify-center py-4 px-4"
+        className="fixed top-0 left-0 right-0 z-50 flex justify-center py-2.5 sm:py-4 px-2 sm:px-4 pointer-events-none"
       >
         <motion.nav
-          className="relative flex items-center gap-1 pl-2 pr-2 py-2 rounded-full border transition-all duration-300"
+          className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full border transition-all duration-300 pointer-events-auto max-w-[98vw] sm:max-w-[95vw] w-auto shadow-lg"
           style={{
             background: theme === 'light'
-              ? 'rgba(255, 255, 255, 0.92)'
-              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(15, 15, 15, 0.85)',
+              ? 'rgba(255, 255, 255, 0.94)'
+              : isTransparentState ? 'rgba(5, 5, 5, 0.0)' : 'rgba(15, 15, 15, 0.88)',
             backdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
             WebkitBackdropFilter: isTransparentState ? 'none' : 'blur(24px) saturate(200%)',
             borderColor: theme === 'light'
-              ? 'rgba(226, 226, 222, 0.8)'
+              ? 'rgba(226, 226, 222, 0.85)'
               : isTransparentState ? 'transparent' : 'rgba(255,255,255,0.12)',
             boxShadow: theme === 'light'
               ? '0 4px 24px -4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8)'
               : isTransparentState
                 ? 'none'
                 : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 80px ${activeColor}15`,
-            width: 'auto',
-            maxWidth: '95vw'
           }}
         >
           <motion.a
             href="/"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-2 px-3 py-2 mr-2"
+            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 mr-0.5 sm:mr-2 shrink-0"
             onPointerDown={handleLogoPointerDown}
             data-easter-trigger="logo"
             data-no-leet
           >
-            <span className="font-sans text-xl font-bold tracking-tight text-foreground">GDG</span>
+            <span className="font-sans text-lg sm:text-xl font-bold tracking-tight text-foreground">GDG</span>
             <div className="flex gap-0.5">
               {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
                 <motion.div
@@ -255,7 +259,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           </motion.a>
 
           {/* Desktop Nav Items - Hidden on Mobile */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-1 shrink-0">
             <div className="w-px h-6 mr-2 border-r border-border" />
             {navSections.map((section) => (
               <MagneticNavItem
@@ -272,14 +276,26 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             ))}
             {isAuthenticated && (
               <MagneticNavItem
-                href="/dashboard"
-                isActive={activeSection === 'dashboard'}
-                color="#4285F4"
-                onClick={() => setActiveSection('dashboard')}
+                href={isAdmin ? "/admin/events" : "/dashboard"}
+                isActive={activeSection === (isAdmin ? 'admin' : 'dashboard')}
+                color={isAdmin ? "#EA4335" : "#4285F4"}
+                onClick={() => setActiveSection(isAdmin ? 'admin' : 'dashboard')}
                 scrolled={scrolled}
                 transparent={transparent}
               >
-                Dashboard
+                {isAdmin ? "Admin" : "Dashboard"}
+              </MagneticNavItem>
+            )}
+            {isAuthenticated && isAdmin && (
+              <MagneticNavItem
+                href="/admin/certificates"
+                isActive={location.pathname.startsWith('/admin/certificates')}
+                color="#FBBC04"
+                onClick={() => setActiveSection('admin')}
+                scrolled={scrolled}
+                transparent={transparent}
+              >
+                Certificates
               </MagneticNavItem>
             )}
             <div className="w-px h-6 mx-2 border-r border-border" />
@@ -290,7 +306,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
 
           {/* User Profile Button with Dropdown (Desktop & Responsive) */}
           {isAuthenticated && profile ? (
-            <div className="relative" ref={profileDropdownRef}>
+            <div className="relative shrink-0" ref={profileDropdownRef}>
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -298,7 +314,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 aria-haspopup="menu"
                 aria-expanded={profileDropdownOpen}
                 aria-label="User account profile and settings menu"
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm shrink-0"
                 title="User Profile & Settings"
               >
                 <UserAvatar
@@ -309,11 +325,11 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                   size="xs"
                   showBorder={false}
                 />
-                <span className="max-w-[70px] sm:max-w-[110px] truncate text-foreground font-medium">
+                <span className="hidden xs:inline max-w-[65px] sm:max-w-[110px] truncate text-foreground font-medium">
                   {profile.full_name || profile.email.split('@')[0]}
                 </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
+                  className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${
                     profileDropdownOpen ? 'rotate-180' : ''
                   }`}
                   aria-hidden="true"
@@ -330,7 +346,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     transition={{ duration: 0.15 }}
                     role="menu"
                     aria-label="User account options"
-                    className="absolute right-0 mt-2 w-64 rounded-2xl border border-border bg-card text-card-foreground shadow-2xl p-2 z-50 space-y-1"
+                    className="absolute right-0 mt-2 w-60 sm:w-64 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl p-2 z-50 space-y-1"
                   >
                     {/* User Info Header */}
                     <div className="p-3 border-b border-border/80 flex items-center gap-3">
@@ -361,37 +377,60 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </div>
                     </div>
 
-                    {/* Option 1: Admin Events Panel (for admin) or My Dashboard */}
+                    {/* Admin Events Panel & Certificates (for admin) or My Dashboard */}
                     {isAdmin ? (
-                      <Link
-                        to="/admin/events"
-                        role="menuitem"
-                        onClick={() => setProfileDropdownOpen(false)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-google-red transition-colors"
-                      >
-                        <Shield className="w-4 h-4 text-google-red" aria-hidden="true" />
-                        <span>Admin Events Panel</span>
-                      </Link>
+                      <>
+                        <Link
+                          to="/admin/events"
+                          role="menuitem"
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-google-red transition-colors"
+                        >
+                          <Shield className="w-4 h-4 text-google-red" aria-hidden="true" />
+                          <span>Admin Events Panel</span>
+                        </Link>
+                        <Link
+                          to="/admin/certificates"
+                          role="menuitem"
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-google-yellow hover:text-amber-500 transition-colors"
+                        >
+                          <Award className="w-4 h-4 text-google-yellow" aria-hidden="true" />
+                          <span>Certificates Studio</span>
+                        </Link>
+                        <Link
+                          to="/dashboard"
+                          role="menuitem"
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                        >
+                          <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
+                          <span>Student View</span>
+                        </Link>
+                      </>
                     ) : (
-                      <Link
-                        to="/dashboard"
-                        role="menuitem"
-                        onClick={() => setProfileDropdownOpen(false)}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
-                      >
-                        <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
-                        <span>My Dashboard</span>
-                      </Link>
+                      <>
+                        <Link
+                          to="/dashboard"
+                          role="menuitem"
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                        >
+                          <LayoutDashboard className="w-4 h-4 text-google-blue" aria-hidden="true" />
+                          <span>My Dashboard</span>
+                        </Link>
+                      </>
                     )}
 
-                    {/* Option 2: Theme Toggle */}
+                    {/* Theme Toggle */}
                     <button
                       type="button"
                       role="menuitem"
+                      aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                       onClick={() => {
                         toggleTheme();
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
                     >
                       <div className="flex items-center gap-2.5">
                         {isDark ? (
@@ -406,12 +445,13 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       </span>
                     </button>
 
-                    {/* Option 3: Logout Option */}
+                    {/* Logout Option */}
                     <button
                       type="button"
                       role="menuitem"
+                      aria-label="Log out of your account"
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-destructive/10 text-destructive text-xs font-semibold transition-colors"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-destructive/10 text-destructive text-xs font-semibold transition-colors"
                     >
                       <LogOut className="w-4 h-4" aria-hidden="true" />
                       <span>Log Out</span>
@@ -422,28 +462,28 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             </div>
           ) : (
             /* Standalone Theme Toggle when logged out */
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 shrink-0">
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={toggleTheme}
                 title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode`}
-                className="p-2 rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors"
+                className="p-1.5 sm:p-2 rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors shrink-0"
                 aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
               >
                 {isDark ? (
-                  <Sun className="w-4 h-4 text-google-yellow" aria-hidden="true" />
+                  <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-google-yellow" aria-hidden="true" />
                 ) : (
-                  <Moon className="w-4 h-4 text-google-blue" aria-hidden="true" />
+                  <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-google-blue" aria-hidden="true" />
                 )}
               </motion.button>
               <Link
                 to="/login"
                 aria-label="Sign In to your account"
-                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors"
+                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors shrink-0"
               >
                 <LogIn className="w-3.5 h-3.5 text-google-blue" aria-hidden="true" />
-                <span>Sign In</span>
+                <span className="hidden xs:inline">Sign In</span>
               </Link>
             </div>
           )}
@@ -452,35 +492,35 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           <Link
             to={isAdmin ? "/admin/events" : "/events"}
             aria-label={isAdmin ? "Manage GDG Events" : "View GDG Events"}
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ml-1"
+            className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold transition-all shrink-0 ml-0.5 sm:ml-1"
             style={{
               background: `linear-gradient(135deg, ${activeColor}, ${activeColor}cc)`,
               boxShadow: `0 4px 20px ${activeColor}40, 0 0 40px ${activeColor}20`,
             }}
           >
             {isAdmin ? (
-              <Shield className="w-4 h-4 text-white" aria-hidden="true" />
+              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
             ) : (
-              <Calendar className="w-4 h-4 text-white" aria-hidden="true" />
+              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
             )}
             <span className="text-white hidden sm:inline">{isAdmin ? "Admin Events" : "Events"}</span>
           </Link>
 
           {/* New Event Notifications (Desktop & Mobile Responsive for both Guests and Authenticated Users) */}
-          <div className="ml-1 flex items-center">
+          <div className="flex items-center shrink-0 ml-0.5 sm:ml-1">
             <HeaderNotifications activeColor={activeColor} />
           </div>
 
           {/* Mobile Menu Toggle Button */}
           <motion.button
             onClick={() => setMenuOpen(!menuOpen)}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="w-10 h-10 ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="w-8 h-8 sm:w-10 sm:h-10 ml-0.5 sm:ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground shrink-0"
             aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={menuOpen}
           >
-            {menuOpen ? <X className="w-5 h-5" aria-hidden="true" /> : <Menu className="w-5 h-5" aria-hidden="true" />}
+            {menuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />}
           </motion.button>
         </motion.nav>
       </motion.header>
@@ -504,18 +544,18 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
               }}
             />
 
-            <div className="h-full flex flex-col pt-28 pb-12 overflow-y-auto container mx-auto px-6 relative z-10">
-              <div className="flex flex-col justify-between h-full space-y-8">
+            <div className="h-full flex flex-col pt-24 pb-10 overflow-y-auto container mx-auto px-4 sm:px-6 relative z-10">
+              <div className="flex flex-col justify-between h-full space-y-6">
 
                 {/* Navigation Links */}
-                <nav className="flex flex-col gap-2">
+                <nav className="flex flex-col gap-1 sm:gap-2">
                   {navSections.map((item, i) => (
                     <motion.div
                       key={item.name}
                       initial={{ x: -50, opacity: 0 }}
                       animate={{ x: 0, opacity: 1 }}
                       exit={{ x: -50, opacity: 0 }}
-                      transition={{ delay: i * 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                      transition={{ delay: i * 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                     >
                       <Link
                         to={item.href}
@@ -523,13 +563,13 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                           setActiveSection(item.id);
                           setMenuOpen(false);
                         }}
-                        className="group flex items-baseline gap-6 py-2"
+                        className="group flex items-baseline gap-4 sm:gap-6 py-2"
                       >
                         <span className="text-xs font-mono text-muted-foreground group-hover:text-foreground transition-colors">0{i + 1}</span>
                         <span
-                          className="text-4xl sm:text-6xl font-sans font-bold transition-all duration-300 group-hover:translate-x-4"
+                          className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold transition-all duration-300 group-hover:translate-x-4"
                           style={{
-                            color: activeSection === item.id ? item.color : 'rgb(var(--foreground))',
+                            color: activeSection === item.id ? item.color : 'hsl(var(--foreground))',
                           }}
                         >
                           {item.name}
@@ -538,27 +578,99 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                     </motion.div>
                   ))}
 
+                  {/* Authenticated Links in Mobile Drawer */}
                   {isAuthenticated && (
-                    <motion.div
-                      initial={{ x: -50, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      exit={{ x: -50, opacity: 0 }}
-                      transition={{ delay: 0.3, duration: 0.5 }}
-                    >
-                      <Link
-                        to="/dashboard"
-                        onClick={() => {
-                          setActiveSection('dashboard');
-                          setMenuOpen(false);
-                        }}
-                        className="group flex items-baseline gap-6 py-2"
-                      >
-                        <span className="text-xs font-mono text-google-blue">04</span>
-                        <span className="text-4xl sm:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
-                          Dashboard
-                        </span>
-                      </Link>
-                    </motion.div>
+                    <>
+                      {isAdmin ? (
+                        <>
+                          <motion.div
+                            initial={{ x: -50, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -50, opacity: 0 }}
+                            transition={{ delay: 0.28, duration: 0.4 }}
+                          >
+                            <Link
+                              to="/admin/events"
+                              onClick={() => {
+                                setActiveSection('admin');
+                                setMenuOpen(false);
+                              }}
+                              className="group flex items-baseline gap-4 sm:gap-6 py-2"
+                            >
+                              <span className="text-xs font-mono text-google-red">04</span>
+                              <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-red transition-all duration-300 group-hover:translate-x-4">
+                                Admin Events
+                              </span>
+                            </Link>
+                          </motion.div>
+
+                          <motion.div
+                            initial={{ x: -50, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -50, opacity: 0 }}
+                            transition={{ delay: 0.34, duration: 0.4 }}
+                          >
+                            <Link
+                              to="/admin/certificates"
+                              onClick={() => {
+                                setActiveSection('admin');
+                                setMenuOpen(false);
+                              }}
+                              className="group flex items-baseline gap-4 sm:gap-6 py-2"
+                            >
+                              <span className="text-xs font-mono text-google-yellow">05</span>
+                              <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-yellow transition-all duration-300 group-hover:translate-x-4">
+                                Certificates
+                              </span>
+                            </Link>
+                          </motion.div>
+
+                          <motion.div
+                            initial={{ x: -50, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: -50, opacity: 0 }}
+                            transition={{ delay: 0.4, duration: 0.4 }}
+                          >
+                            <Link
+                              to="/dashboard"
+                              onClick={() => {
+                                setActiveSection('dashboard');
+                                setMenuOpen(false);
+                              }}
+                              className="group flex items-baseline gap-4 sm:gap-6 py-2"
+                            >
+                              <span className="text-xs font-mono text-google-blue">06</span>
+                              <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
+                                Student View
+                              </span>
+                            </Link>
+                          </motion.div>
+                      </>
+                    ) : (
+                      <>
+                        <motion.div
+                          initial={{ x: -50, opacity: 0 }}
+                          animate={{ x: 0, opacity: 1 }}
+                          exit={{ x: -50, opacity: 0 }}
+                          transition={{ delay: 0.28, duration: 0.4 }}
+                        >
+                          <Link
+                            to="/dashboard"
+                            onClick={() => {
+                              setActiveSection('dashboard');
+                              setMenuOpen(false);
+                            }}
+                            className="group flex items-baseline gap-4 sm:gap-6 py-2"
+                          >
+                            <span className="text-xs font-mono text-google-blue">04</span>
+                            <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
+                              Dashboard
+                            </span>
+                          </Link>
+                        </motion.div>
+                      </>
+                      )}
+                    </>
                   )}
 
                 </nav>
@@ -569,10 +681,10 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: 20, opacity: 0 }}
                   transition={{ delay: 0.35, duration: 0.5 }}
-                  className="pt-6 border-t border-border space-y-4"
+                  className="pt-4 border-t border-border space-y-3"
                 >
                   {isAuthenticated && profile ? (
-                    <div className="p-4 rounded-2xl bg-card border border-border space-y-3">
+                    <div className="p-3.5 rounded-2xl bg-card border border-border space-y-3">
                       <div className="flex items-center gap-3">
                         <UserAvatar
                           name={profile.full_name}
@@ -589,30 +701,56 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/60">
-                        {/* Mobile Action Link */}
-                        <Link
-                          to={isAdmin ? "/admin/events" : "/dashboard"}
-                          onClick={() => setMenuOpen(false)}
-                          className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold transition-colors ${
-                            isAdmin
-                              ? 'bg-google-red/10 text-google-red border-google-red/20 hover:bg-google-red/20'
-                              : 'bg-google-blue/10 text-google-blue border-google-blue/20 hover:bg-google-blue/20'
-                          }`}
-                        >
-                          {isAdmin ? <Shield className="w-4 h-4" /> : <LayoutDashboard className="w-4 h-4" />}
-                          <span>{isAdmin ? 'Admin Events' : 'Dashboard'}</span>
-                        </Link>
-
-                        {/* Mobile Logout Button */}
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Log Out</span>
-                        </button>
+                      <div className={`grid ${isAdmin ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'} gap-2 pt-2 border-t border-border/60`}>
+                        {isAdmin ? (
+                          <>
+                            <Link
+                              to="/admin/events"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold bg-google-red/10 text-google-red border-google-red/20 hover:bg-google-red/20 transition-colors"
+                            >
+                              <Shield className="w-4 h-4" />
+                              <span>Events</span>
+                            </Link>
+                            <Link
+                              to="/admin/certificates"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold bg-google-yellow/10 text-google-yellow border-google-yellow/20 hover:bg-google-yellow/20 transition-colors"
+                            >
+                              <Award className="w-4 h-4" />
+                              <span>Certs</span>
+                            </Link>
+                            <button
+                              type="button"
+                              aria-label="Log out of your account"
+                              onClick={handleLogout}
+                              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                            >
+                              <LogOut className="w-4 h-4" aria-hidden="true" />
+                              <span>Log Out</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <Link
+                              to="/dashboard"
+                              onClick={() => setMenuOpen(false)}
+                              className="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-semibold bg-google-blue/10 text-google-blue border-google-blue/20 hover:bg-google-blue/20 transition-colors"
+                            >
+                              <LayoutDashboard className="w-4 h-4" />
+                              <span>Dashboard</span>
+                            </Link>
+                            <button
+                              type="button"
+                              aria-label="Log out of your account"
+                              onClick={handleLogout}
+                              className="flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-semibold hover:bg-destructive/20 transition-colors"
+                            >
+                              <LogOut className="w-4 h-4" aria-hidden="true" />
+                              <span>Log Out</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -620,6 +758,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       {/* Theme Toggle when logged out */}
                       <button
                         type="button"
+                        aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                         onClick={toggleTheme}
                         className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border border-border bg-card hover:bg-muted text-sm font-semibold text-foreground transition-colors"
                       >

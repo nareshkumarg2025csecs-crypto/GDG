@@ -1,6 +1,9 @@
 const express = require('express');
 const {
   studentSignup,
+  resendStudentVerification,
+  studentForgotPassword,
+  resetPassword,
   adminSignup,
   studentLogin,
   adminLogin,
@@ -36,6 +39,8 @@ const {
   validateStudentSignup,
   validateAdminSignup,
   validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
 } = require('../middleware/validator');
 
 const router = express.Router();
@@ -46,6 +51,26 @@ router.post(
   studentSignupLimiter,
   validateStudentSignup,
   studentSignup
+);
+
+router.post(
+  '/student/resend-verification',
+  studentSignupLimiter,
+  resendStudentVerification
+);
+
+router.post(
+  '/student/forgot-password',
+  studentLoginLimiter,
+  validateForgotPassword,
+  studentForgotPassword
+);
+
+router.post(
+  '/reset-password',
+  requireAuth,
+  validateResetPassword,
+  resetPassword
 );
 
 router.post(

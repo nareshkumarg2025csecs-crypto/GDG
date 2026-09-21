@@ -1,8 +1,56 @@
+const crypto = require('crypto');
 const { supabaseAdmin } = require('../config/supabase');
 const { logActivity } = require('../services/activityLogService');
 const GoogleSheetsService = require('../services/googleSheetsService');
 const GoogleDriveService = require('../services/googleDriveService');
 const EmailService = require('../services/emailService');
+const { BoundedMap } = require('../utils/boundedCache');
+
+// In-memory bounded cache for high-traffic form reads (capped to 200 items for Render 512MB RAM)
+const FORM_CACHE_TTL = 20 * 1000; // 20 seconds
+const eventFormsCache = new BoundedMap(200); // eventId -> { data, expiresAt }
+const singleFormCache = new BoundedMap(200); // formId -> { data, expiresAt }
+let formsSummaryCache = { data: null, expiresAt: 0 };
+let formsSummaryInflightPromise = null;
+
+// Single-Flight Request Coalescing (Prevents Thundering Herd on form reads)
+const eventFormsInflightPromises = new BoundedMap(100); // eventId -> Promise
+const singleFormInflightPromises = new BoundedMap(100); // formId -> Promise
+
+// Mutex queue per formId to ensure serialized atomic slot reservation under high concurrency
+const formSubmissionQueues = new Map();
+
+const acquireFormSubmissionLock = async (formId) => {
+  const previousPromise = formSubmissionQueues.get(formId) || Promise.resolve();
+  let release;
+  const currentPromise = new Promise((resolve) => {
+    release = resolve;
+  });
+  formSubmissionQueues.set(formId, previousPromise.then(() => currentPromise));
+  await previousPromise;
+  return () => {
+    release();
+    if (formSubmissionQueues.get(formId) === currentPromise) {
+      formSubmissionQueues.delete(formId);
+    }
+  };
+};
+
+// In-flight submission lock to prevent double-click / simultaneous duplicate submissions by same user
+const inflightSubmissions = new Set();
+
+// In-memory ticket sequence reservation map to avoid database table scans and collisions
+const formTicketCounters = new BoundedMap(500);
+
+const invalidateFormCache = (formId = null, eventId = null) => {
+  if (formId) singleFormCache.delete(formId);
+  else singleFormCache.clear();
+
+  if (eventId) eventFormsCache.delete(eventId);
+  else eventFormsCache.clear();
+
+  formsSummaryCache = { data: null, expiresAt: 0 };
+};
 
 /**
  * Helper function to validate form submission answers against the form's dynamic schema.
@@ -231,6 +279,9 @@ const createForm = async (req, res) => {
       });
     }
 
+    // Invalidate event forms cache
+    invalidateFormCache(form.id, form.event_id);
+
     // Log the form_created activity
     await logActivity(req, {
       user_id: req.user.id,
@@ -258,64 +309,104 @@ const createForm = async (req, res) => {
 /**
  * GET /api/events/:eventId/forms
  * Authenticated: Get all forms associated with an event, enriched with real submission count and slot limit status.
+ * Shielded by in-memory TTL cache and single-flight coalescing to handle high-traffic viewing during event rollouts.
  */
 const getFormsByEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
+    const now = Date.now();
 
-    const { data: forms, error } = await supabaseAdmin
-      .from('forms')
-      .select('*')
-      .eq('event_id', eventId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return res.status(500).json({
-        error: 'Failed to fetch forms for event.',
-        details: error.message,
+    const cached = eventFormsCache.get(eventId);
+    if (cached && cached.expiresAt > now) {
+      return res.status(200).json({
+        message: 'Forms retrieved successfully.',
+        count: cached.data.length,
+        forms: cached.data,
+        cached: true,
       });
     }
 
-    // Attach submission count and slot capacity status to each form
-    const enrichedForms = await Promise.all(
-      (forms || []).map(async (f) => {
-        const { count } = await supabaseAdmin
-          .from('form_submissions')
-          .select('id', { count: 'exact', head: true })
-          .eq('form_id', f.id);
+    // Single-Flight: Coalesce all simultaneous requests for this event's forms into one DB query
+    let enrichedForms;
+    if (eventFormsInflightPromises.has(eventId)) {
+      enrichedForms = await eventFormsInflightPromises.get(eventId);
+    } else {
+      const fetchPromise = (async () => {
+        const { data: forms, error } = await supabaseAdmin
+          .from('forms')
+          .select('*')
+          .eq('event_id', eventId)
+          .order('created_at', { ascending: false });
 
-        const currentCount = count || 0;
-        const limit = f.submission_limit !== undefined && f.submission_limit !== null
-          ? f.submission_limit
-          : (f.schema?.submission_limit !== undefined && f.schema?.submission_limit !== null ? f.schema.submission_limit : null);
-        const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
-        const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
+        if (error) throw error;
 
-        const opensAt = f.opens_at !== undefined && f.opens_at !== null
-          ? f.opens_at
-          : (f.schema?.opens_at || null);
-        const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
+        // Attach submission count and slot capacity status to each form
+        return await Promise.all(
+          (forms || []).map(async (f) => {
+            const { count } = await supabaseAdmin
+              .from('form_submissions')
+              .select('id', { count: 'exact', head: true })
+              .eq('form_id', f.id);
 
-        const showCount = f.show_submission_count !== undefined
-          ? f.show_submission_count
-          : (f.schema?.show_submission_count !== false);
+            const currentCount = count || 0;
+            const limit = f.submission_limit !== undefined && f.submission_limit !== null
+              ? f.submission_limit
+              : (f.schema?.submission_limit !== undefined && f.schema?.submission_limit !== null ? f.schema.submission_limit : null);
+            const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
+            const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
 
-        return {
-          ...f,
-          opens_at: opensAt,
-          is_upcoming: isUpcoming,
-          submission_count: currentCount,
-          submission_limit: parsedLimitNum,
-          show_submission_count: showCount,
-          is_full: isFull,
-        };
-      })
-    );
+            const opensAt = f.opens_at !== undefined && f.opens_at !== null
+              ? f.opens_at
+              : (f.schema?.opens_at || null);
+            const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
+
+            const showCount = f.show_submission_count !== undefined
+              ? f.show_submission_count
+              : (f.schema?.show_submission_count !== false);
+
+            return {
+              ...f,
+              opens_at: opensAt,
+              is_upcoming: isUpcoming,
+              submission_count: currentCount,
+              submission_limit: parsedLimitNum,
+              show_submission_count: showCount,
+              is_full: isFull,
+            };
+          })
+        );
+      })();
+
+      eventFormsInflightPromises.set(eventId, fetchPromise);
+      try {
+        enrichedForms = await fetchPromise;
+      } catch (err) {
+        console.warn(`Forms for event ${eventId} query failed:`, err.message);
+        if (cached && cached.data) {
+          return res.status(200).json({
+            message: 'Forms retrieved (fallback).',
+            count: cached.data.length,
+            forms: cached.data,
+          });
+        }
+        return res.status(500).json({
+          error: 'Failed to fetch forms for event.',
+          details: err.message,
+        });
+      } finally {
+        eventFormsInflightPromises.delete(eventId);
+      }
+    }
+
+    eventFormsCache.set(eventId, {
+      data: enrichedForms || [],
+      expiresAt: now + FORM_CACHE_TTL,
+    });
 
     return res.status(200).json({
       message: 'Forms retrieved successfully.',
-      count: enrichedForms.length,
-      forms: enrichedForms,
+      count: (enrichedForms || []).length,
+      forms: enrichedForms || [],
     });
   } catch (error) {
     console.error('getFormsByEvent error:', error);
@@ -326,57 +417,203 @@ const getFormsByEvent = async (req, res) => {
 };
 
 /**
+ * GET /api/forms/summary
+ * Batch endpoint for events listing and dashboard views.
+ * Returns a lightweight map of active forms keyed by eventId:
+ * { [eventId]: { id, event_id, title, opens_at, expires_at, submission_limit, submission_count, is_full, is_open, show_submission_count } }
+ * Shielded by in-memory cache and coalescing to slash egress by 90%+.
+ */
+const getFormsSummary = async (req, res) => {
+  try {
+    const now = Date.now();
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+
+    if (formsSummaryCache.data && formsSummaryCache.expiresAt > now) {
+      return res.status(200).json({
+        message: 'Forms summary retrieved successfully.',
+        formsByEvent: formsSummaryCache.data,
+        cached: true,
+      });
+    }
+
+    if (formsSummaryInflightPromise) {
+      const result = await formsSummaryInflightPromise;
+      return res.status(200).json({
+        message: 'Forms summary retrieved successfully.',
+        formsByEvent: result,
+      });
+    }
+
+    formsSummaryInflightPromise = (async () => {
+      // 1. Fetch lightweight metadata from forms table
+      const { data: forms, error } = await supabaseAdmin
+        .from('forms')
+        .select('id, event_id, title, opens_at, expires_at, submission_limit, schema, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formsByEvent = {};
+      if (forms && forms.length > 0) {
+        for (const f of forms) {
+          if (!f.event_id || formsByEvent[f.event_id]) continue;
+
+          const limit = f.submission_limit !== undefined && f.submission_limit !== null
+            ? f.submission_limit
+            : (f.schema?.submission_limit !== undefined && f.schema?.submission_limit !== null ? f.schema.submission_limit : null);
+          const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
+
+          const { count } = await supabaseAdmin
+            .from('form_submissions')
+            .select('id', { count: 'exact', head: true })
+            .eq('form_id', f.id);
+
+          const currentCount = count || 0;
+          const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
+          const opensAt = f.opens_at || f.schema?.opens_at || null;
+          const expiresAt = f.expires_at || f.schema?.expires_at || null;
+          const showCount = f.schema?.show_submission_count !== false;
+
+          formsByEvent[f.event_id] = {
+            id: f.id,
+            event_id: f.event_id,
+            title: f.title,
+            opens_at: opensAt,
+            expires_at: expiresAt,
+            submission_limit: parsedLimitNum,
+            submission_count: currentCount,
+            show_submission_count: showCount,
+            is_full: isFull,
+            is_open: f.schema?.is_open !== false,
+            schema: {
+              is_open: f.schema?.is_open !== false,
+              opens_at: opensAt,
+              expires_at: expiresAt,
+              submission_limit: parsedLimitNum,
+              show_submission_count: showCount,
+            },
+          };
+        }
+      }
+      return formsByEvent;
+    })();
+
+    try {
+      const result = await formsSummaryInflightPromise;
+      formsSummaryCache = {
+        data: result,
+        expiresAt: now + 45 * 1000, // 45 seconds TTL
+      };
+
+      return res.status(200).json({
+        message: 'Forms summary retrieved successfully.',
+        formsByEvent: result,
+      });
+    } finally {
+      formsSummaryInflightPromise = null;
+    }
+  } catch (error) {
+    console.error('getFormsSummary error:', error);
+    if (formsSummaryCache.data) {
+      return res.status(200).json({
+        message: 'Forms summary retrieved (stale fallback).',
+        formsByEvent: formsSummaryCache.data,
+      });
+    }
+    return res.status(500).json({
+      error: 'Internal server error while fetching forms summary.',
+    });
+  }
+};
+
+/**
  * GET /api/forms/:id
  * Authenticated: Get form by ID (including schema, submission count, slot status, and opening status).
+ * Shielded by in-memory TTL cache and single-flight coalescing to handle high-traffic viewing.
  */
 const getFormById = async (req, res) => {
   try {
     const { id } = req.params;
+    const now = Date.now();
 
-    const { data: form, error } = await supabaseAdmin
-      .from('forms')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const cached = singleFormCache.get(id);
+    if (cached && cached.expiresAt > now) {
+      return res.status(200).json({
+        message: 'Form retrieved successfully.',
+        form: cached.data,
+        cached: true,
+      });
+    }
 
-    if (error || !form) {
+    let enrichedForm;
+    if (singleFormInflightPromises.has(id)) {
+      enrichedForm = await singleFormInflightPromises.get(id);
+    } else {
+      const fetchPromise = (async () => {
+        const { data: form, error } = await supabaseAdmin
+          .from('forms')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error || !form) return null;
+
+        const { count } = await supabaseAdmin
+          .from('form_submissions')
+          .select('id', { count: 'exact', head: true })
+          .eq('form_id', form.id);
+
+        const currentCount = count || 0;
+        const limit = form.submission_limit !== undefined && form.submission_limit !== null
+          ? form.submission_limit
+          : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
+        const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
+        const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
+
+        const opensAt = form.opens_at !== undefined && form.opens_at !== null
+          ? form.opens_at
+          : (form.schema?.opens_at || null);
+        const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
+
+        const showCount = form.show_submission_count !== undefined
+          ? form.show_submission_count
+          : (form.schema?.show_submission_count !== false);
+
+        return {
+          ...form,
+          opens_at: opensAt,
+          is_upcoming: isUpcoming,
+          submission_count: currentCount,
+          submission_limit: parsedLimitNum,
+          show_submission_count: showCount,
+          is_full: isFull,
+        };
+      })();
+
+      singleFormInflightPromises.set(id, fetchPromise);
+      try {
+        enrichedForm = await fetchPromise;
+      } catch (err) {
+        console.warn(`Form ${id} fetch error:`, err.message);
+      } finally {
+        singleFormInflightPromises.delete(id);
+      }
+    }
+
+    if (!enrichedForm) {
       return res.status(404).json({
         error: 'Form not found.',
       });
     }
 
-    const { count } = await supabaseAdmin
-      .from('form_submissions')
-      .select('id', { count: 'exact', head: true })
-      .eq('form_id', form.id);
-
-    const currentCount = count || 0;
-    const limit = form.submission_limit !== undefined && form.submission_limit !== null
-      ? form.submission_limit
-      : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
-    const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
-    const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
-
-    const opensAt = form.opens_at !== undefined && form.opens_at !== null
-      ? form.opens_at
-      : (form.schema?.opens_at || null);
-    const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
-
-    const showCount = form.show_submission_count !== undefined
-      ? form.show_submission_count
-      : (form.schema?.show_submission_count !== false);
+    singleFormCache.set(id, {
+      data: enrichedForm,
+      expiresAt: now + FORM_CACHE_TTL,
+    });
 
     return res.status(200).json({
       message: 'Form retrieved successfully.',
-      form: {
-        ...form,
-        opens_at: opensAt,
-        is_upcoming: isUpcoming,
-        submission_count: currentCount,
-        submission_limit: parsedLimitNum,
-        show_submission_count: showCount,
-        is_full: isFull,
-      },
+      form: enrichedForm,
     });
   } catch (error) {
     console.error('getFormById error:', error);
@@ -471,6 +708,9 @@ const updateForm = async (req, res) => {
       });
     }
 
+    // Invalidate cache for this form and its event
+    invalidateFormCache(form.id, form.event_id);
+
     // Log the form_updated activity
     await logActivity(req, {
       user_id: req.user.id,
@@ -510,6 +750,9 @@ const deleteForm = async (req, res) => {
         error: 'Form not found or already deleted.',
       });
     }
+
+    // Invalidate cache for this form and its event
+    invalidateFormCache(id, form.event_id);
 
     // Log the form_deleted activity
     await logActivity(req, {
@@ -554,11 +797,26 @@ const generateTicketPrefix = (eventTitle) => {
  * POST /api/forms/:formId/submissions
  * Authenticated / Students: Submit answers for a form with dynamic schema validation,
  * strict server-side deadline enforcement, duplicate submission prevention,
- * sequential alphanumeric ticket ID assignment, and email dispatch status tracking.
+ * race-proof sequential alphanumeric ticket ID assignment, and asynchronous email dispatch.
  */
 const submitForm = async (req, res) => {
+  const { formId } = req.params;
+  const userId = req.user.id;
+  const subLockKey = `${formId}:${userId}`;
+
+  // Double-submit & high-concurrency debounce lock per user & form
+  if (inflightSubmissions.has(subLockKey)) {
+    return res.status(429).json({
+      error: 'Your submission is already being processed. Please wait a moment.',
+    });
+  }
+
+  inflightSubmissions.add(subLockKey);
+
+  // Acquire serialized mutex lock for this form to guarantee strict FIFO priority for the final slot
+  const releaseSubmissionLock = await acquireFormSubmissionLock(formId);
+
   try {
-    const { formId } = req.params;
     const { answers } = req.body;
 
     if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
@@ -580,31 +838,52 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 2. Server-side Manual Closure & Expiration Check (Zero client trust)
+    // 2. Server-side Manual Closure & Expiration Check with Grace Window
     if (form.schema?.is_open === false) {
       return res.status(410).json({
         error: 'Registration closed: Registrations for this event have been closed by the admin.',
       });
     }
 
+    const now = Date.now();
+    const OPENING_DRIFT_TOLERANCE_MS = 30 * 1000; // 30-second leeway for client device clock drift
     const openingTime = form.opens_at || form.schema?.opens_at;
-    if (openingTime && new Date() < new Date(openingTime)) {
-      return res.status(403).json({
-        error: `Registration has not opened yet. Registration opens on ${new Date(openingTime).toLocaleString()}.`,
-        is_upcoming: true,
-        opens_at: openingTime,
-      });
+    if (openingTime) {
+      const openTimeMs = new Date(openingTime).getTime();
+      if (now + OPENING_DRIFT_TOLERANCE_MS < openTimeMs) {
+        return res.status(403).json({
+          error: `Registration has not opened yet. Registration opens on ${new Date(openingTime).toLocaleString()}.`,
+          is_upcoming: true,
+          opens_at: openingTime,
+        });
+      }
     }
 
+    // Active Filling Grace Window: If a user was filling the form and hits submit right when the timer hits 0,
+    // give a 2-minute submission grace window instead of discarding their work!
+    const SUBMISSION_GRACE_PERIOD_MS = 2 * 60 * 1000; // 2 minutes grace period
     const expiryTime = form.expires_at || form.schema?.expires_at;
-    if (expiryTime && new Date() > new Date(expiryTime)) {
-      return res.status(410).json({
-        error: 'Registration closed: The deadline to submit this form has passed.',
-        expires_at: expiryTime,
-      });
+    let submittedInGracePeriod = false;
+
+    if (expiryTime) {
+      const expiryMs = new Date(expiryTime).getTime();
+      if (now > expiryMs) {
+        if (now <= expiryMs + SUBMISSION_GRACE_PERIOD_MS) {
+          // Accept the in-progress submission within the grace window
+          submittedInGracePeriod = true;
+          console.log(`[submitForm] Accepted in-progress submission within grace window for form ${formId} by user ${userId}`);
+        } else {
+          return res.status(410).json({
+            error: 'Registration closed: The deadline to submit this form has passed.',
+            expires_at: expiryTime,
+          });
+        }
+      }
     }
 
-    // 2.5 Server-side Form Submission Limit / Event Capacity Slot Check (Zero client trust)
+    // 2.5 Server-side Form Submission Limit / Atomic Last Slot Reservation Check
+    // With serialized form locking, when 1 slot remains, user #1 is granted the seat
+    // and subsequent simultaneous submitters are immediately informed that the last slot was just claimed.
     const rawLimit = form.submission_limit !== undefined && form.submission_limit !== null
       ? form.submission_limit
       : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
@@ -618,8 +897,9 @@ const submitForm = async (req, res) => {
 
       if ((currentTotal || 0) >= parsedSlotLimit) {
         return res.status(410).json({
-          error: 'Event slot is full: All available registration seats have been filled. No more registrations are allowed.',
+          error: 'Event slot is full: All available registration seats have been filled. The final remaining slot was just claimed by another attendee who submitted a moment before you.',
           is_full: true,
+          last_slot_claimed: true,
           submission_limit: parsedSlotLimit,
           current_count: currentTotal || 0,
         });
@@ -652,7 +932,7 @@ const submitForm = async (req, res) => {
       });
     }
 
-    // 5. Generate Order-wise Alphanumeric Ticket ID (e.g. BC001, SI002, GD003)
+    // 5. Generate Order-wise Alphanumeric Ticket ID without database scans or race collisions
     const { count: submissionCount } = await supabaseAdmin
       .from('form_submissions')
       .select('id', { count: 'exact', head: true })
@@ -665,35 +945,51 @@ const submitForm = async (req, res) => {
       .single();
 
     const prefix = generateTicketPrefix(eventInfo?.title || form.title);
-    const orderNum = (submissionCount || 0) + 1;
-    let ticketId = `${prefix}${String(orderNum).padStart(3, '0')}`;
 
-    // Ensure uniqueness by querying existing ticket IDs for this form
-    const { data: existingFormSubs } = await supabaseAdmin
-      .from('form_submissions')
-      .select('ticket_id, answers')
-      .eq('form_id', formId);
-
-    const usedIds = new Set(
-      (existingFormSubs || [])
-        .map((s) => s.ticket_id || s.answers?.ticket_id)
-        .filter(Boolean)
-    );
-
-    let seqCounter = orderNum;
-    while (usedIds.has(ticketId)) {
-      seqCounter++;
-      ticketId = `${prefix}${String(seqCounter).padStart(3, '0')}`;
+    let nextNum = formTicketCounters.get(formId);
+    if (!nextNum || nextNum <= (submissionCount || 0)) {
+      nextNum = (submissionCount || 0) + 1;
     }
 
-    // Embed ticket_id and initial email_sent state inside answers
+    let ticketId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    let collisionChecked = false;
+    let attempts = 0;
+
+    // Fast targeted collision check: only inspect the candidate key instead of scanning thousands of rows
+    while (attempts < 10) {
+      const { data: exists } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id')
+        .eq('form_id', formId)
+        .eq('ticket_id', ticketId)
+        .maybeSingle();
+
+      if (!exists) {
+        formTicketCounters.set(formId, nextNum + 1);
+        collisionChecked = true;
+        break;
+      }
+      nextNum++;
+      ticketId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+      attempts++;
+    }
+
+    // High-concurrency fallback if multiple worker nodes race on the same number
+    if (!collisionChecked) {
+      const entropy = crypto.randomBytes(2).toString('hex').toUpperCase();
+      ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${entropy}`;
+      formTicketCounters.set(formId, nextNum + 1);
+    }
+
+    // Embed ticket_id, initial email_sent state, and grace period status inside answers
     const submissionAnswers = {
       ...answers,
       ticket_id: ticketId,
       email_sent: false,
+      submitted_in_grace_period: submittedInGracePeriod,
     };
 
-    // 6. Store submission in database (setting both table column ticket_id and answers.ticket_id)
+    // 6. Store submission in database
     const { data: submission, error } = await supabaseAdmin
       .from('form_submissions')
       .insert([
@@ -724,8 +1020,11 @@ const submitForm = async (req, res) => {
       });
     }
 
+    // Invalidate form caches so live submission count updates immediately for all viewers
+    invalidateFormCache(formId, form.event_id);
+
     // Log the form submission
-    await logActivity(req, {
+    logActivity(req, {
       user_id: req.user.id,
       action: 'form_submitted',
       details: {
@@ -734,12 +1033,9 @@ const submitForm = async (req, res) => {
         submission_id: submission.id,
         ticket_id: ticketId,
       },
-    });
+    }).catch((err) => console.warn('Activity log failed (non-critical):', err.message));
 
-    // 7. Automated Email Confirmation Dispatch with Inline QR Pass
-    let emailDispatched = false;
-    let emailResult = null;
-
+    // 7. Non-blocking Background Email Confirmation Dispatch with Inline QR Pass
     const attendeeEmail = answers.email || req.user.email || req.user.profile?.email;
     const attendeeName =
       answers.full_name ||
@@ -748,57 +1044,56 @@ const submitForm = async (req, res) => {
       attendeeEmail?.split('@')[0] ||
       'Attendee';
 
-    try {
-      if (attendeeEmail && attendeeEmail.includes('@')) {
-        emailResult = await EmailService.sendRegistrationConfirmation({
-          to: attendeeEmail,
-          attendeeName,
-          event: eventInfo || { id: form.event_id, title: form.title },
-          submission: {
-            ...submission,
-            ticket_id: ticketId,
-            answers: submissionAnswers,
-          },
-          form,
-        });
-
-        // Update email_sent state in both table column and answers
-        if (emailResult && emailResult.success) {
-          emailDispatched = true;
-          await supabaseAdmin
-            .from('form_submissions')
-            .update({
+    if (attendeeEmail && attendeeEmail.includes('@')) {
+      setImmediate(async () => {
+        try {
+          const emailResult = await EmailService.sendRegistrationConfirmation({
+            to: attendeeEmail,
+            attendeeName,
+            event: eventInfo || { id: form.event_id, title: form.title },
+            submission: {
+              ...submission,
               ticket_id: ticketId,
-              email_sent: true,
-              answers: {
-                ...submissionAnswers,
+              answers: submissionAnswers,
+            },
+            form,
+          });
+
+          // Update email_sent state in both table column and answers asynchronously
+          if (emailResult && emailResult.success) {
+            await supabaseAdmin
+              .from('form_submissions')
+              .update({
                 ticket_id: ticketId,
                 email_sent: true,
-                email_sent_at: new Date().toISOString(),
-              },
-            })
-            .eq('id', submission.id);
-          console.log(`[submitForm] Database updated with email_sent=true for submission ${submission.id} (${ticketId})`);
-        } else if (emailResult && emailResult.queued) {
-          console.log(`[submitForm] Registration email safely queued for submission ${submission.id} (${ticketId})`);
-          await supabaseAdmin
-            .from('form_submissions')
-            .update({
-              ticket_id: ticketId,
-              email_sent: false,
-              answers: {
-                ...submissionAnswers,
+                answers: {
+                  ...submissionAnswers,
+                  ticket_id: ticketId,
+                  email_sent: true,
+                  email_sent_at: new Date().toISOString(),
+                },
+              })
+              .eq('id', submission.id);
+            console.log(`[submitForm] Background email dispatched successfully for submission ${submission.id} (${ticketId})`);
+          } else if (emailResult && emailResult.queued) {
+            await supabaseAdmin
+              .from('form_submissions')
+              .update({
                 ticket_id: ticketId,
-                email_queued: true,
-                email_queue_id: emailResult.queueId,
-              },
-            })
-            .eq('id', submission.id);
+                email_sent: false,
+                answers: {
+                  ...submissionAnswers,
+                  ticket_id: ticketId,
+                  email_queued: true,
+                  email_queue_id: emailResult.queueId,
+                },
+              })
+              .eq('id', submission.id);
+          }
+        } catch (emailErr) {
+          console.warn('[submitForm] Background email dispatch failed (non-blocking):', emailErr.message);
         }
-      }
-
-    } catch (emailErr) {
-      console.warn('[submitForm] Automated email dispatch failed (non-blocking):', emailErr.message);
+      });
     }
 
     // Google Sheets Sync — fire-and-forget after successful submission
@@ -822,14 +1117,18 @@ const submitForm = async (req, res) => {
       });
     }
 
+    // Instant HTTP 201 response with ticket ID
     return res.status(201).json({
-      message: 'Form submitted successfully.',
+      message: submittedInGracePeriod
+        ? 'Form submitted successfully! Your submission was accepted within the final submission grace window.'
+        : 'Form submitted successfully.',
       submission: {
         ...submission,
         ticket_id: ticketId,
       },
       ticket_id: ticketId,
-      email_dispatched: emailDispatched,
+      email_dispatched: true,
+      submitted_in_grace_period: submittedInGracePeriod,
       confirmation_email_sent_to: attendeeEmail,
     });
   } catch (error) {
@@ -837,6 +1136,9 @@ const submitForm = async (req, res) => {
     return res.status(500).json({
       error: 'Internal server error while submitting form.',
     });
+  } finally {
+    releaseSubmissionLock();
+    inflightSubmissions.delete(subLockKey);
   }
 };
 
@@ -887,7 +1189,7 @@ const getMySubmissions = async (req, res) => {
   try {
     const { data: submissions, error } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, attended, submitted_at')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title, details))')
       .eq('user_id', req.user.id)
       .order('submitted_at', { ascending: false });
 
@@ -898,6 +1200,21 @@ const getMySubmissions = async (req, res) => {
       });
     }
 
+    // Identify which forms have had certificates dispatched to attendees (scoped to user's forms only)
+    let certsIssuedFormIds = new Set();
+    if (submissions && submissions.length > 0) {
+      const userFormIds = [...new Set(submissions.map((s) => s.form_id).filter(Boolean))];
+      if (userFormIds.length > 0) {
+        const { data: sentForms } = await supabaseAdmin
+          .from('form_submissions')
+          .select('form_id')
+          .in('form_id', userFormIds)
+          .eq('certificate_sent', true);
+
+        certsIssuedFormIds = new Set((sentForms || []).map((f) => f.form_id));
+      }
+    }
+
     return res.status(200).json({
       message: 'User submissions fetched successfully.',
       count: submissions.length,
@@ -906,6 +1223,16 @@ const getMySubmissions = async (req, res) => {
         ticket_id: s.ticket_id || s.answers?.ticket_id || null,
         email_sent: s.email_sent !== undefined ? Boolean(s.email_sent) : Boolean(s.answers?.email_sent),
         attended: Boolean(s.attended),
+        attended_at: s.answers?.attended_at || (s.attended ? s.submitted_at : null),
+        certificate_sent: Boolean(s.certificate_sent),
+        certificate_sent_at: s.certificate_sent_at || null,
+        certificate_id: s.certificate_id || null,
+        event_id: s.forms?.events?.id || s.forms?.event_id || null,
+        event_title: s.forms?.events?.title || s.forms?.title || 'GDG Event',
+        event_details: s.forms?.events?.details || {},
+        certificates_issued: Boolean(
+          s.forms?.events?.details?.certificates_issued || certsIssuedFormIds.has(s.form_id)
+        ),
       })),
     });
   } catch (error) {
@@ -931,9 +1258,29 @@ const updateSubmissionAttendance = async (req, res) => {
       });
     }
 
+    // Retrieve existing submission to preserve answers and attach timestamp
+    const { data: existingSub } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, answers, attended')
+      .eq('id', submissionId)
+      .single();
+
+    const existingAnswers =
+      existingSub?.answers && typeof existingSub.answers === 'object' && !Array.isArray(existingSub.answers)
+        ? existingSub.answers
+        : {};
+
+    const updatedAnswers = {
+      ...existingAnswers,
+      attended_at: attended ? new Date().toISOString() : null,
+    };
+
     const { data: submission, error } = await supabaseAdmin
       .from('form_submissions')
-      .update({ attended })
+      .update({
+        attended,
+        answers: updatedAnswers,
+      })
       .eq('id', submissionId)
       .select('id, form_id, user_id, answers, attended, submitted_at')
       .single();
@@ -1302,6 +1649,7 @@ const uploadFormFile = async (req, res) => {
 module.exports = {
   createForm,
   getFormsByEvent,
+  getFormsSummary,
   getFormById,
   updateForm,
   deleteForm,

@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   createEvent,
@@ -6,6 +7,8 @@ const {
   getEventById,
   updateEvent,
   deleteEvent,
+  uploadEventPoster,
+  migrateBase64Posters,
 } = require('../controllers/eventController');
 const { createEventReminder, getMyCalendarEvents } = require('../controllers/calendarController');
 const { getFormsByEvent } = require('../controllers/formController');
@@ -14,7 +17,28 @@ const {
   validateUpdateEvent,
 } = require('../middleware/validator');
 
+const posterUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+});
+
 const router = express.Router();
+
+// Poster upload and migration routes (Admin only)
+router.post(
+  '/upload-poster',
+  requireAuth,
+  requireRole('admin'),
+  posterUpload.single('file'),
+  uploadEventPoster
+);
+
+router.post(
+  '/migrate-posters',
+  requireAuth,
+  requireRole('admin'),
+  migrateBase64Posters
+);
 
 // Authenticated Calendar Reminder Query (must be before /:id)
 router.get('/calendar-reminders/me', requireAuth, getMyCalendarEvents);

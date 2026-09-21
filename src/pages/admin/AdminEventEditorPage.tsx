@@ -429,6 +429,7 @@ export const AdminEventEditorPage: React.FC = () => {
   // Image Quality & Size Settings
   const [imageQuality, setImageQuality] = useState<'original' | '2k' | 'hd'>('original');
   const [imageMeta, setImageMeta] = useState<{ width: number; height: number; sizeKb: number; name: string } | null>(null);
+  const [isUploadingPoster, setIsUploadingPoster] = useState<boolean>(false);
 
   // Prevent background scroll when modal preview is open (Desktop & Mobile)
   useEffect(() => {
@@ -446,7 +447,7 @@ export const AdminEventEditorPage: React.FC = () => {
   }, [showPreviewModal, showEmailPreviewModal]);
 
 
-  // Convert uploaded image file to high-resolution, crystal-clear Base64 data URL without blur
+  // Upload image file directly to Supabase storage bucket with crisp resolution
   const processImageFile = (file: File, qualityPreset: 'original' | '2k' | 'hd' = imageQuality) => {
     if (!file.type.startsWith('image/')) {
       toast({
@@ -457,26 +458,29 @@ export const AdminEventEditorPage: React.FC = () => {
       return;
     }
 
+    setIsUploadingPoster(true);
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new window.Image();
       img.onload = () => {
-        let maxW = 2560; // Ultra high resolution default
-        let maxH = 1440;
-        let compressionQuality = 0.95;
+        // Egress-Optimized Resolution: 1920x1080 provides crystal-clear retina display while keeping file size under 250KB
+        let maxW = 1920;
+        let maxH = 1080;
+        let compressionQuality = 0.82;
 
         if (qualityPreset === '2k') {
-          maxW = 2048;
-          maxH = 1152;
-          compressionQuality = 0.92;
+          maxW = 1920;
+          maxH = 1080;
+          compressionQuality = 0.85;
         } else if (qualityPreset === 'hd') {
           maxW = 1440;
-          maxH = 900;
-          compressionQuality = 0.90;
+          maxH = 810;
+          compressionQuality = 0.80;
         } else if (qualityPreset === 'original') {
-          maxW = 3840; // 4K max ceiling to prevent crash while retaining 100% crispness
-          maxH = 2160;
-          compressionQuality = 0.96;
+          maxW = 2048;
+          maxH = 1152;
+          compressionQuality = 0.85;
         }
 
         let { width, height } = img;
@@ -495,27 +499,54 @@ export const AdminEventEditorPage: React.FC = () => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          // High quality image smoothing algorithms
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-          const base64Data = canvas.toDataURL(exportFormat, compressionQuality);
-          const sizeKb = Math.round((base64Data.length * 3) / 4 / 1024);
+          // WebP format offers 60-80% smaller size at identical visual crispness compared to PNG/JPEG
+          const exportFormat = 'image/webp';
+          canvas.toBlob(
+            async (blob) => {
+              if (!blob) {
+                setIsUploadingPoster(false);
+                return;
+              }
 
-          setBannerUrl(base64Data);
-          setImageMeta({
-            width,
-            height,
-            sizeKb,
-            name: file.name,
-          });
+              try {
+                // Ensure extension is .webp
+                const baseName = file.name.replace(/\.[^/.]+$/, '');
+                const uploadFile = new File([blob], `${baseName}.webp`, { type: exportFormat });
+                const uploadRes = await eventService.uploadPoster(uploadFile, id);
+                const sizeKb = Math.round(blob.size / 1024);
 
-          toast({
-            title: 'High-Res Poster Uploaded! 🖼️',
-            description: `${width}×${height}px (${sizeKb} KB) • Crisp & blur-free.`,
-          });
+                setBannerUrl(uploadRes.url);
+                setImageMeta({
+                  width,
+                  height,
+                  sizeKb,
+                  name: `${baseName}.webp`,
+                });
+
+                toast({
+                  title: 'Poster Optimized & Uploaded! 🚀',
+                  description: `${width}×${height}px (${sizeKb} KB) • Saved with 1-yr cache header.`,
+                });
+              } catch (uploadErr: any) {
+                console.error('Poster bucket upload error:', uploadErr);
+                toast({
+                  title: 'Poster Upload Failed',
+                  description: uploadErr.message || 'Could not upload poster to storage bucket.',
+                  variant: 'destructive',
+                });
+              } finally {
+                setIsUploadingPoster(false);
+              }
+            },
+            exportFormat,
+            compressionQuality
+          );
+        } else {
+          setIsUploadingPoster(false);
         }
       };
       img.src = event.target?.result as string;
@@ -1239,7 +1270,7 @@ export const AdminEventEditorPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Event Banner / Poster Image (Upload Base64 or URL) */}
+          {/* Event Banner / Poster Image (Storage Bucket Upload or URL) */}
           <div className="space-y-3 pt-2 border-t border-border/60">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
@@ -1247,7 +1278,7 @@ export const AdminEventEditorPage: React.FC = () => {
                   Event Poster / Banner Image (Optional)
                 </label>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Upload directly as crisp Base64 (zero storage bucket limits) or paste an image URL.
+                  Uploaded directly to cloud storage bucket (CDN-hosted) or paste an image URL.
                 </p>
               </div>
 
@@ -1293,24 +1324,35 @@ export const AdminEventEditorPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Hidden File Input for Base64 Image Upload */}
+            {/* Hidden File Input for Image Upload */}
             <input
               ref={imageInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={handleImageFileUpload}
+              disabled={isUploadingPoster}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
               {/* Upload Button */}
               <button
                 type="button"
+                disabled={isUploadingPoster}
                 onClick={() => imageInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-google-blue/40 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-google-blue/40 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs sm:text-sm font-semibold transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <UploadCloud className="w-4 h-4" />
-                <span>Upload Image ({imageQuality.toUpperCase()})</span>
+                {isUploadingPoster ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Uploading to Bucket...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Upload to Bucket ({imageQuality.toUpperCase()})</span>
+                  </>
+                )}
               </button>
 
               {/* Or Paste URL */}
@@ -1319,15 +1361,14 @@ export const AdminEventEditorPage: React.FC = () => {
                 <input
                   type="url"
                   placeholder="Or paste image URL (https://...)"
-                  value={bannerUrl.startsWith('data:') ? 'Base64 High-Res Image Loaded' : bannerUrl}
+                  value={bannerUrl.startsWith('data:') ? 'Base64 Legacy Image (Will migrate to bucket on save)' : bannerUrl}
                   onChange={(e) => setBannerUrl(e.target.value)}
-                  readOnly={bannerUrl.startsWith('data:')}
                   className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
                 />
               </div>
             </div>
 
-            {/* Live Banner Preview (Works with both Base64 Data URI & URL) */}
+            {/* Live Banner Preview (Works with Storage Bucket URL, URL & Legacy Base64) */}
             {bannerUrl && (
               <div className="relative rounded-2xl overflow-hidden border border-border h-48 sm:h-64 bg-black/40 group">
                 <img
@@ -1343,8 +1384,10 @@ export const AdminEventEditorPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-google-green" />
                     <p className="text-white text-xs font-semibold font-mono">
-                      {bannerUrl.startsWith('data:')
-                        ? `Base64 Uploaded Poster ${imageMeta ? `(${imageMeta.width}×${imageMeta.height}px • ${imageMeta.sizeKb} KB)` : ''}`
+                      {bannerUrl.includes('supabase.co') || bannerUrl.includes('storage')
+                        ? `Storage Bucket Poster ${imageMeta ? `(${imageMeta.width}×${imageMeta.height}px • ${imageMeta.sizeKb} KB)` : '☁️'}`
+                        : bannerUrl.startsWith('data:')
+                        ? 'Legacy Base64 Poster'
                         : 'Image URL Preview'}
                     </p>
                   </div>
@@ -1352,8 +1395,9 @@ export const AdminEventEditorPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={isUploadingPoster}
                       onClick={() => imageInputRef.current?.click()}
-                      className="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium backdrop-blur-sm transition-colors"
+                      className="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium backdrop-blur-sm transition-colors disabled:opacity-50"
                     >
                       Replace
                     </button>

@@ -107,6 +107,9 @@ export default {
         'glow-sm': '0 0 20px currentColor',
         'glow-md': '0 0 40px currentColor',
       },
+      transitionTimingFunction: {
+        'premium': 'cubic-bezier(0.23, 1, 0.32, 1)',
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

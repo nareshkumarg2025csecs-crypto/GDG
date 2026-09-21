@@ -40,7 +40,7 @@ jest.mock('../src/config/supabase', () => {
           if (user.email === email && user.password === password) {
             return {
               data: {
-                user: { id: user.id, email: user.email },
+                user: { id: user.id, email: user.email, email_confirmed_at: new Date().toISOString() },
                 session: {
                   access_token: `mock-jwt-token-for-${user.id}`,
                   refresh_token: `mock-refresh-token-for-${user.id}`,
@@ -297,7 +297,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/student/signup')
         .send({
           email: 'student.login@college.edu',
-          password: 'StudentPassword123',
+          password: 'StudentPassword123!',
           full_name: 'Test Student',
         });
       studentToken = studentRes.body.access_token;
@@ -307,7 +307,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/admin/signup')
         .send({
           email: 'admin.login@college.edu',
-          password: 'AdminPassword123',
+          password: 'AdminPassword123!',
           full_name: 'Test Admin',
           admin_code: 'test-admin-secret-code',
         });
@@ -319,7 +319,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/student/login')
         .send({
           email: 'student.login@college.edu',
-          password: 'StudentPassword123',
+          password: 'StudentPassword123!',
         });
 
       expect(res.status).toBe(200);
@@ -332,7 +332,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/admin/login')
         .send({
           email: 'admin.login@college.edu',
-          password: 'AdminPassword123',
+          password: 'AdminPassword123!',
         });
 
       expect(res.status).toBe(200);
@@ -345,7 +345,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/admin/login')
         .send({
           email: 'student.login@college.edu',
-          password: 'StudentPassword123',
+          password: 'StudentPassword123!',
         });
 
       expect(res.status).toBe(403);
@@ -357,7 +357,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/student/login')
         .send({
           email: 'admin.login@college.edu',
-          password: 'AdminPassword123',
+          password: 'AdminPassword123!',
         });
 
       expect(res.status).toBe(403);
@@ -386,7 +386,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/student/signup')
         .send({
           email: 'student.rbac@college.edu',
-          password: 'Password123',
+          password: 'Password123!',
           full_name: 'RBAC Student',
         });
       studentToken = studentRes.body.access_token;
@@ -395,7 +395,7 @@ describe('College Club Backend API Tests', () => {
         .post('/api/auth/admin/signup')
         .send({
           email: 'admin.rbac@college.edu',
-          password: 'Password123',
+          password: 'Password123!',
           full_name: 'RBAC Admin',
           admin_code: 'test-admin-secret-code',
         });

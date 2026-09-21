@@ -18,6 +18,8 @@ export interface AuthResponse {
   message: string;
   access_token: string | null;
   refresh_token: string | null;
+  requires_verification?: boolean;
+  email?: string;
   user?: {
     id: string;
     email: string;
@@ -64,6 +66,28 @@ export const authService = {
     return apiRequest<AuthResponse>('/api/auth/student/signup', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  async resendStudentVerification(email: string): Promise<{ message: string; email: string }> {
+    return apiRequest<{ message: string; email: string }>('/api/auth/student/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest<{ success: boolean; message: string }>('/api/auth/student/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(password: string, token: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest<{ success: boolean; message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ password }),
     });
   },
 

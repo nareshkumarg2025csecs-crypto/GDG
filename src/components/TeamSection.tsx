@@ -72,6 +72,7 @@ interface HolographicCardProps {
 function HolographicCard({ member, index }: HolographicCardProps) {
     const cardRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
+    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768)
 
     const mouseX = useMotionValue(0)
     const mouseY = useMotionValue(0)
@@ -83,32 +84,33 @@ function HolographicCard({ member, index }: HolographicCardProps) {
     const foilY = useSpring(useTransform(mouseY, [-0.5, 0.5], [100, -100]), springConfig)
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (!cardRef.current) return
+        if (isTouch || !cardRef.current) return
         const rect = cardRef.current.getBoundingClientRect()
         const x = (e.clientX - rect.left) / rect.width - 0.5
         const y = (e.clientY - rect.top) / rect.height - 0.5
         mouseX.set(x)
         mouseY.set(y)
-    }, [mouseX, mouseY])
+    }, [isTouch, mouseX, mouseY])
 
     const handleMouseLeave = useCallback(() => {
+        if (isTouch) return
         setIsHovered(false)
         mouseX.set(0)
         mouseY.set(0)
-    }, [mouseX, mouseY])
+    }, [isTouch, mouseX, mouseY])
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: index * 0.1, duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: Math.min(index * 0.05, 0.3), duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
             className="perspective-1000"
         >
             <motion.div
                 ref={cardRef}
-                style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
+                style={isTouch ? undefined : { rotateX, rotateY, transformStyle: 'preserve-3d' }}
                 onMouseMove={handleMouseMove}
-                onMouseEnter={() => setIsHovered(true)}
+                onMouseEnter={() => !isTouch && setIsHovered(true)}
                 onMouseLeave={handleMouseLeave}
                 className="relative cursor-pointer group"
             >
@@ -178,7 +180,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                     {/* Bottom Info */}
                     <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: `linear-gradient(to top, ${member.color}E6 0%, transparent 100%)` }}>
                         <p className="text-[10px] font-mono tracking-[0.3em] mb-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>// {member.codename}</p>
-                        <h4 className="font-display text-lg leading-tight break-words" style={{ color: 'rgb(var(--foreground))', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
+                        <h4 className="font-display text-lg leading-tight break-words text-foreground" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
                         <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.role}</p>
                     </div>
 
@@ -205,6 +207,9 @@ function BayTab({ bay, isActive, onClick }: BayTabProps) {
     return (
         <button
             onClick={onClick}
+            aria-pressed={isActive}
+            aria-label={`View ${bay.name} team`}
+            type="button"
             className="relative px-4 md:px-6 py-3 text-left transition-all duration-300"
             style={{
                 borderLeft: isActive ? `3px solid ${bay.color}` : '3px solid transparent',
@@ -215,7 +220,7 @@ function BayTab({ bay, isActive, onClick }: BayTabProps) {
                 <motion.div layoutId="activeBay" className="absolute inset-0" style={{ boxShadow: `inset 0 0 30px ${bay.color}20` }} />
             )}
             <p className="text-[10px] font-mono tracking-[0.2em] mb-0.5" style={{ color: bay.color }}>{bay.label}</p>
-            <p className="font-display text-lg md:text-xl transition-colors duration-300" style={{ color: isActive ? 'rgb(var(--foreground))' : 'rgba(var(--foreground), 0.4)' }}>{bay.name}</p>
+            <p className={`font-display text-lg md:text-xl transition-colors duration-300 ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{bay.name}</p>
         </button>
     )
 }
@@ -249,6 +254,8 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
             {showToggle && onSwitchTo3D && (
                 <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.15)'}` }}>
                     <button
+                        type="button"
+                        aria-label="Switch to 3D Garage view"
                         onClick={onSwitchTo3D}
                         className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300"
                         style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(31,31,31,0.5)' }}
@@ -256,6 +263,9 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                         3D GARAGE
                     </button>
                     <button
+                        type="button"
+                        aria-label="Switch to 2D Cards view"
+                        aria-current="true"
                         className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 bg-gradient-to-r from-green-500 to-cyan-500 text-white shadow-lg shadow-green-500/30"
                     >
                         2D CARDS
@@ -264,11 +274,11 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
             )}
 
             <div className="absolute inset-0 opacity-[0.03]" style={{
-                backgroundImage: `linear-gradient(rgb(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--foreground)) 1px, transparent 1px)`,
+                backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
                 backgroundSize: '40px 40px',
             }} />
 
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[150px] opacity-20"
+            <div className="hidden md:block absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[150px] opacity-20"
                 style={{ background: theme === 'light' ? 'radial-gradient(circle, rgba(var(--surface-300), 0.5), transparent)' : `radial-gradient(circle, ${activeBayData.color}, transparent)` }} />
 
             <div className="container mx-auto px-4 md:px-6 relative z-10">
@@ -277,10 +287,10 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                         <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
                     </div>
-                    <h2 className="text-4xl md:text-6xl lg:text-7xl font-display text-[rgb(var(--foreground))] mb-2 transition-colors duration-300">
-                        CORE <span style={{ color: theme === 'light' ? 'rgb(var(--text-primary-raw))' : rawActiveBayData.color, textShadow: theme === 'light' ? 'none' : `0 0 40px ${rawActiveBayData.color}60` }}>TEAM</span>
+                    <h2 className="text-4xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 transition-colors duration-300">
+                        CORE <span style={{ color: theme === 'light' ? 'hsl(var(--foreground))' : rawActiveBayData.color, textShadow: theme === 'light' ? 'none' : `0 0 40px ${rawActiveBayData.color}60` }}>TEAM</span>
                     </h2>
-                    <p className="text-[rgb(var(--foreground))]/30 font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {filteredMembers.length} OPERATIVES ASSIGNED</p>
+                    <p className="text-muted-foreground font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {filteredMembers.length} OPERATIVES ASSIGNED</p>
                 </motion.div>
 
                 <div className="flex flex-wrap gap-2 md:gap-0 mb-10 md:mb-14 border-b pb-4 md:pb-0 md:border-b-0" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.1)' }}>
@@ -289,7 +299,7 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                     ))}
                 </div>
 
-                <motion.p key={activeBay} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="text-[rgb(var(--foreground))]/50 text-sm mb-10 max-w-md transition-colors duration-300">{rawActiveBayData.description}</motion.p>
+                <motion.p key={activeBay} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="text-muted-foreground text-sm mb-10 max-w-md transition-colors duration-300">{rawActiveBayData.description}</motion.p>
 
                 <motion.div key={`grid-${activeBay}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                     {filteredMembers.map((member, index) => (
@@ -301,7 +311,7 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
                     <div className="flex flex-wrap items-center justify-between gap-4 text-[10px] font-mono" style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.35)' }}>
                         <div className="flex items-center gap-4 md:gap-6">
                             <span>SYSTEM: <span className={theme === 'light' ? 'text-green-600' : 'text-green-500'}>ONLINE</span></span>
-                            <span>MEMBERS: <span style={{ color: 'rgb(var(--foreground))' }}>{teamMembers.length}</span></span>
+                            <span>MEMBERS: <span className="text-foreground">{teamMembers.length}</span></span>
                         </div>
                         <span className="flex items-center gap-2">
                             <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${theme === 'light' ? 'bg-green-600' : 'bg-green-500'}`} />
@@ -325,7 +335,7 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
 
 export default function TeamSection() {
     const [view, setView] = useState<'3d' | '2d'>('3d')
-    const [isMobile, setIsMobile] = useState(false)
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768)
@@ -346,6 +356,9 @@ export default function TeamSection() {
             {/* View toggle - VISIBLE */}
             <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${isMobile ? 'transparent' : 'rgba(var(--foreground), 0.15)'}` }}>
                 <button
+                    type="button"
+                    aria-label="Switch to 3D Garage view"
+                    aria-pressed={view === '3d'}
                     onClick={() => setView('3d')}
                     className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '3d'
                         ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/30'
@@ -355,6 +368,9 @@ export default function TeamSection() {
                     3D GARAGE
                 </button>
                 <button
+                    type="button"
+                    aria-label="Switch to 2D Cards view"
+                    aria-pressed={view === '2d'}
                     onClick={() => setView('2d')}
                     className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '2d'
                         ? 'bg-gradient-to-r from-green-500 to-cyan-500 text-white shadow-lg shadow-green-500/30'
