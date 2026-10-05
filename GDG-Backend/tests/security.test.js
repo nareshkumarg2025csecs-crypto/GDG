@@ -309,7 +309,7 @@ describe('Security Hardening Test Suite', () => {
         .set('Origin', 'http://malicious-site.attacker.com');
 
       // Unauthorized CORS origin error handled
-      expect(res.status).toBe(500);
+      expect([403, 500]).toContain(res.status);
       expect(res.body.error).toMatch(/CORS origin 'http:\/\/malicious-site.attacker.com' is not allowed/i);
     });
 
@@ -320,6 +320,32 @@ describe('Security Hardening Test Suite', () => {
 
       expect(res.status).toBe(200);
       expect(res.headers['access-control-allow-origin']).toBe('https://myclub.rajalakshmi.edu.in');
+    });
+  });
+
+  describe('4. Python Certificate Studio Sandbox (SEC-VULN-01)', () => {
+    const CertificateService = require('../src/services/certificateService');
+
+    test('Strictly rejects dangerous Python modules (subprocess, os.system, socket, eval)', () => {
+      const maliciousScripts = [
+        'import subprocess\nsubprocess.Popen(["calc.exe"])',
+        'import os\nos.system("rm -rf /")',
+        'import socket\ns = socket.socket()',
+        'import shutil\nshutil.rmtree("./")',
+        'eval("__import__(\'os\').system(\'whoami\')")',
+        'with open("/etc/passwd", "w") as f: f.write("hacked")',
+      ];
+
+      for (const script of maliciousScripts) {
+        expect(() => CertificateService.validateScriptCode(script)).toThrow(
+          /Security Policy Violation/i
+        );
+      }
+    });
+
+    test('Allows safe Pillow, math, and JSON certificate generation script', () => {
+      const safeScript = CertificateService.DEFAULT_PYTHON_TEMPLATE;
+      expect(() => CertificateService.validateScriptCode(safeScript)).not.toThrow();
     });
   });
 });

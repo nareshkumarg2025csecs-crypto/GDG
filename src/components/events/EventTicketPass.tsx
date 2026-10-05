@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import QRCode from 'qrcode';
+import { generateBrandedQrDataUrl } from '@/lib/qrCodeUtil';
 import { motion } from 'framer-motion';
 import {
   QrCode,
@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   User,
+  Users,
   Mail,
   ShieldCheck,
   Tag,
@@ -157,16 +158,13 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
     'Google Developer Groups',
   ].join('\n');
 
-  // Generate QR Code data URL
+  // Generate Branded QR Code data URL with GDG logo icon
   useEffect(() => {
-    QRCode.toDataURL(qrTextContent, {
+    generateBrandedQrDataUrl(qrTextContent, {
       width: 512,
       margin: 2,
-      color: {
-        dark: '#111827',
-        light: '#FFFFFF',
-      },
-      errorCorrectionLevel: 'M',
+      darkColor: '#111827',
+      lightColor: '#FFFFFF',
     })
       .then((url) => setQrDataUrl(url))
       .catch((err) => console.error('Error generating ticket QR:', err));
@@ -440,6 +438,25 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               <CheckCircle2 className="w-3 h-3" />
               Confirmed
             </span>
+            {event.details?.participation_type && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase ${
+                event.details.participation_type.toLowerCase() === 'team'
+                  ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                  : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+              }`}>
+                {event.details.participation_type.toLowerCase() === 'team' ? (
+                  <>
+                    <Users className="w-3 h-3" />
+                    <span>Team</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3 h-3" />
+                    <span>Individual</span>
+                  </>
+                )}
+              </span>
+            )}
           </div>
           <h2 className="text-base sm:text-xl font-bold font-sans tracking-tight text-foreground line-clamp-1">
             {event.title}

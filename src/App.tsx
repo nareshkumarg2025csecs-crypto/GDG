@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { EasterEggProvider } from "@/components/easter-eggs/EasterEggProvider";
 import CustomCursor from "@/components/CustomCursor";
@@ -20,11 +21,37 @@ import AdminGatewayPage from "./pages/admin/AdminGatewayPage";
 import { AdminCertificatesPage } from "./pages/admin/AdminCertificatesPage";
 import StudentDashboardPage from "./pages/dashboard/StudentDashboardPage";
 import PersonalInfoPage from "./pages/auth/PersonalInfoPage";
+import AdminOnboardPage from "./pages/admin/AdminOnboardPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
 import { useLenis } from "@/lib/scroll";
+
+const OAuthRedirectInterceptor = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // If Supabase redirected to the site root with auth tokens or errors in the URL hash
+    if (
+      window.location.hash &&
+      (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))
+    ) {
+      if (location.pathname !== '/auth/callback') {
+        const storedRole = sessionStorage.getItem('oauth_role');
+        const search = window.location.search || '';
+        let roleParam = '';
+        if (!search.includes('role=') && storedRole === 'admin') {
+          roleParam = search ? '&role=admin' : '?role=admin';
+        }
+        navigate(`/auth/callback${search}${roleParam}${window.location.hash}`, { replace: true });
+      }
+    }
+  }, [location, navigate]);
+
+  return null;
+};
 
 const queryClient = new QueryClient();
 
@@ -44,6 +71,7 @@ const App = () => {
           <div data-easter-content className="contents">
             <BrowserRouter>
               <ScrollToTop />
+              <OAuthRedirectInterceptor />
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/team" element={<TeamPage />} />
@@ -88,6 +116,14 @@ const App = () => {
                 
                 {/* Admin-only Routes */}
                 <Route path="/admin" element={<Navigate to="/" replace />} />
+                <Route
+                  path="/admin/onboard"
+                  element={
+                    <ProtectedRoute requiredRole="admin">
+                      <AdminOnboardPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/admin/events"
                   element={

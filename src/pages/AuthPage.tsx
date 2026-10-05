@@ -149,13 +149,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
     }
   };
 
-  // If already authenticated, redirect to home page or requested redirect URL
+  // If already authenticated, redirect to home page or admin portal
   useEffect(() => {
     if (isAuthenticated) {
-      const dest = searchParams.get('redirect') || '/';
+      const dest = searchParams.get('redirect') || (profile?.role === 'admin' ? '/admin/events' : '/');
       navigate(dest, { replace: true });
     }
-  }, [isAuthenticated, navigate, searchParams]);
+  }, [isAuthenticated, profile, navigate, searchParams]);
 
   // Auto-dismiss server error banner after 3 seconds
   useEffect(() => {
@@ -267,7 +267,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
   };
 
   // Submit Handler
-  const redirectUrl = searchParams.get('redirect') || '/';
+  const redirectUrl = searchParams.get('redirect') || (role === 'admin' ? '/admin/events' : '/');
 
   useEffect(() => {
     if (searchParams.get('redirect')) {
@@ -302,7 +302,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
         });
 
         localStorage.removeItem('auth_redirect_url');
-        navigate(redirectUrl);
+        navigate(redirectUrl, { replace: true });
       } else {
         const response = await signup(
           role === 'admin'
@@ -327,7 +327,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
               description: 'Welcome to GDG!',
             });
             localStorage.removeItem('auth_redirect_url');
-            navigate(redirectUrl);
+            navigate(redirectUrl, { replace: true });
           } else {
             toast({
               title: 'Account created successfully',
@@ -337,7 +337,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
             if (redirectUrl && redirectUrl !== '/' && redirectUrl !== '/auth') {
               localStorage.setItem('auth_redirect_url', redirectUrl);
             }
-            navigate('/onboarding');
+            navigate('/onboarding', { replace: true });
           }
         } else {
           setVerificationSentEmail(email.trim());

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X, Download, QrCode, Link as LinkIcon, Check } from 'lucide-react';
-import QRCode from 'qrcode';
+import { generateBrandedQrDataUrl } from '@/lib/qrCodeUtil';
 
 interface EventQrModalProps {
   isOpen: boolean;
@@ -24,14 +24,11 @@ export const EventQrModal: React.FC<EventQrModalProps> = ({
     if (!isOpen || !eventUrl) return;
     let cancelled = false;
 
-    QRCode.toDataURL(eventUrl, {
-      width: 400,
+    generateBrandedQrDataUrl(eventUrl, {
+      width: 420,
       margin: 2,
-      color: {
-        dark: '#1a1a2e',
-        light: '#ffffff',
-      },
-      errorCorrectionLevel: 'H',
+      darkColor: '#1a1a2e',
+      lightColor: '#ffffff',
     })
       .then((url) => {
         if (!cancelled) setQrDataUrl(url);

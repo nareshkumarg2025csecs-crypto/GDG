@@ -1135,17 +1135,6 @@ export const AdminCertificatesPage: React.FC = () => {
                   ))}
                 </div>
               </div>
-
-              {/* Quick Helper Tips */}
-              <div className="p-3.5 rounded-2xl border border-blue-500/20 bg-blue-500/5 text-blue-400 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-foreground">
-                  <Info className="w-4 h-4 text-blue-500" />
-                  <span>Large Scale Safety & Crash Guard</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  The batch generator uses a bounded worker pool (3 concurrent workers), throttled 250ms spacing, and automatic rate-limit retries. Even with thousands of attendees, memory and CPU remain strictly controlled without crashing the server.
-                </p>
-              </div>
             </div>
           </div>
         )}

@@ -2,11 +2,10 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_API_URL) {
     return (import.meta.env.VITE_API_URL as string).replace(/\/+$/, '');
   }
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const { protocol, hostname } = window.location;
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      return `${protocol}//${hostname}:5000`;
-    }
+  // In browser environments, Vite dev server proxies /api to port 5000 directly.
+  // Using relative URL eliminates cross-origin port issues, CORS preflights, and reduces egress.
+  if (typeof window !== 'undefined') {
+    return '';
   }
   return 'http://localhost:5000';
 };
@@ -27,17 +26,18 @@ export class ApiError extends Error {
 
 interface RequestOptions extends RequestInit {
   token?: string | null;
+  retries?: number;
 }
 
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { token, headers = {}, body, ...rest } = options;
+  const { token, headers = {}, body, retries = 1, ...rest } = options;
 
   const baseUrl = getApiBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  let url = `${baseUrl}${cleanEndpoint}`;
+  let url = baseUrl ? `${baseUrl}${cleanEndpoint}` : cleanEndpoint;
 
   const requestHeaders: Record<string, string> = {
     Accept: 'application/json',
@@ -54,28 +54,36 @@ export async function apiRequest<T = any>(
     requestHeaders['Authorization'] = `Bearer ${authToken}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...rest,
-      headers: requestHeaders,
-      body,
-    });
-  } catch (err: any) {
-    // If direct host connection fails (e.g. mobile LAN port blocked), fallback to Vite proxy via relative endpoint
-    if (url.startsWith('http') && typeof window !== 'undefined') {
-      try {
-        response = await fetch(cleanEndpoint, {
+  const executeFetch = async (): Promise<Response> => {
+    try {
+      return await fetch(url, {
+        ...rest,
+        headers: requestHeaders,
+        body,
+      });
+    } catch (err: any) {
+      // If direct host URL failed, try relative endpoint fallback
+      if (url.startsWith('http') && typeof window !== 'undefined') {
+        return await fetch(cleanEndpoint, {
           ...rest,
           headers: requestHeaders,
           body,
         });
-      } catch (fallbackErr: any) {
-        throw new ApiError(0, fallbackErr.message || 'Network error: Unable to connect to the server.');
       }
-    } else {
-      throw new ApiError(0, err.message || 'Network error: Unable to connect to the server.');
+      throw err;
     }
+  };
+
+  let response: Response;
+  try {
+    response = await executeFetch();
+  } catch (err: any) {
+    // If initial fetch failed and we have retries left (e.g. backend nodemon rebooting), retry after brief delay
+    if (retries > 0) {
+      await new Promise((r) => setTimeout(r, 600));
+      return apiRequest<T>(endpoint, { ...options, retries: retries - 1 });
+    }
+    throw new ApiError(0, err.message || 'Network error: Unable to connect to the server.');
   }
 
   let data: any = null;
@@ -92,6 +100,19 @@ export async function apiRequest<T = any>(
   }
 
   if (!response.ok) {
+    // If backend was rebooting and returned 502/503/504 or Vite proxy ECONNREFUSED 500, retry once
+    const isProxyOrGatewayError =
+      (response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504 ||
+        (response.status === 500 && (!data || !data.error || data.message === 'Internal Server Error'))) &&
+      retries > 0;
+
+    if (isProxyOrGatewayError) {
+      await new Promise((r) => setTimeout(r, 800));
+      return apiRequest<T>(endpoint, { ...options, retries: retries - 1 });
+    }
+
     // If token is expired or unauthorized, clear stale stored auth session
     if (response.status === 401 && !url.includes('/api/auth/student/login') && !url.includes('/api/auth/admin/login')) {
       try {

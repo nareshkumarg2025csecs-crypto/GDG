@@ -4,7 +4,7 @@ const { BoundedMap } = require('../utils/boundedCache');
 const PosterStorageService = require('../services/posterStorageService');
 
 // In-memory bounded cache for high-traffic event reads (capped to 200 items for Render 512MB RAM)
-const EVENT_CACHE_TTL = 60 * 1000; // 60 seconds (cuts Supabase egress)
+const EVENT_CACHE_TTL = 120 * 1000; // 120 seconds (cuts Supabase egress)
 let eventsListCache = { data: null, expiresAt: 0 };
 const singleEventCache = new BoundedMap(200); // id -> { data, expiresAt }
 
@@ -31,7 +31,8 @@ const createEvent = async (req, res) => {
       });
     }
 
-    let eventDetails = details && typeof details === 'object' ? details : {};
+    let eventDetails = details && typeof details === 'object' ? { ...details } : {};
+    delete eventDetails.certificate_config; // Ensure certificate Python code is never stored in event details
     // Automatically sanitize and upload any Base64 encoded poster bytes to storage bucket
     eventDetails = await PosterStorageService.sanitizeEventDetails(eventDetails);
 
@@ -46,7 +47,7 @@ const createEvent = async (req, res) => {
           updated_at: new Date().toISOString(),
         },
       ])
-      .select()
+      .select('id, title, details, created_by, created_at, updated_at')
       .single();
 
     if (error) {
@@ -123,7 +124,15 @@ const listEvents = async (req, res) => {
 
         const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+        // Strip any residual certificate_config from event details to minimize response payload
+        return (data || []).map((e) => {
+          if (e?.details?.certificate_config) {
+            const cleanDetails = { ...e.details };
+            delete cleanDetails.certificate_config;
+            return { ...e, details: cleanDetails };
+          }
+          return e;
+        });
       })();
 
       try {
@@ -205,10 +214,13 @@ const getEventById = async (req, res) => {
       const fetchPromise = (async () => {
         const { data, error } = await supabaseAdmin
           .from('events')
-          .select('*')
+          .select('id, title, details, created_by, created_at, updated_at')
           .eq('id', id)
           .single();
         if (error) throw error;
+        if (data?.details?.certificate_config) {
+          delete data.details.certificate_config;
+        }
         return data;
       })();
 
@@ -276,14 +288,16 @@ const updateEvent = async (req, res) => {
     }
 
     if (details && typeof details === 'object') {
-      updatePayload.details = await PosterStorageService.sanitizeEventDetails(details, id);
+      const cleanDetails = { ...details };
+      delete cleanDetails.certificate_config;
+      updatePayload.details = await PosterStorageService.sanitizeEventDetails(cleanDetails, id);
     }
 
     const { data: event, error } = await supabaseAdmin
       .from('events')
       .update(updatePayload)
       .eq('id', id)
-      .select()
+      .select('id, title, details, created_by, created_at, updated_at')
       .single();
 
     if (error || !event) {

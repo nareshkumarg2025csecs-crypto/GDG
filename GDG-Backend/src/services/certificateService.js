@@ -4,11 +4,16 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { supabaseAdmin } = require('../config/supabase');
 const GmailApiService = require('./gmailApiService');
+const { BoundedMap } = require('../utils/boundedCache');
 
 const ASSETS_DIR = path.resolve(__dirname, '../../assets/certificates');
 if (!fs.existsSync(ASSETS_DIR)) {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
 }
+
+// In-memory bounded cache for event certificate configs (TTL: 10 minutes)
+const EVENT_CONFIG_CACHE_TTL = 10 * 60 * 1000;
+const eventConfigCache = new BoundedMap(100);
 
 // In-memory job registry for tracking batch progress
 const activeJobs = new Map();
@@ -203,7 +208,114 @@ class CertificateService {
   }
 
   /**
-   * Saves a newly uploaded image asset (e.g. college logo or signature) to assets dir.
+   * Discovers and syncs all graphic assets from Supabase Storage ('club-assets/certificates/')
+   * to ensure assets uploaded on any instance or prior deployment remain available in ASSETS_DIR.
+   */
+  static async listAllAssets() {
+    try {
+      const { data: remoteAssets } = await supabaseAdmin.storage
+        .from('club-assets')
+        .list('certificates');
+
+      if (Array.isArray(remoteAssets)) {
+        for (const item of remoteAssets) {
+          if (item?.name && item.name !== '.emptyFolderPlaceholder') {
+            const localPath = path.join(ASSETS_DIR, item.name);
+            if (!fs.existsSync(localPath)) {
+              try {
+                const { data } = await supabaseAdmin.storage
+                  .from('club-assets')
+                  .download(`certificates/${item.name}`);
+                if (data) {
+                  const buf = Buffer.from(await data.arrayBuffer());
+                  fs.writeFileSync(localPath, buf);
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[CertificateService] listAllAssets remote sync notice:', err.message);
+    }
+
+    return this.listAssets();
+  }
+
+  /**
+   * Security Policy Enforcement (SEC-VULN-01):
+   * Validates Python script code to prevent Remote Code Execution (RCE) and dangerous OS system calls.
+   * Restricts scripts strictly to PIL/Pillow graphic design, typography, layout math, and JSON data.
+   */
+  static validateScriptCode(scriptCode) {
+    if (!scriptCode || typeof scriptCode !== 'string') {
+      throw new Error('Script code is required.');
+    }
+
+    const dangerousPatterns = [
+      /\bimport\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes)\b/i,
+      /\bfrom\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes)\b/i,
+      /\bos\.(system|popen|spawn|exec|remove|unlink|rmdir|mkdir|rename|replace|walk|environ|putenv)\b/i,
+      /\b(eval|exec|compile|__import__|globals|locals)\s*\(/i,
+      /\bopen\s*\([^)]*['"][wax+]/i,
+      /\bbuiltins\b/i,
+      /\bsys\.modules\b/i,
+    ];
+
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(scriptCode)) {
+        throw new Error(
+          'Security Policy Violation: Prohibited Python module or system call detected. Certificate scripts are strictly limited to graphic design (PIL/Pillow), typography, and layout formatting.'
+        );
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Scans script code for referenced assets via get_asset("...") or get_asset('...')
+   * and automatically downloads any missing files from Supabase Storage ('club-assets/certificates/').
+   * This guarantees that icons, logos, and backgrounds uploaded for an event remain available
+   * when any attendee downloads their certificate.
+   */
+  static async ensureScriptAssetsDownloaded(scriptCode) {
+    if (!scriptCode || typeof scriptCode !== 'string') return;
+
+    const assetRegex = /get_asset\(\s*["']([^"']+)["']\s*\)/g;
+    let match;
+    const filenames = new Set();
+    while ((match = assetRegex.exec(scriptCode)) !== null) {
+      if (match[1]) filenames.add(match[1].trim());
+    }
+
+    if (filenames.size === 0) return;
+
+    for (const filename of filenames) {
+      const safeName = path.basename(filename);
+      const localPath = path.join(ASSETS_DIR, safeName);
+
+      if (!fs.existsSync(localPath)) {
+        try {
+          const { data, error } = await supabaseAdmin.storage
+            .from('club-assets')
+            .download(`certificates/${safeName}`);
+
+          if (!error && data) {
+            const buffer = Buffer.from(await data.arrayBuffer());
+            fs.writeFileSync(localPath, buffer);
+            console.log(`[CertificateService] Auto-synced missing asset "${safeName}" from storage bucket.`);
+          }
+        } catch (downloadErr) {
+          console.warn(`[CertificateService] Could not auto-download asset "${safeName}":`, downloadErr.message);
+        }
+      }
+    }
+  }
+
+  /**
+   * Saves a newly uploaded image asset (e.g. college logo or signature) to assets dir
+   * and Supabase Storage bucket ('club-assets/certificates/').
+   * Image files are NEVER stored as base64 encoded strings in the database.
    */
   static async saveAsset(file) {
     if (!file || !file.buffer) {
@@ -212,10 +324,34 @@ class CertificateService {
     const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
     const destPath = path.join(ASSETS_DIR, safeName);
     fs.writeFileSync(destPath, file.buffer);
+
+    // Also persist to Supabase Storage bucket for multi-instance sync & CDN caching
+    let publicUrl = null;
+    try {
+      const storagePath = `certificates/${safeName}`;
+      const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
+        .from('club-assets')
+        .upload(storagePath, file.buffer, {
+          contentType: file.mimetype || 'image/png',
+          upsert: true,
+          cacheControl: '31536000', // 1-year public CDN caching
+        });
+
+      if (!uploadErr) {
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from('club-assets')
+          .getPublicUrl(storagePath);
+        publicUrl = publicUrlData?.publicUrl || null;
+      }
+    } catch (bucketErr) {
+      console.warn('[CertificateService] Storage bucket asset sync notice:', bucketErr.message);
+    }
+
     return {
       filename: safeName,
       size: file.size,
       path: destPath,
+      publicUrl,
     };
   }
 
@@ -302,6 +438,11 @@ class CertificateService {
   }
 
   static async getEventConfig(eventId) {
+    const cached = eventConfigCache.get(eventId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
     // 1. Check dedicated table
     let certRow = null;
     try {
@@ -352,7 +493,7 @@ class CertificateService {
 
     const hasCustomCode = Boolean(certRow?.script_code || fallbackConfig.scriptCode);
 
-    return {
+    const configResult = {
       eventId: event.id,
       eventTitle: event.title,
       scriptCode,
@@ -366,6 +507,14 @@ class CertificateService {
       updatedAt: certRow?.updated_at || fallbackConfig.updatedAt || null,
       availableFields: await this.getAvailableFieldsForEvent(eventId),
     };
+
+    // Store in cache for 10 minutes to eliminate repetitive PostgREST calls
+    eventConfigCache.set(eventId, {
+      data: configResult,
+      expiresAt: Date.now() + EVENT_CONFIG_CACHE_TTL,
+    });
+
+    return configResult;
   }
 
   /**
@@ -472,15 +621,53 @@ class CertificateService {
 
   /**
    * Saves updated certificate configuration.
-   * Dual-persists into both `event_certificates` table and `events.details.certificate_config`
-   * so configuration is never lost if event details are modified elsewhere.
+   * Stores strictly in dedicated `event_certificates` table.
+   * Auto-extracts any Base64 encoded images to actual image files, ensuring NO encoded
+   * strings are ever saved in the database.
+   * Strips any old certificate_config from `events.details` to prevent egress bloat.
    */
   static async saveEventConfig(eventId, { scriptCode, outputFormat, emailSubject, emailBody }) {
     const nowIso = new Date().toISOString();
-    const effectiveCode = (scriptCode && scriptCode.trim()) ? scriptCode : DEFAULT_PYTHON_TEMPLATE;
+    let effectiveCode = (scriptCode && scriptCode.trim()) ? scriptCode : DEFAULT_PYTHON_TEMPLATE;
     const effectiveFormat = outputFormat === 'png' ? 'png' : 'pdf';
 
-    // 1. Fetch event for title & details context
+    // Security Check: strictly reject prohibited modules & OS system calls
+    this.validateScriptCode(effectiveCode);
+
+    // Auto-detect and extract any embedded base64 image data URIs to actual image files
+    // so no large base64 encoded strings are EVER stored in the database
+    const base64Regex = /data:image\/([a-zA-Z0-9+.-]+);base64,([a-zA-Z0-9+/=]+)/g;
+    let match;
+    let imgIndex = 1;
+    while ((match = base64Regex.exec(effectiveCode)) !== null) {
+      const fullMatch = match[0];
+      const mimeSub = match[1] === 'jpeg' ? 'jpg' : match[1];
+      const base64Payload = match[2];
+      try {
+        const buf = Buffer.from(base64Payload, 'base64');
+        const extractedName = `cert_asset_${eventId.substring(0, 8)}_${Date.now()}_${imgIndex++}.${mimeSub}`;
+        const destPath = path.join(ASSETS_DIR, extractedName);
+        fs.writeFileSync(destPath, buf);
+
+        // Upload to storage bucket as well
+        try {
+          await supabaseAdmin.storage
+            .from('club-assets')
+            .upload(`certificates/${extractedName}`, buf, {
+              contentType: `image/${mimeSub}`,
+              upsert: true,
+              cacheControl: '31536000',
+            });
+        } catch (_) {}
+
+        // Replace the bulky base64 data URI in scriptCode with a clean get_asset(...) call
+        effectiveCode = effectiveCode.replace(fullMatch, `get_asset("${extractedName}")`);
+      } catch (extractErr) {
+        console.warn('[CertificateService] Base64 image extraction warning:', extractErr.message);
+      }
+    }
+
+    // 1. Fetch event for title context
     const { data: event, error: fetchErr } = await supabaseAdmin
       .from('events')
       .select('title, details')
@@ -514,36 +701,18 @@ class CertificateService {
       console.warn('[CertificateService] event_certificates upsert warning:', tblErr.message);
     }
 
-    // 3. Also persist into events.details for backwards compatibility
-    if (!fetchErr && event) {
-      let currentDetails = event.details;
-      if (typeof currentDetails === 'string') {
-        try {
-          currentDetails = JSON.parse(currentDetails);
-        } catch {
-          currentDetails = {};
-        }
-      }
-      if (typeof currentDetails !== 'object' || currentDetails === null) {
-        currentDetails = {};
-      }
-
-      const updatedDetails = {
-        ...currentDetails,
-        certificate_config: {
-          scriptCode: effectiveCode,
-          outputFormat: effectiveFormat,
-          emailSubject: effectiveSubject,
-          emailBody: effectiveBody,
-          updatedAt: nowIso,
-        },
-      };
-
+    // 3. Clean up events.details: remove certificate_config if it was previously present to cut database egress
+    if (!fetchErr && event && event.details && event.details.certificate_config) {
+      const cleanedDetails = { ...event.details };
+      delete cleanedDetails.certificate_config;
       await supabaseAdmin
         .from('events')
-        .update({ details: updatedDetails })
+        .update({ details: cleanedDetails })
         .eq('id', eventId);
     }
+
+    // Invalidate cached configuration so future reads get fresh values
+    eventConfigCache.delete(eventId);
 
     return {
       success: true,
@@ -557,6 +726,10 @@ class CertificateService {
    * Cleans up temporary scripts and data files immediately to prevent memory/disk bloat.
    */
   static async runPythonGenerator({ scriptCode, data, outputFormat = 'pdf' }) {
+    const effectiveCode = scriptCode || DEFAULT_PYTHON_TEMPLATE;
+    this.validateScriptCode(effectiveCode);
+    await this.ensureScriptAssetsDownloaded(effectiveCode);
+
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gdg_cert_'));
     const scriptPath = path.join(tempDir, 'generator.py');
     const dataPath = path.join(tempDir, 'data.json');
@@ -564,7 +737,7 @@ class CertificateService {
     const outFilePath = path.join(tempDir, outFileName);
 
     try {
-      fs.writeFileSync(scriptPath, scriptCode || DEFAULT_PYTHON_TEMPLATE, 'utf8');
+      fs.writeFileSync(scriptPath, effectiveCode, 'utf8');
       fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf8');
 
       const pythonBin = this.getPythonBinary();

@@ -118,11 +118,26 @@ class GoogleSheetsService {
           sheetId = meta.sheets[0].properties.sheetId ?? 0;
         }
       } else if (metaRes.status === 401 || metaRes.status === 403) {
+        const errJson = await metaRes.json().catch(() => ({}));
+        const reason = errJson?.error?.details?.[0]?.reason;
+        const errMsg = errJson?.error?.message || '';
+
+        if (reason === 'SERVICE_DISABLED' || errMsg.includes('has not been used in project') || errMsg.includes('disabled')) {
+          const enableUrl = errJson?.error?.details?.[0]?.metadata?.activationUrl || 'https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=742076013798';
+          console.warn(`[Google Sheets API] SERVICE_DISABLED: Please enable Google Sheets API in Google Cloud Console: ${enableUrl}`);
+          return {
+            success: false,
+            action_required: 'ENABLE_GOOGLE_SHEETS_API',
+            activation_url: enableUrl,
+            message: `Google Sheets API is disabled in your Google Cloud Console project. Please enable it here: ${enableUrl}`,
+          };
+        }
+
         return {
           success: false,
           action_required: 'CONNECT_GOOGLE_SHEETS',
           message:
-            'Google Sheets authorization expired or insufficient permissions. Please reconnect your Google account.',
+            errMsg || 'Google Sheets authorization expired or insufficient permissions. Please reconnect your Google account.',
         };
       }
     } catch (metaErr) {
@@ -202,6 +217,15 @@ class GoogleSheetsService {
       const errText = await writeRes.text();
       console.error('Google Sheets write failed:', writeRes.status, errText);
       if (writeRes.status === 401 || writeRes.status === 403) {
+        if (errText.includes('SERVICE_DISABLED') || errText.includes('has not been used in project') || errText.includes('disabled')) {
+          const enableUrl = 'https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=742076013798';
+          return {
+            success: false,
+            action_required: 'ENABLE_GOOGLE_SHEETS_API',
+            activation_url: enableUrl,
+            message: `Google Sheets API is disabled in your Google Cloud Console project. Please enable it here: ${enableUrl}`,
+          };
+        }
         return {
           success: false,
           action_required: 'CONNECT_GOOGLE_SHEETS',

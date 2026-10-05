@@ -7,6 +7,10 @@ const CERT_DOWNLOAD_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const certificateDownloadCache = new BoundedMap(100);
 const certificateInflightDownloads = new BoundedMap(50);
 
+// In-memory cache for attended participants listing (TTL: 30 seconds)
+const ATTENDED_CACHE_TTL = 30 * 1000;
+const attendedParticipantsCache = new BoundedMap(50);
+
 /**
  * GET /api/certificates/default-template
  * Admin: Get the pristine default Python certificate template
@@ -96,7 +100,7 @@ const previewCertificate = async (req, res) => {
  */
 const listAssets = async (req, res) => {
   try {
-    const assets = CertificateService.listAssets();
+    const assets = await CertificateService.listAllAssets();
     return res.status(200).json({ assets });
   } catch (err) {
     console.error('listAssets error:', err);
@@ -133,6 +137,11 @@ const getAttendedParticipants = async (req, res) => {
   try {
     const { eventId } = req.params;
 
+    const cached = attendedParticipantsCache.get(eventId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return res.status(200).json(cached.data);
+    }
+
     const { data: form } = await supabaseAdmin
       .from('forms')
       .select('id')
@@ -167,11 +176,18 @@ const getAttendedParticipants = async (req, res) => {
       };
     });
 
-    return res.status(200).json({
+    const responsePayload = {
       participants,
       totalAttended: participants.length,
       totalCertificatesSent: participants.filter((p) => p.certificateSent).length,
+    };
+
+    attendedParticipantsCache.set(eventId, {
+      data: responsePayload,
+      expiresAt: Date.now() + ATTENDED_CACHE_TTL,
     });
+
+    return res.status(200).json(responsePayload);
   } catch (err) {
     console.error('getAttendedParticipants error:', err);
     return res.status(500).json({ error: 'Failed to retrieve attended participants.' });
@@ -188,6 +204,8 @@ const dispatchCertificates = async (req, res) => {
     if (!eventId) {
       return res.status(400).json({ error: 'Event ID is required.' });
     }
+
+    attendedParticipantsCache.delete(eventId);
 
     const { jobId, total } = await CertificateService.startBatchDispatch({
       eventId,
@@ -278,10 +296,21 @@ const downloadCertificateForSubmission = async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // 1. Fetch submission with form and event details
+    // Fast-path: Check in-memory bounded cache first to instantly serve repeated or concurrent downloads
+    const cachedCert = certificateDownloadCache.get(submissionId);
+    if (cachedCert && cachedCert.expiresAt > Date.now()) {
+      if (cachedCert.userId === userId || userRole === 'admin') {
+        res.setHeader('Content-Type', cachedCert.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${cachedCert.filename}"`);
+        res.setHeader('Content-Length', cachedCert.buffer.length);
+        return res.status(200).send(cachedCert.buffer);
+      }
+    }
+
+    // 1. Fetch submission with form and event details (lean selection without heavy event details jsonb)
     const { data: submission, error: subError } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title, details))')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, event_id, events(id, title))')
       .eq('id', submissionId)
       .single();
 
@@ -306,15 +335,21 @@ const downloadCertificateForSubmission = async (req, res) => {
       return res.status(400).json({ error: 'Associated event could not be identified.' });
     }
 
-    // 4. Fetch certificate configuration for the event
+    // 4. Fetch certificate configuration for the event (cached in memory)
     const config = await CertificateService.getEventConfig(eventId);
 
-    // 5. Fetch attendee profile for name/email fallback
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('full_name, email')
-      .eq('id', submission.user_id)
-      .single();
+    // 5. Resolve attendee profile for name/email fallback (reuse in-memory req.user.profile if downloading own cert)
+    let profile = null;
+    if (submission.user_id === userId && req.user.profile) {
+      profile = req.user.profile;
+    } else {
+      const { data } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', submission.user_id)
+        .single();
+      profile = data;
+    }
 
     const toEmail = CertificateService.getSubmissionEmail(submission.answers, profile?.email);
     const attendeeName = CertificateService.getSubmissionName(submission.answers, profile?.full_name);
@@ -333,15 +368,6 @@ const downloadCertificateForSubmission = async (req, res) => {
       answers: submission.answers || {},
       ...(submission.answers || {}),
     };
-
-    // Check in-memory bounded cache first to instantly serve repeated or concurrent downloads
-    const cachedCert = certificateDownloadCache.get(submissionId);
-    if (cachedCert && cachedCert.expiresAt > Date.now()) {
-      res.setHeader('Content-Type', cachedCert.contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${cachedCert.filename}"`);
-      res.setHeader('Content-Length', cachedCert.buffer.length);
-      return res.status(200).send(cachedCert.buffer);
-    }
 
     // 6. Generate certificate via single-flight coalescing to avoid duplicate Python spawns
     let certResult;
@@ -369,11 +395,12 @@ const downloadCertificateForSubmission = async (req, res) => {
     const cleanAttendeeName = attendeeName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const downloadFilename = `Certificate_${cleanEventTitle}_${cleanAttendeeName}.pdf`;
 
-    // Cache the generated buffer for 5 minutes
+    // Cache the generated buffer for 5 minutes with owner verification
     certificateDownloadCache.set(submissionId, {
       buffer: certResult.buffer,
       filename: downloadFilename,
       contentType,
+      userId: submission.user_id,
       expiresAt: Date.now() + CERT_DOWNLOAD_CACHE_TTL,
     });
 

@@ -37,7 +37,7 @@ app.use(
 
       // In development or local testing, allow requests from LAN IPs (e.g. mobile on 192.168.x.x or 10.x.x.x)
       const isLocalOrLAN = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
-      if (isLocalOrLAN) {
+      if (process.env.NODE_ENV !== 'production' && isLocalOrLAN) {
         return callback(null, true);
       }
 

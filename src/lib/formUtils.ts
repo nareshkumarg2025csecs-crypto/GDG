@@ -24,6 +24,8 @@ export interface EventDetails {
   status?: 'draft' | 'published';
   published?: boolean;
   category?: string;
+  participation_type?: 'individual' | 'team' | null;
+  enable_participation_type?: boolean;
   capacity?: number | string;
   coverImage?: string;
   cover_image?: string;
@@ -47,16 +49,20 @@ export interface FormField {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'checkbox' | 'file';
+  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'hackathon_track' | 'checkbox' | 'file';
   required?: boolean;
   placeholder?: string;
   options?: string[];
+  allow_other?: boolean;
   minLength?: number;
   maxLength?: number;
   min?: number;
   max?: number;
   max_file_size_mb?: number;
   allowed_file_types?: string;
+  enable_option_limits?: boolean;
+  option_limits?: Record<string, number | null>;
+  option_stats?: Record<string, { count: number; limit: number | null; remaining: number | null; is_full: boolean }>;
 }
 
 export const DEFAULT_FORM_FIELDS: FormField[] = [

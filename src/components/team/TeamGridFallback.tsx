@@ -49,9 +49,25 @@ export default function TeamGridFallback({ className }: TeamGridFallbackProps) {
                             role="listitem"
                             aria-label={`${member.name}, ${member.position}`}
                         >
+                            {member.image ? (
+                                <img
+                                    src={member.image}
+                                    alt={member.name}
+                                    className="w-16 h-16 rounded-full object-cover object-top mb-3 transition-transform group-hover:scale-110"
+                                    style={{
+                                        border: `2px solid ${color}`,
+                                    }}
+                                    onError={(e) => {
+                                        (e.currentTarget as HTMLElement).style.display = 'none';
+                                        const sibling = e.currentTarget.nextElementSibling as HTMLElement;
+                                        if (sibling) sibling.style.display = 'flex';
+                                    }}
+                                />
+                            ) : null}
                             <div
                                 className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3 transition-transform group-hover:scale-110"
                                 style={{
+                                    display: member.image ? 'none' : 'flex',
                                     backgroundColor: `${color}20`,
                                     border: `2px solid ${color}`,
                                     color: color,

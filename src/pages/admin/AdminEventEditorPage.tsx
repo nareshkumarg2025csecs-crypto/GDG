@@ -33,6 +33,7 @@ import {
   Send,
   Copy,
   QrCode,
+  User,
   Users,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
@@ -41,6 +42,7 @@ import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { MarkdownEditorField } from '@/components/admin/MarkdownEditorField';
 import {
   type ClubEvent,
   type EventForm,
@@ -98,16 +100,35 @@ const GOOGLE_THEME_COLORS = [
   { name: 'Purple Neon', hex: '#A142F4' },
 ];
 
+const HACKATHON_TRACK_OPTIONS = [
+  'Artificial Intelligence & Machine Learning',
+  'Web3, Blockchain & FinTech',
+  'Cloud Architecture & DevOps',
+  'Cybersecurity & Ethical Hacking',
+  'Open Innovation & Social Good',
+];
+
 /**
  * Interactive Dropdown Options Editor
- * Allows typing commas naturally without character loss, plus pill tag removal.
+ * Allows typing commas naturally without character loss, plus pill tag removal,
+ * and optional per-option seat / slot capacity limits (e.g. hackathons).
  */
 function SelectOptionsEditor({
   options = [],
   onChange,
+  enableLimits = false,
+  onToggleLimits,
+  optionLimits = {},
+  onChangeLimits,
+  isHackathon = false,
 }: {
   options: string[];
   onChange: (opts: string[]) => void;
+  enableLimits?: boolean;
+  onToggleLimits?: (enabled: boolean) => void;
+  optionLimits?: Record<string, number | null>;
+  onChangeLimits?: (limits: Record<string, number | null>) => void;
+  isHackathon?: boolean;
 }) {
   const [textValue, setTextValue] = useState((options || []).join(', '));
 
@@ -125,76 +146,220 @@ function SelectOptionsEditor({
   };
 
   const handleRemoveOption = (index: number) => {
+    const removedOpt = options[index];
     const next = options.filter((_, i) => i !== index);
     onChange(next);
+    if (optionLimits && removedOpt in optionLimits) {
+      const nextLimits = { ...optionLimits };
+      delete nextLimits[removedOpt];
+      onChangeLimits?.(nextLimits);
+    }
+  };
+
+  const handleApplyBatchLimit = (limitNum: number | null) => {
+    const nextLimits: Record<string, number | null> = {};
+    options.forEach((opt) => {
+      nextLimits[opt] = limitNum;
+    });
+    onChangeLimits?.(nextLimits);
   };
 
   return (
-    <div className="space-y-2">
-      <label className="block text-[11px] font-semibold text-muted-foreground">
-        Dropdown Options (comma-separated or use pills below)
-      </label>
+    <div className="space-y-3 p-3 rounded-xl bg-muted/20 border border-border/60">
+      <div>
+        <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+          Dropdown Options (comma-separated or use pills below)
+        </label>
 
-      {/* Option Tags Preview */}
-      {options.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pb-0.5">
-          {options.map((opt, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20"
-            >
-              <span>{opt}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveOption(i)}
-                className="hover:text-destructive text-google-blue/70 transition-colors font-bold text-xs"
-                title="Remove option"
+        {/* Option Tags Preview */}
+        {options.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-2">
+            {options.map((opt, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20"
               >
-                &times;
-              </button>
-            </span>
-          ))}
+                <span>{opt}</span>
+                {enableLimits && optionLimits?.[opt] ? (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-google-blue text-white font-mono">
+                    {optionLimits[opt]} slots
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveOption(i)}
+                  className="hover:text-destructive text-google-blue/70 transition-colors font-bold text-xs"
+                  title="Remove option"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <input
+          type="text"
+          placeholder="Option A, Option B, Option C"
+          value={textValue}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onBlur={() => {
+            const cleaned = textValue
+              .split(',')
+              .map((o) => o.trim())
+              .filter(Boolean);
+            onChange(cleaned);
+            setTextValue(cleaned.join(', '));
+          }}
+          className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
+        />
+
+        {/* Presets */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2">
+          <span className="text-[10px] text-muted-foreground font-mono">Presets:</span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...HACKATHON_TRACK_OPTIONS]);
+              setTextValue(HACKATHON_TRACK_OPTIONS.join(', '));
+              onToggleLimits?.(true);
+              const hackLimits: Record<string, number> = {};
+              HACKATHON_TRACK_OPTIONS.forEach((t) => {
+                hackLimits[t] = 30;
+              });
+              onChangeLimits?.(hackLimits);
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue font-semibold transition-colors flex items-center gap-1"
+          >
+            <Sparkles className="w-3 h-3" />
+            Hackathon Tracks (5 Tracks @ 30 slots)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...DEPARTMENT_OPTIONS]);
+              setTextValue(DEPARTMENT_OPTIONS.join(', '));
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Standard Departments ({DEPARTMENT_OPTIONS.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...YEAR_OF_STUDY_OPTIONS]);
+              setTextValue(YEAR_OF_STUDY_OPTIONS.join(', '));
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Study Years (1st - 4th)
+          </button>
         </div>
-      )}
+      </div>
 
-      <input
-        type="text"
-        placeholder="Option A, Option B, Option C"
-        value={textValue}
-        onChange={(e) => handleTextChange(e.target.value)}
-        onBlur={() => {
-          const cleaned = textValue
-            .split(',')
-            .map((o) => o.trim())
-            .filter(Boolean);
-          onChange(cleaned);
-          setTextValue(cleaned.join(', '));
-        }}
-        className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
-      />
+      {/* Option Limits Toggle & Customization Panel */}
+      <div className="pt-2.5 border-t border-border/50">
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(enableLimits)}
+              onChange={(e) => onToggleLimits?.(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-input text-google-blue focus:ring-google-blue"
+            />
+            <div>
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <span>Restrict Slots / Seats per Option</span>
+                <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                  enableLimits
+                    ? 'bg-google-green/10 text-google-green border-google-green/20'
+                    : 'bg-muted text-muted-foreground border-border'
+                }`}>
+                  {enableLimits ? 'Restrictions Enabled' : 'Fully Open (No Limits)'}
+                </span>
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Set individual capacity for hackathon tracks or workshop seats. When full, students cannot select it.
+              </p>
+            </div>
+          </label>
+        </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <span className="text-[10px] text-muted-foreground font-mono">Presets:</span>
-        <button
-          type="button"
-          onClick={() => {
-            onChange([...DEPARTMENT_OPTIONS]);
-            setTextValue(DEPARTMENT_OPTIONS.join(', '));
-          }}
-          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Standard Departments ({DEPARTMENT_OPTIONS.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onChange([...YEAR_OF_STUDY_OPTIONS]);
-            setTextValue(YEAR_OF_STUDY_OPTIONS.join(', '));
-          }}
-          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Study Years (1st - 4th)
-        </button>
+        {enableLimits && (
+          <div className="mt-3 p-3 rounded-xl bg-card border border-border/80 space-y-3 animate-in fade-in">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground pb-1 border-b border-border/40">
+              <span>Option / Track Name</span>
+              <span>Capacity (Max Seats)</span>
+            </div>
+
+            {options.length === 0 ? (
+              <div className="text-xs text-muted-foreground italic py-2 text-center">
+                Add options above to define slot restrictions.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {options.map((opt) => {
+                  const currentLimit = optionLimits?.[opt];
+                  const hasLimit = currentLimit !== null && currentLimit !== undefined && currentLimit > 0;
+                  return (
+                    <div
+                      key={opt}
+                      className="flex items-center justify-between gap-3 p-2 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors"
+                    >
+                      <span className="text-xs font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={opt}>
+                        {opt}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Unlimited"
+                          value={hasLimit ? currentLimit : ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Math.max(1, parseInt(e.target.value, 10) || 0);
+                            onChangeLimits?.({
+                              ...(optionLimits || {}),
+                              [opt]: val,
+                            });
+                          }}
+                          className="w-24 px-2.5 py-1 text-xs rounded-md border border-input bg-background text-foreground text-right focus:outline-none focus:ring-1 focus:ring-google-blue"
+                        />
+                        <span className="text-[10px] text-muted-foreground font-mono w-12 text-right">
+                          {hasLimit ? 'seats' : 'open'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {options.length > 0 && (
+              <div className="pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] text-muted-foreground font-mono">Quick Set All:</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[20, 30, 50, 100].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleApplyBatchLimit(num)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-border bg-background hover:bg-muted text-foreground transition-colors font-medium"
+                    >
+                      All {num}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleApplyBatchLimit(null)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Clear (All Open)
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -208,6 +373,8 @@ export const AdminEventEditorPage: React.FC = () => {
   // Core Event Details State
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Workshop');
+  const [enableParticipationType, setEnableParticipationType] = useState<boolean>(false);
+  const [participationType, setParticipationType] = useState<'individual' | 'team'>('individual');
   const [location, setLocation] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -239,6 +406,23 @@ export const AdminEventEditorPage: React.FC = () => {
   const [showSubmissionCount, setShowSubmissionCount] = useState<boolean>(true); // Whether public users see the live count
   const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
+  // Derived: sum of all per-track option_limits from fields that have enable_option_limits enabled.
+  // When this is > 0, the overall submission limit is auto-managed and the manual input is locked.
+  const trackCapacityTotal = React.useMemo(() => {
+    let total = 0;
+    for (const f of formFields) {
+      if (f.enable_option_limits && f.option_limits && typeof f.option_limits === 'object') {
+        for (const v of Object.values(f.option_limits)) {
+          if (v !== null && v !== undefined && Number(v) > 0) total += Number(v);
+        }
+      }
+    }
+    return total;
+  }, [formFields]);
+
+  // Effective limit: prefer track-computed total; fall back to manual input
+  const effectiveSubmissionLimit = trackCapacityTotal > 0 ? trackCapacityTotal : (submissionLimit === '' ? null : Number(submissionLimit));
+
   // Email Notification & Draft Configuration State
   const [emailConfig, setEmailConfig] = useState<EmailDraftConfig>({
     mode: 'default',
@@ -254,6 +438,27 @@ export const AdminEventEditorPage: React.FC = () => {
     mode: 'default',
     content: DEFAULT_QR_PAYLOAD_PRESET,
   });
+
+  // Google Sheets Linking State & Manual Sync
+  const [googleLinkStatus, setGoogleLinkStatus] = useState<{ connected: boolean; has_refresh_token?: boolean } | null>(null);
+  const [isSyncingSheetNow, setIsSyncingSheetNow] = useState(false);
+
+  useEffect(() => {
+    eventService.getGoogleLinkStatus().then((res) => {
+      setGoogleLinkStatus(res);
+    }).catch(() => {});
+
+    // Check if returned from Google OAuth authorization
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_connected') === 'true') {
+      toast({
+        title: 'Google Account Authorized! 🎉',
+        description: 'Your account has been connected with Google Sheets permissions.',
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+      eventService.getGoogleLinkStatus().then(setGoogleLinkStatus).catch(() => {});
+    }
+  }, []);
 
   // Helper to generate realistic mock preview data for any question field
   const getDemoFieldValue = (field: FormField): string => {
@@ -588,6 +793,9 @@ export const AdminEventEditorPage: React.FC = () => {
 
         setTitle(event.title || '');
         setCategory(details.category || 'Workshop');
+        const isPartTypeEnabled = details.enable_participation_type ?? Boolean(details.participation_type);
+        setEnableParticipationType(Boolean(isPartTypeEnabled));
+        setParticipationType(details.participation_type === 'team' ? 'team' : 'individual');
         setLocation(details.location || details.venue || '');
         setCapacity(details.capacity ? String(details.capacity) : '');
         setBannerUrl(details.banner_url || details.coverImage || details.cover_image || '');
@@ -931,6 +1139,8 @@ export const AdminEventEditorPage: React.FC = () => {
         description: primaryDescription.trim(),
         custom_sections: customSections,
         category: category.trim(),
+        participation_type: enableParticipationType ? participationType : null,
+        enable_participation_type: enableParticipationType,
         location: location.trim(),
         venue: location.trim(),
         banner_url: bannerUrl.trim() || undefined,
@@ -963,7 +1173,10 @@ export const AdminEventEditorPage: React.FC = () => {
 
       // Handle attached form
       if (hasForm && savedEventId) {
-        const parsedSubLimit = submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit);
+        // Use track-computed total if tracks define limits; otherwise use manual input
+        const parsedSubLimit = trackCapacityTotal > 0
+          ? trackCapacityTotal
+          : (submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit));
         const parsedOpensAt = opensAt ? new Date(opensAt).toISOString() : null;
         const parsedExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
 
@@ -1218,6 +1431,86 @@ export const AdminEventEditorPage: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Participation Format (Individual / Team) with Admin Enable/Disable Toggle */}
+          <div className="p-4 rounded-2xl border border-input bg-card/60 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-foreground">
+                    Participation Format (Individual / Team)
+                  </label>
+                  {enableParticipationType && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                      participationType === 'team'
+                        ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                        : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                    }`}>
+                      {participationType === 'team' ? 'Team Mode' : 'Individual Mode'}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Enable this option to display whether attendees join as individuals or as teams across all event cards and passes.
+                </p>
+              </div>
+
+              {/* Enable / Disable Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enableParticipationType}
+                onClick={() => setEnableParticipationType(!enableParticipationType)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-google-blue focus:ring-offset-2 ${
+                  enableParticipationType ? 'bg-google-blue' : 'bg-muted'
+                }`}
+                title={enableParticipationType ? 'Disable participation type' : 'Enable participation type'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    enableParticipationType ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {enableParticipationType && (
+              <div className="pt-2 border-t border-border/50 flex flex-wrap items-center gap-3">
+                <span className="text-xs font-medium text-foreground/80">Select Type:</span>
+                <div className="inline-flex rounded-xl p-1 bg-background border border-input">
+                  <button
+                    type="button"
+                    onClick={() => setParticipationType('individual')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      participationType === 'individual'
+                        ? 'bg-google-blue text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Individual</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setParticipationType('team')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      participationType === 'team'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Team</span>
+                  </button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  {participationType === 'team'
+                    ? '👥 Attendees participate in teams. Team badge will be shown on event cards.'
+                    : '👤 Attendees participate individually. Individual badge will be shown on event cards.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Date & Time Pickers with Visible Calendar Trigger Icon */}
@@ -1567,34 +1860,29 @@ export const AdminEventEditorPage: React.FC = () => {
                         />
                       </div>
                     </div>
+                  ) : sec.type === 'markdown' ? (
+                    <MarkdownEditorField
+                      value={sec.content}
+                      onChange={(content) => handleUpdateSection(idx, { content })}
+                      placeholder="Write content, details, requirements or formatted markdown..."
+                      rows={5}
+                    />
                   ) : (
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="block text-[11px] font-semibold text-muted-foreground">
-                          {sec.type === 'markdown'
-                            ? 'Markdown Content (supports **bold**, lists, headers, links)'
-                            : 'Content'}
+                          Content
                         </label>
                       </div>
                       <textarea
                         rows={4}
-                        placeholder="Write content, details, requirements or formatted markdown..."
+                        placeholder="Write content or details..."
                         value={sec.content}
                         onChange={(e) => handleUpdateSection(idx, { content: e.target.value })}
                         data-lenis-prevent="true"
                         onWheel={(e) => e.stopPropagation()}
                         className="w-full px-3.5 py-2 rounded-xl border border-input bg-card text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-google-green resize-y leading-relaxed overscroll-contain"
                       />
-                    </div>
-                  )}
-
-                  {/* Live Rendered Markdown Preview inside the field */}
-                  {sec.type === 'markdown' && sec.content.trim() && (
-                    <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 text-xs">
-                      <p className="text-[10px] font-mono uppercase font-bold text-muted-foreground mb-1">
-                        Rendered Markdown Preview:
-                      </p>
-                      <MarkdownRenderer content={sec.content} />
                     </div>
                   )}
                 </div>
@@ -1894,23 +2182,62 @@ export const AdminEventEditorPage: React.FC = () => {
                     />
                   </div>
                   {sheetsUrl && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          localStorage.setItem('auth_link_redirect', window.location.pathname);
-                          const { url } = await eventService.getGoogleLinkUrl();
-                          if (url) window.location.href = url;
-                        } catch (err: any) {
-                          toast({ title: 'Error', description: err.message || 'Could not initiate Google connection.', variant: 'destructive' });
-                        }
-                      }}
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold hover:bg-google-green/20 transition-all shrink-0"
-                      title="Grant Google Sheets write token (login session remains unchanged)"
-                    >
-                      <TableProperties className="w-3.5 h-3.5" />
-                      <span>Authorize Google Account</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {googleLinkStatus?.connected && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-google-green" />
+                          <span>Google Account Linked</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            localStorage.setItem('auth_link_redirect', window.location.pathname);
+                            const { url } = await eventService.getGoogleLinkUrl('admin', 'sheets');
+                            if (url) window.location.href = url;
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message || 'Could not initiate Google connection.', variant: 'destructive' });
+                          }
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold hover:bg-google-green/20 transition-all shrink-0"
+                        title="Grant Google Sheets write token (login session remains unchanged)"
+                      >
+                        <TableProperties className="w-3.5 h-3.5" />
+                        <span>{googleLinkStatus?.connected ? 'Re-link Google Account' : 'Authorize Google Account'}</span>
+                      </button>
+
+                      {existingFormId && (
+                        <button
+                          type="button"
+                          disabled={isSyncingSheetNow}
+                          onClick={async () => {
+                            setIsSyncingSheetNow(true);
+                            try {
+                              const res = await eventService.syncSheetForAdmin(existingFormId);
+                              toast({
+                                title: 'Google Sheet Synced! 🚀',
+                                description: res.message || 'Submissions synced to Google Sheet successfully.',
+                              });
+                            } catch (err: any) {
+                              toast({
+                                title: 'Sync Notice',
+                                description: err.message || 'Could not sync submissions to Google Sheet.',
+                                variant: 'destructive',
+                              });
+                            } finally {
+                              setIsSyncingSheetNow(false);
+                            }
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-muted border border-border text-xs font-semibold hover:bg-muted/80 transition-all shrink-0 disabled:opacity-50"
+                          title="Test Google Sheet sync now"
+                        >
+                          <Send className="w-3.5 h-3.5 text-foreground" />
+                          <span>{isSyncingSheetNow ? 'Syncing...' : 'Sync Sheet Now'}</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 {sheetsUrl && (
@@ -1941,15 +2268,24 @@ export const AdminEventEditorPage: React.FC = () => {
                   <label className="block text-xs font-semibold text-foreground flex items-center gap-2">
                     <span>Attendee Capacity &amp; Submission Limit</span>
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                      submissionLimit
+                      effectiveSubmissionLimit
                         ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold'
                         : 'bg-muted text-muted-foreground border-border'
                     }`}>
-                      {submissionLimit ? `${submissionLimit} Slots Max` : 'Unlimited Slots'}
+                      {effectiveSubmissionLimit ? `${effectiveSubmissionLimit} Slots Max` : 'Unlimited Slots'}
                     </span>
+                    {trackCapacityTotal > 0 && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-google-blue/10 text-google-blue border-google-blue/30 flex items-center gap-1">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        Auto from Tracks
+                      </span>
+                    )}
                   </label>
                   <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed max-w-xl">
-                    Set the maximum registrations allowed for this event. Once the limit is reached, registration automatically locks and public pages display <strong className="text-amber-500 font-semibold">"Event Slot is Full"</strong> so no more registrations are accepted.
+                    {trackCapacityTotal > 0
+                      ? <>Total capacity is <strong className="text-google-blue">auto-calculated as the sum of all track slot limits ({trackCapacityTotal} total)</strong>. Edit individual track limits above to adjust capacity.
+                      </>
+                      : <>Set the maximum registrations allowed for this event. Once the limit is reached, registration automatically locks and public pages display <strong className="text-amber-500 font-semibold">"Event Slot is Full"</strong>.</>}
                   </p>
                 </div>
               </div>
@@ -1957,76 +2293,92 @@ export const AdminEventEditorPage: React.FC = () => {
               {/* Status Badge */}
               <div className="text-xs font-mono px-3 py-1.5 rounded-xl bg-muted/60 border border-border shrink-0 self-start sm:self-auto flex items-center gap-1.5">
                 <span className="text-muted-foreground">Capacity:</span>
-                <span className={submissionLimit ? 'text-amber-500 font-bold' : 'text-google-blue font-bold'}>
-                  {submissionLimit ? `${submissionLimit} Capped` : 'Open / Unlimited'}
+                <span className={effectiveSubmissionLimit ? 'text-amber-500 font-bold' : 'text-google-blue font-bold'}>
+                  {effectiveSubmissionLimit ? `${effectiveSubmissionLimit} Capped` : 'Open / Unlimited'}
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="space-y-1.5">
-                <div className="relative">
-                  <Users className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="e.g. 50 (Leave empty for unlimited)"
-                    value={submissionLimit}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setSubmissionLimit('');
-                      } else {
-                        const num = parseInt(val, 10);
-                        setSubmissionLimit(isNaN(num) || num <= 0 ? '' : num);
-                      }
-                    }}
-                    className="w-full pl-9 pr-14 py-2 rounded-xl border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 font-mono"
-                  />
-                  {submissionLimit !== '' && (
-                    <button
-                      type="button"
-                      onClick={() => setSubmissionLimit('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
-                      title="Clear limit"
-                    >
-                      Clear
-                    </button>
-                  )}
+            {trackCapacityTotal > 0 ? (
+              /* Read-only view: track limits control capacity */
+              <div className="p-3.5 rounded-xl bg-google-blue/5 border border-google-blue/20 flex items-center gap-3">
+                <Sparkles className="w-4 h-4 text-google-blue shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-google-blue">
+                    Capacity Auto-Managed: {trackCapacityTotal} total slots
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    The overall registration limit is automatically set to the sum of all per-track slot limits. To change total capacity, update the individual track limits in the dropdown question above.
+                  </p>
                 </div>
+                <span className="font-mono text-2xl font-bold text-google-blue shrink-0">{trackCapacityTotal}</span>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Users className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="e.g. 50 (Leave empty for unlimited)"
+                      value={submissionLimit}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setSubmissionLimit('');
+                        } else {
+                          const num = parseInt(val, 10);
+                          setSubmissionLimit(isNaN(num) || num <= 0 ? '' : num);
+                        }
+                      }}
+                      className="w-full pl-9 pr-14 py-2 rounded-xl border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 font-mono"
+                    />
+                    {submissionLimit !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionLimit('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+                        title="Clear limit"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-              {/* Quick Preset Buttons */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-mono text-muted-foreground mr-1">Presets:</span>
-                {[30, 50, 100, 200, 500].map((preset) => (
+                {/* Quick Preset Buttons */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-mono text-muted-foreground mr-1">Presets:</span>
+                  {[30, 50, 100, 200, 500].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setSubmissionLimit(preset)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                        submissionLimit === preset
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
                   <button
-                    key={preset}
                     type="button"
-                    onClick={() => setSubmissionLimit(preset)}
+                    onClick={() => setSubmissionLimit('')}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                      submissionLimit === preset
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                      submissionLimit === ''
+                        ? 'bg-google-blue text-white border-google-blue shadow-xs'
                         : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {preset}
+                    Unlimited
                   </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSubmissionLimit('')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                    submissionLimit === ''
-                      ? 'bg-google-blue text-white border-google-blue shadow-xs'
-                      : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Unlimited
-                </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Toggle: Show Live Count to Users */}
             <div className="flex items-center justify-between p-3.5 rounded-xl bg-background/80 border border-border/80">
@@ -2209,6 +2561,38 @@ export const AdminEventEditorPage: React.FC = () => {
               >
                 + File Upload
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultLimits: Record<string, number> = {};
+                  HACKATHON_TRACK_OPTIONS.forEach((t) => {
+                    defaultLimits[t] = 30;
+                  });
+                  setFormFields((prev) => [
+                    ...prev,
+                    {
+                      id: `f_${Date.now()}`,
+                      name: 'hackathon_track',
+                      label: 'Preferred Hackathon Domain / Track',
+                      type: 'hackathon_track',
+                      required: true,
+                      options: [...HACKATHON_TRACK_OPTIONS],
+                      enable_option_limits: true,
+                      option_limits: defaultLimits,
+                      allow_other: false,
+                    },
+                  ]);
+                  toast({
+                    title: 'Hackathon Track Added ⚡',
+                    description: 'Added 5 tracks with 30 slots capacity each.',
+                  });
+                }}
+                className="px-2.5 py-1 rounded-lg border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-[11px] font-semibold text-google-blue transition-colors flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                + Hackathon Domain (Tracks &amp; Slots)
+              </button>
             </div>
 
             {formFields.length === 0 ? (
@@ -2257,13 +2641,33 @@ export const AdminEventEditorPage: React.FC = () => {
                         </label>
                         <select
                           value={field.type}
-                          onChange={(e) =>
-                            handleUpdateField(idx, {
-                              type: e.target.value as FormField['type'],
-                              max_file_size_mb: e.target.value === 'file' ? (field.max_file_size_mb || 10) : field.max_file_size_mb,
-                              allowed_file_types: e.target.value === 'file' ? (field.allowed_file_types || '*') : field.allowed_file_types,
-                            })
-                          }
+                          onChange={(e) => {
+                            const newType = e.target.value as FormField['type'];
+                            const updates: Partial<FormField> = {
+                              type: newType,
+                              max_file_size_mb: newType === 'file' ? (field.max_file_size_mb || 10) : field.max_file_size_mb,
+                              allowed_file_types: newType === 'file' ? (field.allowed_file_types || '*') : field.allowed_file_types,
+                            };
+                            if (newType === 'hackathon_track') {
+                              if (!field.label || field.label === 'New Question' || field.label.trim() === '') {
+                                updates.label = 'Preferred Hackathon Domain / Track';
+                              }
+                              updates.name = field.name || 'hackathon_track';
+                              if (!field.options || field.options.length === 0) {
+                                updates.options = [...HACKATHON_TRACK_OPTIONS];
+                              }
+                              updates.enable_option_limits = true;
+                              updates.allow_other = false;
+                              if (!field.option_limits || Object.keys(field.option_limits).length === 0) {
+                                const defaultLimits: Record<string, number> = {};
+                                (updates.options || HACKATHON_TRACK_OPTIONS).forEach((t) => {
+                                  defaultLimits[t] = 30;
+                                });
+                                updates.option_limits = defaultLimits;
+                              }
+                            }
+                            handleUpdateField(idx, updates);
+                          }}
                           className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
                         >
                           <option value="text">Short Text</option>
@@ -2271,16 +2675,22 @@ export const AdminEventEditorPage: React.FC = () => {
                           <option value="number">Number</option>
                           <option value="email">Email</option>
                           <option value="select">Dropdown Select</option>
+                          <option value="hackathon_track">Hackathon Track / Domain (Limited Slots)</option>
                           <option value="checkbox">Checkbox (Yes/No)</option>
                           <option value="file">File Upload</option>
                         </select>
                       </div>
                     </div>
 
-                    {field.type === 'select' && (
+                    {(field.type === 'select' || field.type === 'hackathon_track') && (
                       <SelectOptionsEditor
                         options={field.options || []}
                         onChange={(opts) => handleUpdateField(idx, { options: opts })}
+                        enableLimits={field.enable_option_limits}
+                        onToggleLimits={(enabled) => handleUpdateField(idx, { enable_option_limits: enabled })}
+                        optionLimits={field.option_limits}
+                        onChangeLimits={(limits) => handleUpdateField(idx, { option_limits: limits })}
+                        isHackathon={field.type === 'hackathon_track'}
                       />
                     )}
 
@@ -2972,12 +3382,33 @@ Pass: {{ticket_link}}`,
 
                 {/* Title & Badge */}
                 <div className="space-y-2">
-                  <span
-                    className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase inline-block"
-                    style={{ backgroundColor: `${themeColor}20`, color: themeColor }}
-                  >
-                    {category || 'Workshop'}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase inline-block"
+                      style={{ backgroundColor: `${themeColor}20`, color: themeColor }}
+                    >
+                      {category || 'Workshop'}
+                    </span>
+                    {enableParticipationType && (
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono uppercase ${
+                        participationType === 'team'
+                          ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                          : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                      }`}>
+                        {participationType === 'team' ? (
+                          <>
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Team Event</span>
+                          </>
+                        ) : (
+                          <>
+                            <User className="w-3.5 h-3.5" />
+                            <span>Individual Event</span>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
                   <h2 className="text-2xl sm:text-4xl font-bold font-sans">
                     {title || 'Untitled Event'}
                   </h2>

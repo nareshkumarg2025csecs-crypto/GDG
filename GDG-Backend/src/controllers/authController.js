@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const { validateAdminSignupCode } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
@@ -126,7 +127,7 @@ const buildPasswordResetEmailHtml = (fullName, actionLink) => {
           <tr>
             <td style="padding: 0 36px 32px;">
               <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
-                Hello, ${fullName}! 🔒
+                Hello, ${fullName}! 
               </h2>
               <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #475569;">
                 We received a request to reset your password for your Google Developer Groups student account. Click the button below to set a new password:
@@ -422,9 +423,9 @@ const handleLogin = async (req, res, expectedRole) => {
     const normalizedEmail = email.trim().toLowerCase();
 
     // 1. Fetch user profile upfront to check lockout status
-    const { data: profile } = await supabaseAdmin
+    let { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details, locked_until, failed_login_count')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
@@ -549,6 +550,16 @@ const handleLogin = async (req, res, expectedRole) => {
     }
 
     const userId = authData.user.id;
+    if (!profile) {
+      const { data: profileById } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, full_name, role, details, locked_until, failed_login_count')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profileById) {
+        profile = profileById;
+      }
+    }
 
     // 5. Strict Role Verification
     if (!profile || profile.role !== expectedRole) {
@@ -911,33 +922,55 @@ const getGoogleOAuthUrl = async (req, res) => {
       }
     }
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const redirectUrl = `${clientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
+    let detectedClientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+    if (req.headers.origin) {
+      detectedClientUrl = req.headers.origin;
+    } else if (req.headers.referer) {
+      try {
+        detectedClientUrl = new URL(req.headers.referer).origin;
+      } catch {}
+    }
+
+    // If the mobile app or web client supplies its direct redirect URI, use it directly!
+    const redirectUrl =
+      req.query.redirect_to ||
+      req.query.redirect_url ||
+      `${detectedClientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
+
+    console.log('[OAuth] Generated OAuth redirectTo:', redirectUrl);
 
     // Admin provides all needed scopes (drive, spreadsheets, calendar).
-    // Students ONLY accept the very needed ones (calendar.events and profile).
-    const scopesString = role === 'admin'
+    // Students only request standard identity scopes (openid, email, profile).
+    // Calendar scope is NOT requested here so students do not see a permission consent screen and log in directly.
+    const isAdmin = role === 'admin';
+    const scopesString = isAdmin
       ? 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive'
-      : 'https://www.googleapis.com/auth/calendar.events';
+      : 'openid email profile';
 
-    const requestedScopes = role === 'admin'
+    const requestedScopes = isAdmin
       ? [
           'https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/calendar.events',
           'https://www.googleapis.com/auth/drive',
         ]
       : [
-          'https://www.googleapis.com/auth/calendar.events',
+          'openid',
+          'email',
+          'profile',
         ];
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         scopes: scopesString,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
+        queryParams: isAdmin
+          ? {
+              access_type: 'offline',
+              prompt: 'consent',
+            }
+          : {
+              prompt: 'select_account',
+            },
         redirectTo: redirectUrl,
       },
     });
@@ -986,7 +1019,7 @@ const syncGoogleProfile = async (req, res) => {
     // Check if the user already has an existing profile in the database
     let { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -1029,7 +1062,10 @@ const syncGoogleProfile = async (req, res) => {
         .single();
 
       if (createError) {
-        return res.status(500).json({ error: 'Failed to create profile for Google user.' });
+        return res.status(500).json({
+          error: 'Failed to create profile for Google user.',
+          details: createError.message,
+        });
       }
       profile = newProfile;
     } else if (role === 'admin' && profile.role !== 'admin' && validateAdminSignupCode(admin_code)) {
@@ -1045,29 +1081,40 @@ const syncGoogleProfile = async (req, res) => {
       }
     }
 
+    let tokensSaved = false;
     if (provider_token) {
-      await GoogleCalendarService.saveUserTokens(user.id, {
-        access_token: provider_token,
-        refresh_token: provider_refresh_token,
-        expires_in: 3600,
-      });
+      try {
+        await GoogleCalendarService.saveUserTokens(user.id, {
+          access_token: provider_token,
+          refresh_token: provider_refresh_token,
+          expires_in: 3600,
+        });
+        tokensSaved = true;
+      } catch (tokenErr) {
+        console.warn('Non-fatal: Failed to save Google provider tokens in syncGoogleProfile:', tokenErr.message);
+      }
     }
 
-    await logActivity(req, {
-      user_id: user.id,
-      action: isNewUser ? 'signup' : 'login',
-      details: { email: user.email, provider: 'google', role: profile.role },
-    });
+    try {
+      await logActivity(req, {
+        user_id: user.id,
+        action: isNewUser ? 'signup' : 'login',
+        details: { email: user.email, provider: 'google', role: profile.role },
+      });
+    } catch (logErr) {
+      console.warn('Non-fatal: Activity log failed in syncGoogleProfile:', logErr.message);
+    }
 
     return res.status(200).json({
       message: 'Google profile synced successfully.',
       profile,
-      google_tokens_saved: Boolean(provider_token),
+      google_tokens_saved: tokensSaved,
     });
   } catch (error) {
     console.error('syncGoogleProfile error:', error);
     return res.status(500).json({
       error: 'Internal server error while syncing Google profile.',
+      details: error.message,
     });
   }
 };
@@ -1497,6 +1544,149 @@ const disconnectDriveAccount = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/auth/scanner/admin-email-login
+ * Mobile Scanner App: Sign in using GDG admin email address.
+ * Seamlessly authenticates administrators registered directly or via Google OAuth.
+ */
+const scannerAdminEmailLogin = async (req, res) => {
+  try {
+    const { email, admin_code } = req.body;
+
+    // 1. Strictly validate the admin secret code first
+    if (!admin_code || typeof admin_code !== 'string' || !admin_code.trim()) {
+      return res.status(400).json({
+        error: 'Admin secret verification code is required to access the scanner.',
+      });
+    }
+
+    if (!validateAdminSignupCode(admin_code.trim())) {
+      await logActivity(req, {
+        user_id: null,
+        action: 'scanner_login_rejected_invalid_secret_code',
+        details: { email: email ? String(email).trim().toLowerCase() : null },
+      });
+      return res.status(401).json({
+        error: 'Incorrect admin secret code. Access denied.',
+      });
+    }
+
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({ error: 'Admin email is required.' });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 2. Check if an admin profile exists with this email
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (profileErr) {
+      console.error('scannerAdminEmailLogin error querying profile:', profileErr);
+      return res.status(500).json({ error: 'Database error validating admin email.' });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: `No account found with email "${normalizedEmail}". Please sign in or register on the GDG portal first.`,
+      });
+    }
+
+    if (profile.role !== 'admin') {
+      await logActivity(req, {
+        user_id: profile.id,
+        action: 'scanner_login_rejected_not_admin',
+        details: { email: normalizedEmail, role: profile.role },
+      });
+      return res.status(403).json({
+        error: `Account "${normalizedEmail}" is registered as "${profile.role}", not as an Admin. Only authorized GDG administrators can access the event scanner.`,
+      });
+    }
+
+    // 3. Generate signed scanner token valid for 30 days
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expSec = nowSec + 30 * 24 * 60 * 60; // 30 days
+    const payloadObj = {
+      sub: profile.id,
+      email: profile.email,
+      role: 'admin',
+      iat: nowSec,
+      exp: expSec,
+    };
+    const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'gdg-scanner-secret-key-2026';
+    const signature = crypto.createHmac('sha256', secret).update(b64Payload).digest('hex');
+    const scannerToken = `scanner_v1.${b64Payload}.${signature}`;
+
+    await logActivity(req, {
+      user_id: profile.id,
+      action: 'scanner_admin_login_success',
+      details: { email: normalizedEmail, full_name: profile.full_name },
+    });
+
+    const position = profile.details?.position || profile.details?.role || 'Administrator';
+
+    return res.status(200).json({
+      message: 'Admin authenticated successfully for GDG Scanner.',
+      access_token: scannerToken,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        role: 'admin',
+        position,
+      },
+      profile,
+    });
+  } catch (error) {
+    console.error('scannerAdminEmailLogin error:', error);
+    return res.status(500).json({ error: 'Internal server error during scanner admin login.' });
+  }
+};
+
+/**
+ * GET /api/auth/scanner/verified-admins
+ * Returns all active administrators registered in Supabase database.
+ * Formats details so scanner app displays their name, email, and position.
+ */
+const getScannerVerifiedAdmins = async (req, res) => {
+  try {
+    const { data: admins, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at')
+      .eq('role', 'admin')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('getScannerVerifiedAdmins error:', error);
+      return res.status(500).json({ error: 'Failed to retrieve verified administrators from database.' });
+    }
+
+    // Filter out dummy test entries and map cleanly
+    const formatted = (admins || [])
+      .filter((a) => a.email && !a.email.includes('crud_') && !a.email.includes('student_'))
+      .map((admin) => {
+        const details = admin.details || {};
+        return {
+          id: admin.id,
+          email: admin.email,
+          name: admin.full_name || admin.email.split('@')[0],
+          position: details.position || details.role || 'Administrator',
+          domain: details.domain || details.department || 'Leadership',
+          role: admin.role,
+        };
+      });
+
+    return res.status(200).json({ admins: formatted });
+  } catch (error) {
+    console.error('getScannerVerifiedAdmins fatal error:', error);
+    return res.status(500).json({ error: 'Internal server error retrieving verified admins.' });
+  }
+};
+
 module.exports = {
   studentSignup,
   resendStudentVerification,
@@ -1519,5 +1709,7 @@ module.exports = {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  scannerAdminEmailLogin,
+  getScannerVerifiedAdmins,
 };
 

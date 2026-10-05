@@ -9,6 +9,7 @@ import {
   Eye,
   Edit,
   Trash2,
+  User,
   Users,
   CheckCircle2,
   Clock,
@@ -415,11 +416,32 @@ export const AdminEventsPage: React.FC = () => {
                         )}
                       </span>
 
-                      {details.category && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
-                          {details.category}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {details.participation_type && (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase ${
+                            details.participation_type.toLowerCase() === 'team'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                              : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                          }`}>
+                            {details.participation_type.toLowerCase() === 'team' ? (
+                              <>
+                                <Users className="w-3 h-3 text-purple-500" />
+                                <span>Team</span>
+                              </>
+                            ) : (
+                              <>
+                                <User className="w-3 h-3 text-blue-500" />
+                                <span>Individual</span>
+                              </>
+                            )}
+                          </span>
+                        )}
+                        {details.category && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                            {details.category}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Title & Description */}

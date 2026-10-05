@@ -21,6 +21,8 @@ const {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  scannerAdminEmailLogin,
+  getScannerVerifiedAdmins,
 } = require('../controllers/authController');
 const {
   getGoogleLinkUrl,
@@ -99,6 +101,18 @@ router.post(
   adminLoginLimiter,
   validateLogin,
   adminLogin
+);
+
+// Mobile Scanner App Fast Admin Email Login (Links with existing admin GAuth & password accounts)
+router.get(
+  '/scanner/verified-admins',
+  getScannerVerifiedAdmins
+);
+
+router.post(
+  '/scanner/admin-email-login',
+  adminLoginLimiter,
+  scannerAdminEmailLogin
 );
 
 // Common Logout Route

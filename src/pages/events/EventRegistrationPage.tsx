@@ -15,6 +15,7 @@ import {
   Loader2,
   Mail,
   MailCheck,
+  User,
   Users,
   UploadCloud,
   Paperclip,
@@ -974,9 +975,30 @@ export const EventRegistrationPage: React.FC = () => {
 
         {/* Event Header Banner */}
         <div className="p-6 rounded-2xl border bg-card text-card-foreground shadow-sm space-y-3">
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20">
-            {details.category || 'Workshop Registration'}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20">
+              {details.category || 'Workshop Registration'}
+            </span>
+            {details.participation_type && (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase font-mono ${
+                details.participation_type.toLowerCase() === 'team'
+                  ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                  : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+              }`}>
+                {details.participation_type.toLowerCase() === 'team' ? (
+                  <>
+                    <Users className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Team Event</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Individual Event</span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
           <h1 className="text-2xl sm:text-3xl font-bold font-sans">{event.title}</h1>
           <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1">
             <div className="flex items-center gap-1.5">
@@ -1089,24 +1111,50 @@ export const EventRegistrationPage: React.FC = () => {
                     />
                   )}
 
-                  {/* Dropdown Select — uses SearchableSelect for proper mobile scroll behaviour */}
-                  {field.type === 'select' && (() => {
+                  {/* Dropdown Select & Hackathon Track Select — uses SearchableSelect for proper mobile scroll behaviour */}
+                  {(field.type === 'select' || field.type === 'hackathon_track') && (() => {
                     const currentAnswer = String(answers[field.name] || '');
                     const fieldOptions: string[] = field.options || [];
                     const hasOtherOption = fieldOptions.includes('Other');
                     const isExplicitOther = currentAnswer.startsWith('Other: ') || currentAnswer === 'Other';
                     const isKnownOption = fieldOptions.includes(currentAnswer);
-                    const showOtherInput = isExplicitOther || (!isKnownOption && currentAnswer !== '');
+
+                    // Suppress "Other" for hackathon tracks, option-limited fields, or when allow_other is explicitly false
+                    const shouldAllowOther = field.type !== 'hackathon_track' && field.allow_other !== false && !field.enable_option_limits;
+                    const showOtherInput = shouldAllowOther && (isExplicitOther || (!isKnownOption && currentAnswer !== ''));
+
                     // The value fed into SearchableSelect must be one of the option values
                     const selectedValue = isKnownOption ? currentAnswer : (showOtherInput ? 'Other' : '');
                     const otherText = currentAnswer.startsWith('Other: ')
                       ? currentAnswer.replace('Other: ', '')
                       : (currentAnswer === 'Other' ? '' : (isKnownOption ? '' : currentAnswer));
 
-                    // Build option list; append 'Other' if the field has options but no explicit Other
-                    const selectOptions = hasOtherOption
+                    // Build option list: append 'Other' only if explicitly permitted
+                    const baseOptions = hasOtherOption || !shouldAllowOther
                       ? fieldOptions
                       : [...fieldOptions, 'Other'];
+
+                    const hasLimits = Boolean(field.enable_option_limits || field.type === 'hackathon_track');
+                    const selectOptions = hasLimits && field.option_stats
+                      ? baseOptions.map((opt) => {
+                          const stat = field.option_stats?.[opt];
+                          if (stat && stat.limit !== null && stat.limit !== undefined && stat.limit > 0) {
+                            const isFull = Boolean(stat.is_full || (stat.remaining !== null && stat.remaining <= 0));
+                            return {
+                              label: opt,
+                              value: opt,
+                              disabled: isFull,
+                              badge: isFull ? 'SLOTS FULL' : `${stat.remaining} left`,
+                              subtext: `${stat.count} / ${stat.limit} registered`,
+                            };
+                          }
+                          return {
+                            label: opt,
+                            value: opt,
+                            badge: opt === 'Other' ? undefined : 'Open',
+                          };
+                        })
+                      : baseOptions;
 
                     return (
                       <div className="space-y-2">
@@ -1120,10 +1168,17 @@ export const EventRegistrationPage: React.FC = () => {
                             }
                           }}
                           options={selectOptions}
-                          placeholder="-- Select an option --"
+                          placeholder={field.type === 'hackathon_track' ? '-- Select Hackathon Track / Domain --' : '-- Select an option --'}
                           error={Boolean(fieldError)}
                           accentColor="blue"
                         />
+
+                        {hasLimits && (
+                          <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-google-blue shrink-0 animate-pulse" />
+                            <span>Track capacities update live. Options marked <strong>SLOTS FULL</strong> have reached maximum registration limit.</span>
+                          </p>
+                        )}
 
                         {showOtherInput && (
                           <div className="space-y-1 pl-0.5 animate-in fade-in duration-200">

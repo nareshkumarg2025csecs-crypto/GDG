@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/api';
@@ -13,7 +13,7 @@ export const AuthCallback: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { syncGoogleOAuth } = useAuth();
 
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,12 +29,17 @@ export const AuthCallback: React.FC = () => {
         const hash = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
         const hashParams = new URLSearchParams(hash);
 
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        const providerToken = hashParams.get('provider_token') || undefined;
-        const providerRefreshToken = hashParams.get('provider_refresh_token') || undefined;
+        const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+        const providerToken =
+          hashParams.get('provider_token') ||
+          searchParams.get('provider_token') ||
+          undefined;
+        const providerRefreshToken =
+          hashParams.get('provider_refresh_token') ||
+          searchParams.get('provider_refresh_token') ||
+          undefined;
 
-        // Check if this is a Calendar linking flow for an already logged-in account
+        // Check if this is a Google Sheets/Calendar linking flow for an already logged-in account
         const isLinking =
           searchParams.get('link_identity') === 'true' ||
           hashParams.get('link_identity') === 'true';
@@ -42,7 +47,7 @@ export const AuthCallback: React.FC = () => {
         if (isLinking) {
           const googleAccessToken = providerToken || accessToken;
           if (!googleAccessToken) {
-            throw new Error('No Google token received for calendar linking.');
+            throw new Error('No Google token received for service linking.');
           }
 
           // Save Google tokens for the currently authenticated user without overwriting login session
@@ -55,18 +60,16 @@ export const AuthCallback: React.FC = () => {
             }),
           });
 
-          setStatus('success');
           toast({
             title: 'Google Services Connected',
-            description: 'Google Sheets & Calendar permissions granted. Your login session is preserved.',
+            description: 'Google permissions granted. Your login session is preserved.',
           });
 
           const returnUrl = localStorage.getItem('auth_link_redirect') || '/admin/events';
           localStorage.removeItem('auth_link_redirect');
 
-          setTimeout(() => {
-            navigate(returnUrl, { replace: true });
-          }, 1200);
+          const separator = returnUrl.includes('?') ? '&' : '?';
+          navigate(`${returnUrl}${separator}google_connected=true`, { replace: true });
           return;
         }
 
@@ -79,12 +82,10 @@ export const AuthCallback: React.FC = () => {
           undefined;
 
         if (!accessToken) {
-          // If neither hash nor search tokens are found
           const queryCode = searchParams.get('code');
           if (!queryCode) {
             throw new Error('No authentication token received from identity provider.');
           }
-          // If code flow, message user to login
           throw new Error('OAuth authorization code flow requires direct server callback.');
         }
 
@@ -104,57 +105,83 @@ export const AuthCallback: React.FC = () => {
           hashParams.get('type') === 'magiclink';
 
         // 3. Sync profile with backend API (creates or retrieves profile row)
-        const syncResponse = await syncGoogleOAuth(
-          {
-            provider_token: providerToken,
-            provider_refresh_token: providerRefreshToken,
-            role: roleParam,
-            admin_code: adminCodeParam,
-          },
-          accessToken
-        );
+        let syncResponse;
+        try {
+          syncResponse = await syncGoogleOAuth(
+            {
+              provider_token: providerToken,
+              provider_refresh_token: providerRefreshToken,
+              role: roleParam,
+              admin_code: adminCodeParam,
+            },
+            accessToken
+          );
+        } catch (firstSyncErr: any) {
+          // If server was momentarily restarting, wait 1s and retry once
+          if (firstSyncErr?.status === 0 || firstSyncErr?.status >= 500) {
+            await new Promise((r) => setTimeout(r, 1000));
+            syncResponse = await syncGoogleOAuth(
+              {
+                provider_token: providerToken,
+                provider_refresh_token: providerRefreshToken,
+                role: roleParam,
+                admin_code: adminCodeParam,
+              },
+              accessToken
+            );
+          } else {
+            throw firstSyncErr;
+          }
+        }
 
         // Clear temporary admin code once consumed
         sessionStorage.removeItem('pending_admin_code');
 
-        setStatus('success');
         if (isEmailVerification) {
           toast({
             title: 'Email Verified Successfully! 🎉',
-            description: `Welcome, ${syncResponse.profile.full_name || 'Student'}! Redirecting to student onboarding...`,
+            description: `Welcome, ${syncResponse.profile.full_name || 'Student'}!`,
           });
         } else {
           toast({
             title: `Welcome, ${syncResponse.profile.full_name || syncResponse.profile.email}!`,
-            description: 'Successfully authenticated with Google.',
+            description: 'Successfully authenticated.',
           });
         }
 
-        // Redirect to onboarding if email verification flow or if personal info is incomplete
+        // Direct, instant redirection without intermediate redirecting screens or app download banners
         const hasCompletedInfo =
           Boolean(syncResponse.profile?.details?.roll_no) &&
           Boolean(syncResponse.profile?.details?.department);
 
+        const hasAdminOnboarded =
+          Boolean(syncResponse.profile?.details?.position) &&
+          Boolean(syncResponse.profile?.details?.domain);
+
         const targetUrl =
           localStorage.getItem('auth_redirect_url') ||
           searchParams.get('redirect') ||
-          '/';
+          (syncResponse.profile.role === 'admin' ? '/admin/events' : '/');
 
-        setTimeout(() => {
-          if (syncResponse.profile.role === 'admin') {
-            localStorage.removeItem('auth_redirect_url');
-            navigate(targetUrl, { replace: true });
-          } else if (isEmailVerification || (!hasCompletedInfo && syncResponse.profile.role === 'student')) {
-            // Keep targetUrl in storage so onboarding forwards there upon saving
-            if (targetUrl && targetUrl !== '/' && targetUrl !== '/onboarding') {
+        localStorage.removeItem('auth_redirect_url');
+
+        if (syncResponse.profile.role === 'admin') {
+          if (!hasAdminOnboarded) {
+            if (targetUrl && targetUrl !== '/' && targetUrl !== '/admin/onboard') {
               localStorage.setItem('auth_redirect_url', targetUrl);
             }
-            navigate('/onboarding', { replace: true });
+            navigate('/admin/onboard', { replace: true });
           } else {
-            localStorage.removeItem('auth_redirect_url');
             navigate(targetUrl, { replace: true });
           }
-        }, 1200);
+        } else if (isEmailVerification || (!hasCompletedInfo && syncResponse.profile.role === 'student')) {
+          if (targetUrl && targetUrl !== '/' && targetUrl !== '/onboarding') {
+            localStorage.setItem('auth_redirect_url', targetUrl);
+          }
+          navigate('/onboarding', { replace: true });
+        } else {
+          navigate(targetUrl, { replace: true });
+        }
       } catch (err: any) {
         console.error('Authentication callback error:', err);
         setStatus('error');
@@ -174,7 +201,7 @@ export const AuthCallback: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-google-blue/30 relative">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-md p-8 rounded-2xl border bg-card text-card-foreground shadow-2xl text-center backdrop-blur-xl"
       >
@@ -182,29 +209,8 @@ export const AuthCallback: React.FC = () => {
           <div className="space-y-4 py-6">
             <div className="w-12 h-12 border-4 border-google-blue/30 border-t-google-blue rounded-full animate-spin mx-auto" />
             <h2 className="text-xl font-bold font-sans">
-              {isVerifying ? 'Verifying Your Email...' : 'Connecting your Google Account'}
+              {isVerifying ? 'Verifying Account...' : 'Signing in...'}
             </h2>
-            <p className="text-sm text-muted-foreground">
-              {isVerifying
-                ? 'Confirming credentials and redirecting to student onboarding...'
-                : 'Verifying credentials and setting up your GDG profile...'}
-            </p>
-          </div>
-        )}
-
-        {status === 'success' && (
-          <div className="space-y-4 py-6">
-            <div className="w-12 h-12 rounded-full bg-google-green/10 text-google-green flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-            <h2 className="text-xl font-bold font-sans text-foreground">
-              {isVerifying ? 'Email Verified Successfully!' : 'Authentication Complete!'}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {isVerifying
-                ? 'Redirecting to student onboarding...'
-                : 'Redirecting you to the GDG portal...'}
-            </p>
           </div>
         )}
 
@@ -215,10 +221,17 @@ export const AuthCallback: React.FC = () => {
             </div>
             <h2 className="text-xl font-bold font-sans text-destructive">Authentication Failed</h2>
             <p className="text-sm text-muted-foreground">{errorMessage}</p>
-            <div className="pt-2">
+            <div className="pt-2 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-md"
+              >
+                <span>🔄 Retry Authentication</span>
+              </button>
               <Link
                 to="/login"
-                className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center justify-center gap-2 w-full py-2 px-4 rounded-xl border border-border text-foreground/80 hover:bg-muted font-medium text-xs transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Return to Sign In</span>

@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Calendar, MapPin, Tag, Clock, ChevronRight } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Tag, Clock, ChevronRight, User, Users } from 'lucide-react';
 import { eventService } from '@/services/eventService';
 import { useAuth } from '@/hooks/useAuth';
 import { formatEventDate, formatEventTimeRange, stripMarkdown, type ClubEvent } from '@/lib/formUtils';
@@ -150,13 +150,30 @@ const EventsSection = () => {
                                                 />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
                                                 {/* Category badge over banner */}
-                                                <div className="absolute top-4 left-4">
+                                                <div className="absolute top-4 left-4 flex items-center gap-1.5 flex-wrap">
                                                     <span
                                                         className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest"
                                                         style={{ background: `${accentColor}30`, color: accentColor, border: `1px solid ${accentColor}50` }}
                                                     >
                                                         {category}
                                                     </span>
+                                                    {details.participation_type && (
+                                                        <span
+                                                            className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 backdrop-blur-md bg-black/70 text-white border border-white/20 shadow-sm"
+                                                        >
+                                                            {details.participation_type.toLowerCase() === 'team' ? (
+                                                                <>
+                                                                    <Users className="w-3 h-3 text-google-yellow" />
+                                                                    <span>Team</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <User className="w-3 h-3 text-google-blue" />
+                                                                    <span>Individual</span>
+                                                                </>
+                                                            )}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         ) : (
@@ -174,13 +191,30 @@ const EventsSection = () => {
                                                     {String(i + 1).padStart(2, '0')}
                                                 </div>
                                                 {/* Category badge */}
-                                                <div className="absolute top-4 left-4">
+                                                <div className="absolute top-4 left-4 flex items-center gap-1.5 flex-wrap">
                                                     <span
                                                         className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest"
                                                         style={{ background: `${accentColor}25`, color: accentColor, border: `1px solid ${accentColor}45` }}
                                                     >
                                                         {category}
                                                     </span>
+                                                    {details.participation_type && (
+                                                        <span
+                                                            className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 bg-white/10 text-white border border-white/15"
+                                                        >
+                                                            {details.participation_type.toLowerCase() === 'team' ? (
+                                                                <>
+                                                                    <Users className="w-3 h-3 text-google-yellow" />
+                                                                    <span>Team</span>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <User className="w-3 h-3 text-google-blue" />
+                                                                    <span>Individual</span>
+                                                                </>
+                                                            )}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}

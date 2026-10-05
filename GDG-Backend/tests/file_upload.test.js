@@ -165,9 +165,8 @@ describe('Form File Upload & Google Drive Integration Tests', () => {
 
       // Crucial: Student scopes MUST NOT include spreadsheets, drive.file, or full calendar deletion
       expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/spreadsheets');
-      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/drive.file');
-      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/calendar');
-      expect(responseData.scopes).toContain('https://www.googleapis.com/auth/calendar.events');
+      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/calendar.events');
+      expect(responseData.scopes).toContain('email');
     });
 
     test('Calendar link URL requests only calendar.events and not invasive drive or spreadsheets scopes', async () => {

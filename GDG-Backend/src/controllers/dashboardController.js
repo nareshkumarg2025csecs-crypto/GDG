@@ -2,8 +2,8 @@ const { supabaseAdmin } = require('../config/supabase');
 const { BoundedMap } = require('../utils/boundedCache');
 const { invalidateAuthCache } = require('../middleware/auth');
 
-// In-memory notifications cache (TTL: 60s, capped to 500 users) to eliminate repetitive PostgREST queries and reduce Supabase egress
-const NOTIF_CACHE_TTL = 60 * 1000;
+// In-memory notifications cache (TTL: 180s / 3 min, capped to 500 users) to eliminate repetitive PostgREST queries and reduce Supabase egress
+const NOTIF_CACHE_TTL = 180 * 1000;
 const notificationsCache = new BoundedMap(500);
 
 /**
@@ -13,6 +13,21 @@ const notificationsCache = new BoundedMap(500);
 const getDashboard = async (req, res) => {
   try {
     const userId = req.user.id;
+
+    // Egress optimization: Fast path using cached profile already validated by requireAuth
+    if (req.user.profile && req.user.profile.id === userId) {
+      return res.status(200).json({
+        message: 'Dashboard retrieved successfully.',
+        dashboard: {
+          id: req.user.profile.id,
+          email: req.user.profile.email,
+          full_name: req.user.profile.full_name,
+          role: req.user.profile.role,
+          created_at: req.user.profile.created_at,
+          details: req.user.profile.details || {},
+        },
+      });
+    }
 
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
@@ -133,10 +148,10 @@ const getUserNotifications = async (req, res) => {
     }
 
     // Fetch user submissions with related forms and events (limit to recent 25 to prevent statement timeouts)
-    // Egress optimization: select only events(id, title) - omitting heavy `details` jsonb payload
+    // Egress optimization: select only essential scalar fields - omitting heavy answers and details jsonb payloads
     const { data: submissions, error: subError } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
+      .select('id, form_id, user_id, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
       .eq('user_id', userId)
       .order('submitted_at', { ascending: false })
       .limit(25);
@@ -154,7 +169,7 @@ const getUserNotifications = async (req, res) => {
 
         // 1. Attendance Notification (when user marked present)
         if (sub.attended) {
-          const attendedTime = sub.answers?.attended_at || sub.submitted_at;
+          const attendedTime = sub.submitted_at;
           notifications.push({
             id: `attendance_${sub.id}`,
             type: 'attendance',
@@ -166,7 +181,7 @@ const getUserNotifications = async (req, res) => {
             action_url: '/dashboard',
             metadata: {
               submission_id: sub.id,
-              ticket_id: sub.ticket_id || sub.answers?.ticket_id,
+              ticket_id: sub.ticket_id || sub.id,
             },
           });
         }

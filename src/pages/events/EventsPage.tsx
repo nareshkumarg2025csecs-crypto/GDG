@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   QrCode,
   X as XIcon,
+  User,
   Users,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
@@ -339,16 +340,33 @@ export const EventsPage: React.FC = () => {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                       
                       {/* Top Overlay Badge */}
-                      <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-                        <span
-                          className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md"
-                          style={{
-                            backgroundColor: `${accentColor}dd`,
-                            color: '#ffffff',
-                          }}
-                        >
-                          {details.category || 'Workshop'}
-                        </span>
+                      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md"
+                            style={{
+                              backgroundColor: `${accentColor}dd`,
+                              color: '#ffffff',
+                            }}
+                          >
+                            {details.category || 'Workshop'}
+                          </span>
+                          {details.participation_type && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md bg-black/60 text-white border border-white/20 shadow-sm">
+                              {details.participation_type.toLowerCase() === 'team' ? (
+                                <>
+                                  <Users className="w-3 h-3 text-google-yellow" />
+                                  <span>Team</span>
+                                </>
+                              ) : (
+                                <>
+                                  <User className="w-3 h-3 text-google-blue" />
+                                  <span>Individual</span>
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
 
                         {regState === 'registered' && (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-google-green text-white font-mono shadow-sm">
@@ -397,17 +415,34 @@ export const EventsPage: React.FC = () => {
                         background: `radial-gradient(circle at 80% 20%, ${accentColor}40 0%, transparent 70%)`,
                       }}
                     >
-                      <div className="flex items-center justify-between mb-3">
-                        <span
-                          className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
-                          style={{
-                            backgroundColor: `${accentColor}20`,
-                            color: accentColor,
-                            border: `1px solid ${accentColor}40`,
-                          }}
-                        >
-                          {details.category || 'Workshop'}
-                        </span>
+                      <div className="flex items-center justify-between mb-3 gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
+                            style={{
+                              backgroundColor: `${accentColor}20`,
+                              color: accentColor,
+                              border: `1px solid ${accentColor}40`,
+                            }}
+                          >
+                            {details.category || 'Workshop'}
+                          </span>
+                          {details.participation_type && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono uppercase bg-muted/80 text-foreground border border-border shadow-sm">
+                              {details.participation_type.toLowerCase() === 'team' ? (
+                                <>
+                                  <Users className="w-3 h-3 text-google-yellow" />
+                                  <span>Team</span>
+                                </>
+                              ) : (
+                                <>
+                                  <User className="w-3 h-3 text-google-blue" />
+                                  <span>Individual</span>
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
 
                         {attachedForm && regState === 'registered' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
@@ -482,6 +517,21 @@ export const EventsPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
                           <span className="truncate">{details.location || details.venue}</span>
+                        </div>
+                      )}
+                      {details.participation_type && (
+                        <div className="flex items-center gap-2 text-foreground/80 font-medium">
+                          {details.participation_type.toLowerCase() === 'team' ? (
+                            <>
+                              <Users className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                              <span>Team Event</span>
+                            </>
+                          ) : (
+                            <>
+                              <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                              <span>Individual Event</span>
+                            </>
+                          )}
                         </div>
                       )}
                       {attachedForm && (attachedForm.show_submission_count !== false && attachedForm.schema?.show_submission_count !== false) && (

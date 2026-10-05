@@ -1,4 +1,5 @@
 const QRCode = require('qrcode');
+const { generateBrandedQrBuffer } = require('./brandedQrService');
 const GmailApiService = require('./gmailApiService');
 const EmailQueueService = require('./emailQueueService');
 
@@ -415,15 +416,11 @@ const EmailService = {
         fullQrText = qrLines.join('\n');
       }
 
-      const qrBuffer = await QRCode.toBuffer(fullQrText, {
-
+      const qrBuffer = await generateBrandedQrBuffer(fullQrText, {
         width: 320,
         margin: 2,
-        errorCorrectionLevel: 'M',
-        color: {
-          dark: '#0f172a',
-          light: '#ffffff',
-        },
+        dark: '#0f172a',
+        light: '#ffffff',
       });
 
       // Render custom answers summary table for HTML email

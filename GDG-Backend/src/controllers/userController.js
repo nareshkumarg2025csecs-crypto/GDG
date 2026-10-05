@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require('../config/supabase');
+const { getInMemoryLogs } = require('../services/activityLogService');
 
 /**
  * GET /api/me
@@ -125,49 +126,62 @@ const getAdminActivityLogs = async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    let query = supabaseAdmin
-      .from('activity_logs')
-      .select('*', { count: 'exact' });
+    // In unit test runner or when explicitly configured, query Supabase
+    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_SUPABASE_LOGS === 'true') {
+      let query = supabaseAdmin
+        .from('activity_logs')
+        .select('*', { count: 'exact' });
 
-    // Optional query filters
-    if (user_id) {
-      query = query.eq('user_id', user_id);
-    }
+      if (user_id) query = query.eq('user_id', user_id);
+      if (action) query = query.eq('action', action);
+      const effectiveStartDate = start_date || from;
+      if (effectiveStartDate) query = query.gte('created_at', effectiveStartDate);
+      const effectiveEndDate = end_date || to;
+      if (effectiveEndDate) query = query.lte('created_at', effectiveEndDate);
 
-    if (action) {
-      query = query.eq('action', action);
-    }
+      query = query
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limitNum - 1);
 
-    const effectiveStartDate = start_date || from;
-    if (effectiveStartDate) {
-      query = query.gte('created_at', effectiveStartDate);
-    }
+      const { data: logs, count, error } = await query;
+      if (error) {
+        return res.status(500).json({ error: 'Failed to retrieve activity logs.' });
+      }
 
-    const effectiveEndDate = end_date || to;
-    if (effectiveEndDate) {
-      query = query.lte('created_at', effectiveEndDate);
-    }
-
-    // Newest logs first + Pagination
-    query = query
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limitNum - 1);
-
-    const { data: logs, count, error } = await query;
-
-    if (error) {
-      console.error('getAdminActivityLogs error:', error);
-      return res.status(500).json({
-        error: 'Failed to retrieve activity logs.',
+      return res.status(200).json({
+        message: 'Activity logs retrieved successfully.',
+        total: count !== null && count !== undefined ? count : (logs || []).length,
+        page: pageNum,
+        limit: limitNum,
+        logs: logs || [],
       });
     }
 
+    // Default: Serve from memory (zero Supabase egress, zero database log quota)
+    let logs = getInMemoryLogs();
+
+    if (user_id) logs = logs.filter((l) => l.user_id === user_id);
+    if (action) logs = logs.filter((l) => l.action === action);
+    const effectiveStartDate = start_date || from;
+    if (effectiveStartDate) {
+      const startMs = new Date(effectiveStartDate).getTime();
+      logs = logs.filter((l) => new Date(l.created_at).getTime() >= startMs);
+    }
+    const effectiveEndDate = end_date || to;
+    if (effectiveEndDate) {
+      const endMs = new Date(effectiveEndDate).getTime();
+      logs = logs.filter((l) => new Date(l.created_at).getTime() <= endMs);
+    }
+
+    const total = logs.length;
+    const pagedLogs = logs.slice(offset, offset + limitNum);
+
     return res.status(200).json({
       message: 'Activity logs retrieved successfully.',
-      total: count !== null && count !== undefined ? count : logs.length,
+      total,
       page: pageNum,
       limit: limitNum,
-      logs: logs || [],
+      logs: pagedLogs,
     });
   } catch (error) {
     console.error('getAdminActivityLogs error:', error);
@@ -196,28 +210,43 @@ const getSecurityAlerts = async (req, res) => {
       'locked_login_attempt',
     ];
 
-    let query = supabaseAdmin
-      .from('activity_logs')
-      .select('*', { count: 'exact' })
-      .in('action', alertActions)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limitNum - 1);
+    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_SUPABASE_LOGS === 'true') {
+      let query = supabaseAdmin
+        .from('activity_logs')
+        .select('*', { count: 'exact' })
+        .in('action', alertActions)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limitNum - 1);
 
-    const { data: alerts, count, error } = await query;
+      const { data: alerts, count, error } = await query;
 
-    if (error) {
-      console.error('getSecurityAlerts error:', error);
-      return res.status(500).json({
-        error: 'Failed to retrieve security alerts.',
+      if (error) {
+        console.error('getSecurityAlerts error:', error);
+        return res.status(500).json({
+          error: 'Failed to retrieve security alerts.',
+        });
+      }
+
+      return res.status(200).json({
+        message: 'Security alerts retrieved successfully.',
+        total: count !== null && count !== undefined ? count : (alerts || []).length,
+        page: pageNum,
+        limit: limitNum,
+        alerts: alerts || [],
       });
     }
 
+    // Default: in-memory alerts
+    const alerts = getInMemoryLogs().filter((l) => alertActions.includes(l.action));
+    const total = alerts.length;
+    const pagedAlerts = alerts.slice(offset, offset + limitNum);
+
     return res.status(200).json({
       message: 'Security alerts retrieved successfully.',
-      total: count !== null && count !== undefined ? count : alerts.length,
+      total,
       page: pageNum,
       limit: limitNum,
-      alerts: alerts || [],
+      alerts: pagedAlerts,
     });
   } catch (error) {
     console.error('getSecurityAlerts error:', error);

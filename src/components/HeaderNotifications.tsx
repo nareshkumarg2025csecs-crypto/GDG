@@ -252,8 +252,8 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
 
     const handleFocus = () => {
       const now = Date.now();
-      // Throttle window focus refetch: require at least 90s since last fetch to protect Supabase egress
-      if (now - lastFetchTimeRef.current >= 90000) {
+      // Throttle window focus refetch: require at least 4 min (240s) since last fetch to protect Supabase egress
+      if (now - lastFetchTimeRef.current >= 240000) {
         lastFetchTimeRef.current = now;
         fetchAllNotifications(false);
       }
@@ -261,7 +261,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
 
     const handleVisibilityChange = () => {
       const now = Date.now();
-      if (document.visibilityState === 'visible' && now - lastFetchTimeRef.current >= 90000) {
+      if (document.visibilityState === 'visible' && now - lastFetchTimeRef.current >= 240000) {
         lastFetchTimeRef.current = now;
         fetchAllNotifications(false);
       }
@@ -278,13 +278,13 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
 
     let interval: NodeJS.Timeout | null = null;
     if (isAuthenticated) {
-      // 90 seconds interval (only runs if tab is active to preserve Supabase egress)
+      // 5 minutes (300s) gentle background heartbeat (only runs if tab is active to preserve Supabase egress)
       interval = setInterval(() => {
         if (document.visibilityState === 'visible') {
           lastFetchTimeRef.current = Date.now();
           fetchAllNotifications(false);
         }
-      }, 90000);
+      }, 300000);
     }
 
     return () => {
@@ -394,6 +394,11 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
         localStorage.setItem(userStorageKey, now.toString());
       } catch {
         // ignore
+      }
+      // On-demand fetch when user explicitly opens notifications panel
+      if (now - lastFetchTimeRef.current >= 60000) {
+        lastFetchTimeRef.current = now;
+        fetchAllNotifications(false);
       }
     }
   };

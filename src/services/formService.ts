@@ -24,11 +24,24 @@ export interface SubmissionsListResponse {
   submissions: FormSubmission[];
 }
 
+let cachedFormsSummary: { data: { message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }; expiresAt: number } | null = null;
+
 export const formService = {
-  async getFormsSummary(): Promise<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }> {
-    return apiRequest<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }>('/api/forms/summary', {
+  async getFormsSummary(forceRefresh = false): Promise<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }> {
+    if (!forceRefresh && cachedFormsSummary && cachedFormsSummary.expiresAt > Date.now()) {
+      return cachedFormsSummary.data;
+    }
+
+    const data = await apiRequest<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }>('/api/forms/summary', {
       method: 'GET',
     });
+
+    cachedFormsSummary = {
+      data,
+      expiresAt: Date.now() + 60 * 1000,
+    };
+
+    return data;
   },
 
   async getFormsByEvent(eventId: string): Promise<FormsListResponse> {

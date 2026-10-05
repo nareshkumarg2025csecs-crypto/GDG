@@ -26,7 +26,7 @@ jest.mock('../src/config/supabase', () => {
     auth: {
       signUp: jest.fn(async ({ email, password, options }) => {
         const id = `user-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-        const user = { id, email, user_metadata: options?.data || {} };
+        const user = { id, email, email_confirmed_at: new Date().toISOString(), user_metadata: options?.data || {} };
         mockUsers.set(id, { ...user, password });
         return {
           data: {
@@ -44,7 +44,7 @@ jest.mock('../src/config/supabase', () => {
           if (user.email === email && user.password === password) {
             return {
               data: {
-                user: { id: user.id, email: user.email },
+                user: { id: user.id, email: user.email, email_confirmed_at: user.email_confirmed_at || new Date().toISOString() },
                 session: {
                   access_token: `mock-jwt-token-for-${user.id}`,
                   refresh_token: `mock-refresh-token-for-${user.id}`,

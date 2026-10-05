@@ -35,20 +35,48 @@ export interface GoogleLinkUrlResponse {
   scopes: string[];
 }
 
+// Low-egress client cache (60s TTL) to prevent repeated network trips
+let cachedEventsList: { data: EventsResponse; expiresAt: number } | null = null;
+const cachedSingleEvents = new Map<string, { data: SingleEventResponse; expiresAt: number }>();
+
 export const eventService = {
-  async listEvents(): Promise<EventsResponse> {
-    return apiRequest<EventsResponse>('/api/events', {
+  async listEvents(forceRefresh = false): Promise<EventsResponse> {
+    if (!forceRefresh && cachedEventsList && cachedEventsList.expiresAt > Date.now()) {
+      return cachedEventsList.data;
+    }
+
+    const data = await apiRequest<EventsResponse>('/api/events', {
       method: 'GET',
     });
+
+    cachedEventsList = {
+      data,
+      expiresAt: Date.now() + 60 * 1000,
+    };
+
+    return data;
   },
 
-  async getEventById(id: string): Promise<SingleEventResponse> {
-    return apiRequest<SingleEventResponse>(`/api/events/${id}`, {
+  async getEventById(id: string, forceRefresh = false): Promise<SingleEventResponse> {
+    const cached = cachedSingleEvents.get(id);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const data = await apiRequest<SingleEventResponse>(`/api/events/${id}`, {
       method: 'GET',
     });
+
+    cachedSingleEvents.set(id, {
+      data,
+      expiresAt: Date.now() + 60 * 1000,
+    });
+
+    return data;
   },
 
   async createEvent(data: { title: string; details: EventDetails }): Promise<SingleEventResponse> {
+    cachedEventsList = null;
     return apiRequest<SingleEventResponse>('/api/events', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -59,6 +87,8 @@ export const eventService = {
     id: string,
     data: { title?: string; details?: EventDetails }
   ): Promise<SingleEventResponse> {
+    cachedEventsList = null;
+    cachedSingleEvents.delete(id);
     return apiRequest<SingleEventResponse>(`/api/events/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -66,6 +96,8 @@ export const eventService = {
   },
 
   async deleteEvent(id: string): Promise<{ message: string; deleted_event: ClubEvent }> {
+    cachedEventsList = null;
+    cachedSingleEvents.delete(id);
     return apiRequest<{ message: string; deleted_event: ClubEvent }>(`/api/events/${id}`, {
       method: 'DELETE',
     });
@@ -81,8 +113,12 @@ export const eventService = {
     return this.createCalendarReminder(eventId);
   },
 
-  async getGoogleLinkUrl(): Promise<GoogleLinkUrlResponse> {
-    return apiRequest<GoogleLinkUrlResponse>('/api/auth/google/link', {
+  async getGoogleLinkUrl(role?: string, scope?: string): Promise<GoogleLinkUrlResponse> {
+    const params = new URLSearchParams();
+    if (role) params.append('role', role);
+    if (scope) params.append('scope', scope);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<GoogleLinkUrlResponse>(`/api/auth/google/link${queryString}`, {
       method: 'GET',
     });
   },

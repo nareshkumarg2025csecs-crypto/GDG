@@ -1,8 +1,9 @@
+const crypto = require('crypto');
 const { supabaseAdmin, supabase } = require('../config/supabase');
 const { BoundedMap } = require('../utils/boundedCache');
 
-// Cache validated tokens + profiles for 60 seconds to slash Supabase Auth + PostgREST egress
-const AUTH_CACHE_TTL = 60 * 1000;
+// Cache validated tokens + profiles for 5 minutes (300s) to slash Supabase Auth + PostgREST egress
+const AUTH_CACHE_TTL = 300 * 1000;
 const authCache = new BoundedMap(1000);
 
 const invalidateAuthCache = (userId = null) => {
@@ -52,6 +53,48 @@ const requireAuth = async (req, res, next) => {
       return next();
     }
 
+    // 0. Scanner Token Fast-Path Validation (HMAC SHA-256)
+    if (token.startsWith('scanner_v1.')) {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const [, b64Payload, signature] = parts;
+        const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'gdg-scanner-secret-key-2026';
+        const expectedSig = crypto.createHmac('sha256', secret).update(b64Payload).digest('hex');
+
+        if (signature.length === expectedSig.length && crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSig, 'hex'))) {
+          try {
+            const payload = JSON.parse(Buffer.from(b64Payload, 'base64url').toString('utf8'));
+            if (payload.exp && payload.exp * 1000 > now) {
+              const { data: profile, error: profileErr } = await supabaseAdmin
+                .from('profiles')
+                .select('id, email, full_name, role, details, created_at')
+                .eq('id', payload.sub)
+                .single();
+
+              if (!profileErr && profile && profile.role === 'admin') {
+                const scannerUser = { id: profile.id, email: profile.email, role: 'admin' };
+                authCache.set(token, {
+                  user: scannerUser,
+                  profile,
+                  expiresAt: now + AUTH_CACHE_TTL,
+                });
+                req.user = {
+                  ...scannerUser,
+                  profile,
+                };
+                return next();
+              }
+            }
+          } catch (e) {
+            // Invalid payload format
+          }
+        }
+      }
+      return res.status(401).json({
+        error: 'Unauthorized: Invalid or expired scanner admin session token.',
+      });
+    }
+
     // Verify token with Supabase Auth
     // Use getUser(token) to securely validate the JWT against Supabase Auth
     const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
@@ -68,7 +111,7 @@ const requireAuth = async (req, res, next) => {
     // Fetch user profile (with role) using admin client (service role)
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details, created_at')
       .eq('id', user.id)
       .single();
 
@@ -90,6 +133,7 @@ const requireAuth = async (req, res, next) => {
     req.user = {
       ...user,
       profile,
+      role: profile.role || 'student',
     };
 
     next();
@@ -157,7 +201,7 @@ const optionalAuth = async (req, res, next) => {
 
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details, created_at')
       .eq('id', userData.user.id)
       .single();
 

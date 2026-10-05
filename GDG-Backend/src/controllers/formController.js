@@ -7,7 +7,7 @@ const EmailService = require('../services/emailService');
 const { BoundedMap } = require('../utils/boundedCache');
 
 // In-memory bounded cache for high-traffic form reads (capped to 200 items for Render 512MB RAM)
-const FORM_CACHE_TTL = 20 * 1000; // 20 seconds
+const FORM_CACHE_TTL = 60 * 1000; // 60 seconds (cuts Supabase egress)
 const eventFormsCache = new BoundedMap(200); // eventId -> { data, expiresAt }
 const singleFormCache = new BoundedMap(200); // formId -> { data, expiresAt }
 let formsSummaryCache = { data: null, expiresAt: 0 };
@@ -42,9 +42,22 @@ const inflightSubmissions = new Set();
 // In-memory ticket sequence reservation map to avoid database table scans and collisions
 const formTicketCounters = new BoundedMap(500);
 
+// In-memory bounded cache for option slot counts (prevents DB scans & cached egress)
+const optionStatsCache = new BoundedMap(200); // formId -> { data, expiresAt }
+
+// In-memory bounded cache for scanner attendee lists (60s TTL, eliminates Supabase egress across gates)
+const scannerAttendeesListCache = new BoundedMap(100);
+
 const invalidateFormCache = (formId = null, eventId = null) => {
-  if (formId) singleFormCache.delete(formId);
-  else singleFormCache.clear();
+  if (formId) {
+    singleFormCache.delete(formId);
+    optionStatsCache.delete(formId);
+    scannerAttendeesListCache.delete(formId);
+  } else {
+    singleFormCache.clear();
+    optionStatsCache.clear();
+    scannerAttendeesListCache.clear();
+  }
 
   if (eventId) eventFormsCache.delete(eventId);
   else eventFormsCache.clear();
@@ -132,12 +145,15 @@ const validateFormAnswers = (schema, answers) => {
 
       case 'select':
       case 'radio':
+      case 'hackathon_track':
         if (field.options && Array.isArray(field.options) && field.options.length > 0) {
-          const hasOtherOption = field.options.some(
+          const isHackathonTrack = fieldType === 'hackathon_track';
+          const allowOther = field.allow_other !== false && !isHackathonTrack && !field.enable_option_limits;
+          const hasOtherOption = allowOther && field.options.some(
             (opt) => typeof opt === 'string' && opt.toLowerCase().startsWith('other')
           );
           const isOtherValue =
-            typeof value === 'string' && value.trim().toLowerCase().startsWith('other');
+            allowOther && typeof value === 'string' && value.trim().toLowerCase().startsWith('other');
 
           if (!field.options.includes(value) && !(hasOtherOption && isOtherValue)) {
             errors.push(
@@ -202,28 +218,34 @@ const createForm = async (req, res) => {
       });
     }
 
+    // Parse the submission limit from body or schema field
     const parsedLimit = submission_limit !== undefined
       ? (submission_limit === null || submission_limit === '' || Number(submission_limit) <= 0 ? null : parseInt(submission_limit, 10))
       : (schema?.submission_limit !== undefined
           ? (schema.submission_limit === null || schema.submission_limit === '' || Number(schema.submission_limit) <= 0 ? null : parseInt(schema.submission_limit, 10))
           : null);
 
+    // Build the form schema object from incoming payload
     const formSchema = schema && typeof schema === 'object' ? { ...schema } : {};
-    if (opens_at !== undefined) {
-      formSchema.opens_at = opens_at || null;
+    if (!Array.isArray(formSchema.fields)) formSchema.fields = [];
+
+    // Auto-calculate sum of track limits if hackathon_track or option limits are present
+    const trackFields = formSchema.fields.filter(
+      (f) => (f.type === 'hackathon_track' || f.enable_option_limits) && f.option_limits && typeof f.option_limits === 'object'
+    );
+    let sumTrackLimits = 0;
+    for (const tf of trackFields) {
+      for (const lim of Object.values(tf.option_limits)) {
+        if (lim !== null && lim !== undefined && Number(lim) > 0) {
+          sumTrackLimits += Number(lim);
+        }
+      }
     }
-    if (expires_at) {
-      formSchema.expires_at = expires_at;
-    }
-    if (parsedLimit !== undefined) {
-      formSchema.submission_limit = parsedLimit;
-    }
-    if (show_submission_count !== undefined) {
-      formSchema.show_submission_count = show_submission_count !== false;
-    } else if (schema?.show_submission_count !== undefined) {
-      formSchema.show_submission_count = schema.show_submission_count !== false;
-    } else {
-      formSchema.show_submission_count = true;
+
+    // Track limits take precedence over manually specified limit
+    const effectiveLimit = sumTrackLimits > 0 ? sumTrackLimits : parsedLimit;
+    if (effectiveLimit !== undefined && effectiveLimit !== null) {
+      formSchema.submission_limit = effectiveLimit;
     }
 
     const insertPayload = {
@@ -240,8 +262,8 @@ const createForm = async (req, res) => {
     if (expires_at) {
       insertPayload.expires_at = expires_at;
     }
-    if (parsedLimit !== undefined) {
-      insertPayload.submission_limit = parsedLimit;
+    if (effectiveLimit !== undefined && effectiveLimit !== null) {
+      insertPayload.submission_limit = effectiveLimit;
     }
 
     let form;
@@ -307,6 +329,107 @@ const createForm = async (req, res) => {
 };
 
 /**
+ * Helper to compute live per-option submission counts and remaining slots
+ * for dropdown / select fields and hackathon tracks with option limits.
+ * Uses in-memory bounded cache and zero-row-payload count queries (head: true)
+ * to minimize Supabase cached egress and database compute consumption.
+ */
+const enrichFormOptionStats = async (form) => {
+  if (!form || !form.schema || !Array.isArray(form.schema.fields)) {
+    return form;
+  }
+
+  const fieldsWithLimits = form.schema.fields.filter(
+    (f) =>
+      (f.enable_option_limits || f.type === 'hackathon_track') &&
+      f.option_limits &&
+      typeof f.option_limits === 'object'
+  );
+
+  if (fieldsWithLimits.length === 0) {
+    return form;
+  }
+
+  const now = Date.now();
+  const cached = optionStatsCache.get(form.id);
+  if (cached && cached.expiresAt > now) {
+    return {
+      ...form,
+      schema: {
+        ...form.schema,
+        fields: cached.data,
+      },
+    };
+  }
+
+  try {
+    const updatedFields = await Promise.all(
+      form.schema.fields.map(async (f) => {
+        if (
+          (!f.enable_option_limits && f.type !== 'hackathon_track') ||
+          !f.option_limits ||
+          typeof f.option_limits !== 'object'
+        ) {
+          return f;
+        }
+
+        const option_stats = {};
+        const entries = Object.entries(f.option_limits);
+        const fieldKey = f.name || f.id;
+
+        await Promise.all(
+          entries.map(async ([optName, rawLim]) => {
+            const lim =
+              rawLim !== null && rawLim !== undefined && Number(rawLim) > 0
+                ? Number(rawLim)
+                : null;
+
+            // Zero payload count query via PostgREST arrow operator (head: true)
+            const { count: c } = await supabaseAdmin
+              .from('form_submissions')
+              .select('id', { count: 'exact', head: true })
+              .eq('form_id', form.id)
+              .filter(`answers->>${fieldKey}`, 'eq', optName);
+
+            const count = c || 0;
+            const remaining = lim !== null ? Math.max(0, lim - count) : null;
+            const is_full = lim !== null ? count >= lim : false;
+
+            option_stats[optName] = {
+              count,
+              limit: lim,
+              remaining,
+              is_full,
+            };
+          })
+        );
+
+        return {
+          ...f,
+          option_stats,
+        };
+      })
+    );
+
+    optionStatsCache.set(form.id, {
+      data: updatedFields,
+      expiresAt: now + FORM_CACHE_TTL,
+    });
+
+    return {
+      ...form,
+      schema: {
+        ...form.schema,
+        fields: updatedFields,
+      },
+    };
+  } catch (err) {
+    console.warn(`[enrichFormOptionStats] Warning for form ${form.id}:`, err.message);
+    return form;
+  }
+};
+
+/**
  * GET /api/events/:eventId/forms
  * Authenticated: Get all forms associated with an event, enriched with real submission count and slot limit status.
  * Shielded by in-memory TTL cache and single-flight coalescing to handle high-traffic viewing during event rollouts.
@@ -334,7 +457,7 @@ const getFormsByEvent = async (req, res) => {
       const fetchPromise = (async () => {
         const { data: forms, error } = await supabaseAdmin
           .from('forms')
-          .select('*')
+          .select('id, event_id, title, schema, opens_at, expires_at, submission_limit, created_at')
           .eq('event_id', eventId)
           .order('created_at', { ascending: false });
 
@@ -342,7 +465,8 @@ const getFormsByEvent = async (req, res) => {
 
         // Attach submission count and slot capacity status to each form
         return await Promise.all(
-          (forms || []).map(async (f) => {
+          (forms || []).map(async (rawForm) => {
+            const f = await enrichFormOptionStats(rawForm);
             const { count } = await supabaseAdmin
               .from('form_submissions')
               .select('id', { count: 'exact', head: true })
@@ -552,35 +676,37 @@ const getFormById = async (req, res) => {
       const fetchPromise = (async () => {
         const { data: form, error } = await supabaseAdmin
           .from('forms')
-          .select('*')
+          .select('id, event_id, title, schema, opens_at, expires_at, submission_limit, created_at')
           .eq('id', id)
           .single();
 
         if (error || !form) return null;
 
+        const f = await enrichFormOptionStats(form);
+
         const { count } = await supabaseAdmin
           .from('form_submissions')
           .select('id', { count: 'exact', head: true })
-          .eq('form_id', form.id);
+          .eq('form_id', f.id);
 
         const currentCount = count || 0;
-        const limit = form.submission_limit !== undefined && form.submission_limit !== null
-          ? form.submission_limit
-          : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
+        const limit = f.submission_limit !== undefined && f.submission_limit !== null
+          ? f.submission_limit
+          : (f.schema?.submission_limit !== undefined && f.schema?.submission_limit !== null ? f.schema.submission_limit : null);
         const parsedLimitNum = limit && Number(limit) > 0 ? Number(limit) : null;
         const isFull = parsedLimitNum ? currentCount >= parsedLimitNum : false;
 
-        const opensAt = form.opens_at !== undefined && form.opens_at !== null
-          ? form.opens_at
-          : (form.schema?.opens_at || null);
+        const opensAt = f.opens_at !== undefined && f.opens_at !== null
+          ? f.opens_at
+          : (f.schema?.opens_at || null);
         const isUpcoming = opensAt ? new Date() < new Date(opensAt) : false;
 
-        const showCount = form.show_submission_count !== undefined
-          ? form.show_submission_count
-          : (form.schema?.show_submission_count !== false);
+        const showCount = f.show_submission_count !== undefined
+          ? f.show_submission_count
+          : (f.schema?.show_submission_count !== false);
 
         return {
-          ...form,
+          ...f,
           opens_at: opensAt,
           is_upcoming: isUpcoming,
           submission_count: currentCount,
@@ -662,14 +788,31 @@ const updateForm = async (req, res) => {
       if (show_submission_count !== undefined) updatePayload.schema.show_submission_count = show_submission_count !== false;
     }
 
+    // Auto-calculate sum of track limits if hackathon_track or option limits are present
+    const trackFields = (updatePayload.schema?.fields || []).filter(
+      (f) => (f.type === 'hackathon_track' || f.enable_option_limits) && f.option_limits && typeof f.option_limits === 'object'
+    );
+    let sumTrackLimits = 0;
+    for (const tf of trackFields) {
+      for (const lim of Object.values(tf.option_limits)) {
+        if (lim !== null && lim !== undefined && Number(lim) > 0) {
+          sumTrackLimits += Number(lim);
+        }
+      }
+    }
+    const effectiveLimit = sumTrackLimits > 0 ? sumTrackLimits : parsedLimit;
+
     if (opens_at !== undefined) {
       updatePayload.opens_at = opens_at || null;
     }
     if (expires_at !== undefined) {
       updatePayload.expires_at = expires_at;
     }
-    if (parsedLimit !== undefined) {
-      updatePayload.submission_limit = parsedLimit;
+    if (effectiveLimit !== undefined && effectiveLimit !== null) {
+      updatePayload.submission_limit = effectiveLimit;
+      if (updatePayload.schema) {
+        updatePayload.schema.submission_limit = effectiveLimit;
+      }
     }
 
     let form;
@@ -706,6 +849,15 @@ const updateForm = async (req, res) => {
         error: 'Form not found or failed to update.',
         details: error ? error.message : undefined,
       });
+    }
+
+    // Auto-sync event capacity in events table if track limits exist
+    if (sumTrackLimits > 0 && form.event_id) {
+      try {
+        await supabaseAdmin.from('events').update({ capacity: sumTrackLimits }).eq('id', form.event_id);
+      } catch (capErr) {
+        console.warn('Could not sync event capacity:', capErr.message);
+      }
     }
 
     // Invalidate cache for this form and its event
@@ -828,7 +980,7 @@ const submitForm = async (req, res) => {
     // 1. Verify form exists and retrieve its dynamic schema, expiry, and submission limit
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('*')
+      .select('id, event_id, title, schema, opens_at, expires_at, submission_limit')
       .eq('id', formId)
       .single();
 
@@ -881,26 +1033,74 @@ const submitForm = async (req, res) => {
       }
     }
 
-    // 2.5 Server-side Form Submission Limit / Atomic Last Slot Reservation Check
-    // With serialized form locking, when 1 slot remains, user #1 is granted the seat
-    // and subsequent simultaneous submitters are immediately informed that the last slot was just claimed.
+    // 2.5 Per-Option Seat / Domain Slot Limit Check (e.g. Hackathon Track Limits)
+    const fieldsWithOptionLimits = (form.schema?.fields || []).filter(
+      (f) =>
+        (f.enable_option_limits || f.type === 'hackathon_track') &&
+        f.option_limits &&
+        typeof f.option_limits === 'object'
+    );
+
+    let sumTrackLimits = 0;
+    for (const tf of fieldsWithOptionLimits) {
+      for (const lim of Object.values(tf.option_limits)) {
+        if (lim !== null && lim !== undefined && Number(lim) > 0) {
+          sumTrackLimits += Number(lim);
+        }
+      }
+    }
+
+    if (fieldsWithOptionLimits.length > 0) {
+      for (const field of fieldsWithOptionLimits) {
+        const chosenVal = answers[field.name] || answers[field.id];
+        if (chosenVal && field.option_limits[chosenVal] !== undefined && field.option_limits[chosenVal] !== null) {
+          const optLimit = Number(field.option_limits[chosenVal]);
+          if (optLimit > 0) {
+            const fieldKey = field.name || field.id;
+            const { count: optCount } = await supabaseAdmin
+              .from('form_submissions')
+              .select('id', { count: 'exact', head: true })
+              .eq('form_id', formId)
+              .filter(`answers->>${fieldKey}`, 'eq', chosenVal);
+
+            const currentCount = optCount || 0;
+            if (currentCount >= optLimit) {
+              return res.status(410).json({
+                error: `Slots for "${chosenVal}" are completely full (${optLimit}/${optLimit} seats claimed). Please select another track or option.`,
+                option_full: true,
+                field_name: field.name,
+                option: chosenVal,
+                limit: optLimit,
+                current_count: currentCount,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 2.6 Server-side Form Submission Limit Check
+    // When track limits are defined, the overall limit is aligned with sumTrackLimits to guarantee zero conflict
     const rawLimit = form.submission_limit !== undefined && form.submission_limit !== null
       ? form.submission_limit
       : (form.schema?.submission_limit !== undefined && form.schema?.submission_limit !== null ? form.schema.submission_limit : null);
     const parsedSlotLimit = rawLimit && Number(rawLimit) > 0 ? Number(rawLimit) : null;
+    const effectiveSlotLimit = sumTrackLimits > 0 ? sumTrackLimits : parsedSlotLimit;
 
-    if (parsedSlotLimit) {
+    if (effectiveSlotLimit) {
       const { count: currentTotal } = await supabaseAdmin
         .from('form_submissions')
         .select('id', { count: 'exact', head: true })
         .eq('form_id', formId);
 
-      if ((currentTotal || 0) >= parsedSlotLimit) {
+      if ((currentTotal || 0) >= effectiveSlotLimit) {
         return res.status(410).json({
-          error: 'Event slot is full: All available registration seats have been filled. The final remaining slot was just claimed by another attendee who submitted a moment before you.',
+          error: sumTrackLimits > 0
+            ? `Event registration is full: All ${effectiveSlotLimit} available registration seats across all tracks have been filled.`
+            : 'Event slot is full: All available registration seats have been filled. The final remaining slot was just claimed by another attendee who submitted a moment before you.',
           is_full: true,
           last_slot_claimed: true,
-          submission_limit: parsedSlotLimit,
+          submission_limit: effectiveSlotLimit,
           current_count: currentTotal || 0,
         });
       }
@@ -951,7 +1151,8 @@ const submitForm = async (req, res) => {
       nextNum = (submissionCount || 0) + 1;
     }
 
-    let ticketId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+    const entropy = crypto.randomBytes(2).toString('hex').toUpperCase();
+    let ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${entropy}`;
     let collisionChecked = false;
     let attempts = 0;
 
@@ -970,14 +1171,14 @@ const submitForm = async (req, res) => {
         break;
       }
       nextNum++;
-      ticketId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+      const nextEntropy = crypto.randomBytes(2).toString('hex').toUpperCase();
+      ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${nextEntropy}`;
       attempts++;
     }
 
     // High-concurrency fallback if multiple worker nodes race on the same number
     if (!collisionChecked) {
-      const entropy = crypto.randomBytes(2).toString('hex').toUpperCase();
-      ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${entropy}`;
+      ticketId = `${prefix}${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       formTicketCounters.set(formId, nextNum + 1);
     }
 
@@ -1189,7 +1390,7 @@ const getMySubmissions = async (req, res) => {
   try {
     const { data: submissions, error } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title, details))')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
       .eq('user_id', req.user.id)
       .order('submitted_at', { ascending: false });
 
@@ -1200,20 +1401,13 @@ const getMySubmissions = async (req, res) => {
       });
     }
 
-    // Identify which forms have had certificates dispatched to attendees (scoped to user's forms only)
-    let certsIssuedFormIds = new Set();
-    if (submissions && submissions.length > 0) {
-      const userFormIds = [...new Set(submissions.map((s) => s.form_id).filter(Boolean))];
-      if (userFormIds.length > 0) {
-        const { data: sentForms } = await supabaseAdmin
-          .from('form_submissions')
-          .select('form_id')
-          .in('form_id', userFormIds)
-          .eq('certificate_sent', true);
-
-        certsIssuedFormIds = new Set((sentForms || []).map((f) => f.form_id));
-      }
-    }
+    // Identify which forms have had certificates dispatched (derived in-memory without extra DB queries)
+    const certsIssuedFormIds = new Set(
+      (submissions || [])
+        .filter((s) => s.certificate_sent)
+        .map((s) => s.form_id)
+        .filter(Boolean)
+    );
 
     return res.status(200).json({
       message: 'User submissions fetched successfully.',
@@ -1229,9 +1423,9 @@ const getMySubmissions = async (req, res) => {
         certificate_id: s.certificate_id || null,
         event_id: s.forms?.events?.id || s.forms?.event_id || null,
         event_title: s.forms?.events?.title || s.forms?.title || 'GDG Event',
-        event_details: s.forms?.events?.details || {},
+        event_details: {},
         certificates_issued: Boolean(
-          s.forms?.events?.details?.certificates_issued || certsIssuedFormIds.has(s.form_id)
+          s.certificate_sent || certsIssuedFormIds.has(s.form_id)
         ),
       })),
     });
@@ -1301,6 +1495,9 @@ const updateSubmissionAttendance = async (req, res) => {
       },
     });
 
+    // Automatically trigger Google Sheets sync in background
+    triggerBackgroundSheetSync(submission.form_id, req.user.id);
+
     return res.status(200).json({
       message: `Attendance marked as ${attended ? 'Attended' : 'Not Attended'}.`,
       submission: {
@@ -1315,6 +1512,502 @@ const updateSubmissionAttendance = async (req, res) => {
     });
   }
 };
+
+// Rate-limit sheet sync failure logs per form (cooldown 10 minutes to avoid terminal noise on rapid scans)
+const sheetSyncLogCooldown = new Map(); // formId -> timestamp
+
+/**
+ * Helper to trigger background Google Sheet sync whenever attendance changes
+ */
+const triggerBackgroundSheetSync = async (formId, requestingUserId) => {
+  try {
+    if (!formId) return;
+    const { data: form } = await supabaseAdmin
+      .from('forms')
+      .select('id, event_id, title, schema, created_by')
+      .eq('id', formId)
+      .maybeSingle();
+
+    if (!form || !form.schema?.sheets_url) return;
+
+    const { data: submissions } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, user_id, answers, attended, submitted_at, ticket_id')
+      .eq('form_id', formId)
+      .order('submitted_at', { ascending: true });
+
+    GoogleSheetsService.syncSubmissionsToSheet({
+      form,
+      submissions: submissions || [],
+      requestingUserId,
+    }).then((res) => {
+      if (res.success) {
+        sheetSyncLogCooldown.delete(formId);
+        console.log(`[Google Sheets Auto-Sync] Updated sheet for form ${formId} (${res.rows_synced} rows).`);
+      } else {
+        const now = Date.now();
+        const lastLogged = sheetSyncLogCooldown.get(formId) || 0;
+        if (now - lastLogged > 10 * 60 * 1000) {
+          sheetSyncLogCooldown.set(formId, now);
+          console.warn(`[Google Sheets Auto-Sync] Notice for form ${formId}:`, res.message, '(Attendee check-in was saved in database)');
+        }
+      }
+    }).catch((err) => {
+      const now = Date.now();
+      const lastLogged = sheetSyncLogCooldown.get(formId) || 0;
+      if (now - lastLogged > 10 * 60 * 1000) {
+        sheetSyncLogCooldown.set(formId, now);
+        console.warn(`[Google Sheets Auto-Sync] Notice for form ${formId}:`, err.message, '(Attendee check-in was saved in database)');
+      }
+    });
+  } catch (err) {
+    console.warn('[triggerBackgroundSheetSync] Error:', err.message);
+  }
+};
+
+// In-memory cache for recent check-ins and form metadata to eliminate live-polling egress to Supabase
+const recentScannerCheckIns = new Map(); // formId -> Array<{ ...attendee, updatedTimestamp }>
+const scannerFormMetaCache = new Map(); // formId -> { data, expiresAt }
+
+/**
+ * POST /api/forms/submissions/:submissionId/check-in
+ * Admin-only: Atomic check-in with strict DUPLICATE PREVENTION & auto Google Sheets sync.
+ */
+const scannerCheckIn = async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    if (!submissionId) {
+      return res.status(400).json({ error: 'Submission ID or Ticket ID is required.' });
+    }
+
+    // 1. Find submission by UUID id or ticket_id
+    let { data: submission, error: fetchErr } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+      .eq('id', submissionId)
+      .maybeSingle();
+
+    if (!submission) {
+      const cleanTicket = submissionId.trim().toUpperCase();
+      const { data: subByTicket } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+        .eq('ticket_id', cleanTicket)
+        .maybeSingle();
+
+      submission = subByTicket;
+    }
+
+    if (!submission) {
+      return res.status(404).json({ error: 'Attendee submission not found.' });
+    }
+
+    // 2. WRONG EVENT VALIDATION:
+    // If an expected form_id is provided and doesn't match submission.form_id,
+    // REJECT immediately with WRONG_EVENT and NEVER mark attended=true.
+    const requestedFormId = req.body?.form_id || req.query?.form_id;
+    if (requestedFormId && submission.form_id !== requestedFormId) {
+      let actualEventTitle = 'Another Event';
+      try {
+        const { data: actualForm } = await supabaseAdmin
+          .from('forms')
+          .select('title')
+          .eq('id', submission.form_id)
+          .maybeSingle();
+        if (actualForm?.title) {
+          actualEventTitle = actualForm.title;
+        }
+      } catch {}
+
+      return res.status(400).json({
+        success: false,
+        wrong_event: true,
+        actual_event_title: actualEventTitle,
+        actual_form_id: submission.form_id,
+        message: `WRONG EVENT: This ticket belongs to "${actualEventTitle}", not the selected event.`,
+      });
+    }
+
+    // 3. DUPLICATE PREVENTION CHECK
+    if (submission.attended) {
+      const attendedAt = submission.answers?.attended_at || submission.submitted_at;
+      const scannedBy = submission.answers?.scanned_by || 'Admin';
+
+      await logActivity(req, {
+        user_id: req.user.id,
+        action: 'scanner_duplicate_scan_blocked',
+        details: {
+          submission_id: submission.id,
+          ticket_id: submission.ticket_id,
+          previously_scanned_at: attendedAt,
+          previously_scanned_by: scannedBy,
+        },
+      });
+
+      return res.status(409).json({
+        success: false,
+        already_attended: true,
+        message: 'DUPLICATE SCAN BLOCKED: This ticket was ALREADY scanned and marked Present!',
+        attended_at: attendedAt,
+        scanned_by: scannedBy,
+        submission: {
+          ...submission,
+          attended: true,
+        },
+      });
+    }
+
+    // 3. Mark Attendee as Present
+    const nowIso = new Date().toISOString();
+    const existingAnswers =
+      submission.answers && typeof submission.answers === 'object' && !Array.isArray(submission.answers)
+        ? submission.answers
+        : {};
+
+    const updatedAnswers = {
+      ...existingAnswers,
+      attended_at: nowIso,
+      scanned_by: req.user.profile?.full_name || req.user.email || 'Admin',
+    };
+
+    const { data: updatedSub, error: updateErr } = await supabaseAdmin
+      .from('form_submissions')
+      .update({
+        attended: true,
+        answers: updatedAnswers,
+      })
+      .eq('id', submission.id)
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+      .single();
+
+    if (updateErr || !updatedSub) {
+      return res.status(500).json({ error: 'Failed to record check-in in database.' });
+    }
+
+    // 4. Update in-memory recent check-ins cache for zero-egress live syncing across admins
+    const updatedAttendeeItem = {
+      id: updatedSub.id,
+      ticket_id: updatedSub.ticket_id || updatedAnswers.ticket_id || '',
+      name: updatedAnswers.full_name || updatedAnswers.name || 'Attendee',
+      email: updatedAnswers.email || '',
+      attended: true,
+      attended_at: nowIso,
+      scanned_by: updatedAnswers.scanned_by,
+      answers: updatedAnswers,
+      submitted_at: updatedSub.submitted_at,
+      updatedTimestamp: Date.now(),
+    };
+
+    const formCheckIns = recentScannerCheckIns.get(updatedSub.form_id) || [];
+    // Keep last 150 check-ins in memory
+    formCheckIns.unshift(updatedAttendeeItem);
+    if (formCheckIns.length > 150) formCheckIns.pop();
+    recentScannerCheckIns.set(updatedSub.form_id, formCheckIns);
+
+    // 5. Automatically sync to linked Google Sheet in background
+    triggerBackgroundSheetSync(updatedSub.form_id, req.user.id);
+
+    // 6. Invalidate bounded form cache
+    invalidateFormCache(updatedSub.form_id);
+
+    await logActivity(req, {
+      user_id: req.user.id,
+      action: 'scanner_check_in_success',
+      details: {
+        submission_id: updatedSub.id,
+        ticket_id: updatedSub.ticket_id,
+        attendee_name: updatedAnswers.full_name || updatedAnswers.name,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      already_attended: false,
+      message: 'Verified! Attendee marked Present.',
+      submission: {
+        ...updatedSub,
+        attended: true,
+      },
+    });
+  } catch (error) {
+    console.error('scannerCheckIn error:', error);
+    return res.status(500).json({ error: 'Internal server error during scanner check-in.' });
+  }
+};
+
+/**
+ * GET /api/forms/:formId/scanner-attendees
+ * Admin-only: Lightweight attendee list and delta sync for multi-admin scanning with minimal egress.
+ */
+const scannerGetAttendees = async (req, res) => {
+  try {
+    const { formId } = req.params;
+    const { since } = req.query;
+
+    if (!formId) {
+      return res.status(400).json({ error: 'formId is required.' });
+    }
+
+    // ZERO-EGRESS DELTA SYNC FAST-PATH:
+    // If client is doing a periodic delta poll, check in-memory cache first!
+    if (since) {
+      const sinceMs = new Date(since).getTime();
+      const formCheckIns = recentScannerCheckIns.get(formId) || [];
+      const deltaUpdates = formCheckIns.filter((item) => item.updatedTimestamp > sinceMs);
+
+      // Return delta directly from RAM — 0 queries and 0 egress to Supabase!
+      return res.status(200).json({
+        server_time: new Date().toISOString(),
+        total_count: deltaUpdates.length,
+        attendees: deltaUpdates,
+      });
+    }
+
+    // ZERO-EGRESS RAM CACHE:
+    // If attendee list was queried within last 60 seconds, serve directly from memory (0 Supabase egress)
+    const cachedAttendees = scannerAttendeesListCache.get(formId);
+    if (cachedAttendees && cachedAttendees.expiresAt > Date.now()) {
+      return res.status(200).json(cachedAttendees.data);
+    }
+
+    // 1. Fetch form info (cached in RAM for 10 minutes)
+    let formInfo = null;
+    const cachedMeta = scannerFormMetaCache.get(formId);
+    if (cachedMeta && cachedMeta.expiresAt > Date.now()) {
+      formInfo = cachedMeta.data;
+    } else {
+      const { data: form, error: formErr } = await supabaseAdmin
+        .from('forms')
+        .select('id, event_id, title, schema, created_at')
+        .eq('id', formId)
+        .maybeSingle();
+
+      if (formErr || !form) {
+        return res.status(404).json({ error: 'Event form not found.' });
+      }
+
+      formInfo = {
+        id: form.id,
+        title: form.title,
+        event_id: form.event_id,
+        has_sheets_sync: Boolean(form.schema?.sheets_url),
+        sheets_url: form.schema?.sheets_url || null,
+      };
+      scannerFormMetaCache.set(formId, { data: formInfo, expiresAt: Date.now() + 10 * 60 * 1000 });
+    }
+
+    // 2. Initial Full Load: Fetch submissions (lightweight column projection)
+    const { data: submissions, error: subErr } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+      .eq('form_id', formId)
+      .order('submitted_at', { ascending: false });
+
+    if (subErr) {
+      return res.status(500).json({ error: 'Failed to fetch attendees.', details: subErr.message });
+    }
+
+    const sanitizedAttendees = (submissions || []).map((s) => {
+      const answers = s.answers || {};
+      return {
+        id: s.id,
+        ticket_id: s.ticket_id || answers.ticket_id || '',
+        name: answers.full_name || answers.name || 'Attendee',
+        email: answers.email || '',
+        attended: Boolean(s.attended),
+        attended_at: answers.attended_at || (s.attended ? s.submitted_at : null),
+        scanned_by: answers.scanned_by || null,
+        answers: answers,
+        submitted_at: s.submitted_at,
+      };
+    });
+
+    const responsePayload = {
+      form: formInfo,
+      server_time: new Date().toISOString(),
+      total_count: sanitizedAttendees.length,
+      attended_count: sanitizedAttendees.filter((a) => a.attended).length,
+      attendees: sanitizedAttendees,
+    };
+
+    scannerAttendeesListCache.set(formId, {
+      data: responsePayload,
+      expiresAt: Date.now() + 60 * 1000,
+    });
+
+    return res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('scannerGetAttendees error:', error);
+    return res.status(500).json({ error: 'Internal server error fetching attendees.' });
+  }
+};
+
+// Bounded in-memory cache for scanner events (5 minutes TTL, slashes database egress to zero)
+let scannerEventsCache = { data: null, expiresAt: 0 };
+
+/**
+ * GET /api/forms/scanner-events
+ * Admin-only: Lightweight list of active events with registration forms.
+ * Cached in RAM for 5 minutes to ensure minimal Supabase egress.
+ */
+const scannerGetEvents = async (req, res) => {
+  try {
+    const now = Date.now();
+    if (scannerEventsCache.data && scannerEventsCache.expiresAt > now) {
+      return res.status(200).json({
+        events: scannerEventsCache.data,
+        cached: true,
+      });
+    }
+
+    // 1. Fetch forms
+    const { data: forms, error: formsErr } = await supabaseAdmin
+      .from('forms')
+      .select('id, event_id, title, schema, created_at')
+      .order('created_at', { ascending: false });
+
+    if (formsErr) {
+      return res.status(500).json({ error: 'Failed to fetch forms.', details: formsErr.message });
+    }
+
+    // 2. Fetch event titles
+    const eventIds = (forms || []).map((f) => f.event_id).filter(Boolean);
+    const eventMap = new Map();
+
+    if (eventIds.length > 0) {
+      const { data: eventsData } = await supabaseAdmin
+        .from('events')
+        .select('id, title')
+        .in('id', eventIds);
+
+      if (eventsData) {
+        eventsData.forEach((ev) => eventMap.set(ev.id, ev.title));
+      }
+    }
+
+    // 3. Map into clean lightweight list
+    const mapped = (forms || []).map((f) => {
+      const eventTitle = f.event_id ? eventMap.get(f.event_id) : null;
+      return {
+        id: f.id,
+        title: eventTitle ? `${eventTitle} (${f.title})` : f.title,
+        event_title: eventTitle || f.title,
+        form_title: f.title,
+        event_id: f.event_id || null,
+        has_sheets_sync: Boolean(f.schema?.sheets_url),
+        sheets_url: f.schema?.sheets_url || null,
+        is_open: f.schema?.is_open !== false,
+      };
+    });
+
+    scannerEventsCache = {
+      data: mapped,
+      expiresAt: now + 5 * 60 * 1000, // 5 minutes cache
+    };
+
+    return res.status(200).json({
+      events: mapped,
+      cached: false,
+    });
+  } catch (error) {
+    console.error('scannerGetEvents error:', error);
+    return res.status(500).json({ error: 'Internal server error fetching scanner events.' });
+  }
+};
+
+/**
+ * GET /api/forms/ticket/:ticketId/verify
+ * Low-egress verification endpoint. Inspects ticket without marking check-in.
+ * Validates whether the ticket belongs to the selected event.
+ */
+const scannerVerifyTicket = async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const { form_id: selectedFormId } = req.query;
+
+    if (!ticketId) {
+      return res.status(400).json({ error: 'Ticket ID is required.' });
+    }
+
+    const cleanTicket = ticketId.trim().toUpperCase();
+
+    // 1. Find submission by ticket_id or UUID id
+    let { data: submission } = await supabaseAdmin
+      .from('form_submissions')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+      .eq('ticket_id', cleanTicket)
+      .maybeSingle();
+
+    if (!submission) {
+      const { data: subById } = await supabaseAdmin
+        .from('form_submissions')
+        .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
+        .eq('id', ticketId.trim())
+        .maybeSingle();
+      submission = subById;
+    }
+
+    if (!submission) {
+      return res.status(404).json({
+        found: false,
+        message: `Ticket "${cleanTicket}" was not found in the database.`,
+      });
+    }
+
+    const answers = submission.answers || {};
+
+    // 2. Check if ticket belongs to a different event
+    if (selectedFormId && submission.form_id !== selectedFormId) {
+      let actualEventTitle = 'Another Event';
+      try {
+        const { data: form } = await supabaseAdmin
+          .from('forms')
+          .select('title')
+          .eq('id', submission.form_id)
+          .maybeSingle();
+        if (form?.title) {
+          actualEventTitle = form.title;
+        }
+      } catch {}
+
+      return res.status(200).json({
+        found: true,
+        wrong_event: true,
+        actual_form_id: submission.form_id,
+        actual_event_title: actualEventTitle,
+        message: `WRONG EVENT: This ticket belongs to "${actualEventTitle}", not the selected event.`,
+        attendee: {
+          id: submission.id,
+          ticket_id: submission.ticket_id || cleanTicket,
+          name: answers.full_name || answers.name || 'Attendee',
+          email: answers.email || '',
+          attended: Boolean(submission.attended),
+        },
+      });
+    }
+
+    // 3. Ticket belongs to selected event!
+    return res.status(200).json({
+      found: true,
+      wrong_event: false,
+      attendee: {
+        id: submission.id,
+        ticket_id: submission.ticket_id || cleanTicket,
+        name: answers.full_name || answers.name || 'Attendee',
+        email: answers.email || '',
+        attended: Boolean(submission.attended),
+        attended_at: answers.attended_at || (submission.attended ? submission.submitted_at : null),
+        scanned_by: answers.scanned_by || null,
+        answers: answers,
+        submitted_at: submission.submitted_at,
+      },
+    });
+  } catch (error) {
+    console.error('scannerVerifyTicket error:', error);
+    return res.status(500).json({ error: 'Failed to verify ticket.' });
+  }
+};
+
 
 /**
  * POST /api/forms/:formId/sync-sheet
@@ -1427,13 +2120,51 @@ const getTicketPass = async (req, res) => {
       event = eventData;
     }
 
+    // 3. Security & PII Protection:
+    // If the requester is authenticated as the submission owner or an admin, provide full details.
+    // Otherwise, mask sensitive personal data (email, phone, internal notes) for public/gate verification.
+    const isOwnerOrAdmin = req.user && (
+      req.user.id === submission.user_id ||
+      req.user.profile?.role === 'admin' ||
+      req.user.role === 'admin'
+    );
+
+    let sanitizedSubmission;
+    if (isOwnerOrAdmin) {
+      sanitizedSubmission = {
+        ...submission,
+        ticket_id: cleanTicketId,
+      };
+    } else {
+      const rawAnswers = submission.answers || {};
+      const attendeeName = rawAnswers.full_name || rawAnswers.name || 'Verified Attendee';
+      const rawEmail = String(rawAnswers.email || '');
+      const maskedEmail = rawEmail.includes('@')
+        ? rawEmail.replace(/^(.)(.*)(@.*)$/, (_, first, middle, domain) => `${first}***${domain}`)
+        : undefined;
+
+      sanitizedSubmission = {
+        id: submission.id,
+        form_id: submission.form_id,
+        ticket_id: cleanTicketId,
+        attended: Boolean(submission.attended),
+        submitted_at: submission.submitted_at,
+        attendee_name: attendeeName,
+        email_masked: maskedEmail,
+        answers: {
+          full_name: attendeeName,
+          ...(rawAnswers.department ? { department: rawAnswers.department } : {}),
+          ...(rawAnswers.year_of_study ? { year_of_study: rawAnswers.year_of_study } : {}),
+          ...(rawAnswers.hackathon_track ? { hackathon_track: rawAnswers.hackathon_track } : {}),
+          ...(maskedEmail ? { email: maskedEmail } : {}),
+        },
+      };
+    }
+
     return res.status(200).json({
       message: 'Ticket pass details retrieved successfully.',
       ticket_id: cleanTicketId,
-      submission: {
-        ...submission,
-        ticket_id: cleanTicketId,
-      },
+      submission: sanitizedSubmission,
       form,
       event,
     });
@@ -1453,7 +2184,7 @@ const downloadTicketQr = async (req, res) => {
     if (!ticketId) {
       return res.status(400).json({ error: 'Ticket ID is required.' });
     }
-    const QRCode = require('qrcode');
+    const { generateBrandedQrBuffer } = require('../services/brandedQrService');
     const cleanTicketId = ticketId.trim().toUpperCase();
 
     // Look up submission details
@@ -1479,7 +2210,7 @@ const downloadTicketQr = async (req, res) => {
       : { data: null };
 
     const { data: event } = form?.event_id
-      ? await supabaseAdmin.from('events').select('title, details').eq('id', form.event_id).single()
+      ? await supabaseAdmin.from('events').select('title').eq('id', form.event_id).single()
       : { data: null };
 
     const eventTitle = event?.title || form?.title || 'GDG Event';
@@ -1497,14 +2228,11 @@ const downloadTicketQr = async (req, res) => {
       'Google Developer Groups On Campus',
     ].join('\n');
 
-    const qrBuffer = await QRCode.toBuffer(qrText, {
+    const qrBuffer = await generateBrandedQrBuffer(qrText, {
       width: 400,
       margin: 2,
-      errorCorrectionLevel: 'H',
-      color: {
-        dark: '#0f172a',
-        light: '#ffffff',
-      },
+      dark: '#0f172a',
+      light: '#ffffff',
     });
 
     res.setHeader('Content-Type', 'image/png');
@@ -1532,7 +2260,7 @@ const uploadFormFile = async (req, res) => {
     // 1. Verify form exists
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('*')
+      .select('id, event_id, schema')
       .eq('id', formId)
       .single();
 
@@ -1662,4 +2390,8 @@ module.exports = {
   getTicketPass,
   downloadTicketQr,
   uploadFormFile,
+  scannerCheckIn,
+  scannerGetAttendees,
+  scannerGetEvents,
+  scannerVerifyTicket,
 };

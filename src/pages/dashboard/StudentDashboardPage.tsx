@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
+  Users,
   Mail,
   Phone,
   GraduationCap,
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react';
 import EventTicketPass from '@/components/events/EventTicketPass';
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
+import { TEAM_DOMAINS, POSITIONS_BY_DOMAIN, ALL_TEAM_POSITIONS, type Department } from '@/data/team';
 import { SearchableSelect } from '@/components/common/SearchableSelect';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/store/authStore';
@@ -70,6 +72,9 @@ export const StudentDashboardPage: React.FC = () => {
   const [customDepartment, setCustomDepartment] = useState('');
   const [year, setYear] = useState('');
   const [yearOfPassing, setYearOfPassing] = useState('');
+  const [domain, setDomain] = useState<string>('');
+  const [position, setPosition] = useState<string>('');
+  const [customPosition, setCustomPosition] = useState<string>('');
 
   // Events & Submissions State
   const [events, setEvents] = useState<ClubEvent[]>([]);
@@ -82,6 +87,11 @@ export const StudentDashboardPage: React.FC = () => {
   const [selectedTicketData, setSelectedTicketData] = useState<{ event: ClubEvent; submission: FormSubmission } | null>(null);
   const [downloadingCertificateId, setDownloadingCertificateId] = useState<string | null>(null);
 
+  // Derive available positions when selecting domain
+  const availablePositions = domain && (POSITIONS_BY_DOMAIN as any)[domain]
+    ? (POSITIONS_BY_DOMAIN as any)[domain]
+    : ALL_TEAM_POSITIONS;
+
   // Sync profile data into local state
   const syncProfileFields = (p = profile) => {
     if (!p) return;
@@ -92,6 +102,11 @@ export const StudentDashboardPage: React.FC = () => {
     setPhoneNumber(details.phone_number || details.phone || '');
     setYear(details.year || '');
     setYearOfPassing(details.year_of_passing || details.passout_year || '');
+    setDomain(details.domain || '');
+
+    const currentPos = details.position || details.role || '';
+    setPosition(currentPos);
+    setCustomPosition(currentPos);
 
     const currentDept = details.department || '';
     if (currentDept) {
@@ -171,11 +186,16 @@ export const StudentDashboardPage: React.FC = () => {
 
     setIsSaving(true);
     const resolvedDept = department === 'Other' ? customDepartment.trim() : department;
+    const resolvedPos = position === 'Other' ? customPosition.trim() : position;
 
     try {
       const payload = {
         full_name: fullName.trim(),
         details: {
+          ...currentDetails,
+          domain: domain.trim() || currentDetails.domain || undefined,
+          position: resolvedPos.trim() || currentDetails.position || undefined,
+          role: resolvedPos.trim() || currentDetails.role || undefined,
           roll_no: rollNo.trim() ? rollNo.trim().toUpperCase() : undefined,
           email: profileEmail.trim() || undefined,
           phone_number: phoneNumber.trim() || undefined,
@@ -194,7 +214,7 @@ export const StudentDashboardPage: React.FC = () => {
       setIsEditing(false);
       toast({
         title: 'Profile Updated',
-        description: 'Your student details have been saved successfully.',
+        description: 'Your profile details have been saved successfully.',
       });
     } catch (err: any) {
       toast({
@@ -414,6 +434,18 @@ export const StudentDashboardPage: React.FC = () => {
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold bg-google-green/10 text-google-green border border-google-green/30">
                     Active Profile
                   </span>
+                  {(Boolean(currentDetails.position) || role === 'admin') && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold bg-google-blue/10 text-google-blue border border-google-blue/30 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-google-blue" />
+                      {currentDetails.position || currentDetails.role || 'Chapter Admin'}
+                    </span>
+                  )}
+                  {Boolean(currentDetails.domain) && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                      <Layers className="w-3 h-3 text-purple-500" />
+                      {currentDetails.domain}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground font-mono flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-google-blue" />
@@ -447,6 +479,34 @@ export const StudentDashboardPage: React.FC = () => {
                   transition={{ duration: 0.2 }}
                   className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
                 >
+                  {/* GDG Team Position Tile */}
+                  {(role === 'admin' || Boolean(currentDetails.position)) && (
+                    <div className="p-4 rounded-2xl bg-google-blue/5 border border-google-blue/20 space-y-1">
+                      <div className="flex items-center gap-2 text-google-blue text-xs font-semibold">
+                        <ShieldCheck className="w-4 h-4 text-google-blue" />
+                        <span>GDG Team Position</span>
+                      </div>
+                      <p className="text-sm font-bold text-foreground pt-0.5">
+                        {currentDetails.position || currentDetails.role || (role === 'admin' ? 'Administrator' : 'Not assigned')}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground font-mono">Official Chapter Role</span>
+                    </div>
+                  )}
+
+                  {/* GDG Team Domain Tile */}
+                  {(role === 'admin' || Boolean(currentDetails.domain)) && (
+                    <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 space-y-1">
+                      <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400 text-xs font-semibold">
+                        <Layers className="w-4 h-4 text-purple-500" />
+                        <span>GDG Chapter Domain</span>
+                      </div>
+                      <p className="text-sm font-bold text-foreground pt-0.5">
+                        {currentDetails.domain || (role === 'admin' ? 'Leadership Command' : 'Core Team')}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground font-mono">Department Roster</span>
+                    </div>
+                  )}
+
                   {/* Name Tile */}
                   <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 space-y-1">
                     <div className="flex items-center gap-2 text-muted-foreground text-xs font-semibold">
@@ -525,6 +585,72 @@ export const StudentDashboardPage: React.FC = () => {
                   className="space-y-6"
                 >
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {/* Admin Domain Selector (Visible for Admin / Core Team) */}
+                    {(role === 'admin' || Boolean(currentDetails.domain || currentDetails.position)) && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-purple-500" />
+                          <span>GDG Chapter Domain</span>
+                        </label>
+                        <select
+                          value={domain}
+                          onChange={(e) => {
+                            setDomain(e.target.value);
+                            setPosition('');
+                            setCustomPosition('');
+                          }}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500"
+                        >
+                          <option value="">Select Chapter Domain</option>
+                          {TEAM_DOMAINS.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Admin Position Selector (Visible for Admin / Core Team) */}
+                    {(role === 'admin' || Boolean(currentDetails.domain || currentDetails.position)) && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-google-blue" />
+                          <span>GDG Team Position / Role</span>
+                        </label>
+                        <select
+                          value={position}
+                          onChange={(e) => setPosition(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                        >
+                          <option value="">Select Team Position</option>
+                          {availablePositions.map((pos) => (
+                            <option key={pos} value={pos}>
+                              {pos}
+                            </option>
+                          ))}
+                          <option value="Other">Other / Custom Position</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Custom Position Input if Other */}
+                    {position === 'Other' && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-foreground">
+                          Specify Position Title <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Lead Technical Architect"
+                          value={customPosition}
+                          onChange={(e) => setCustomPosition(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                        />
+                      </div>
+                    )}
+
                     {/* Full Name Input */}
                     <div className="space-y-1.5">
                       <label className="block text-xs font-semibold text-foreground">
@@ -793,14 +919,31 @@ export const StudentDashboardPage: React.FC = () => {
                             className="w-full h-full object-cover"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                          <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                            <span
-                              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase text-white shadow-sm"
-                              style={{ backgroundColor: accentColor }}
-                            >
-                              {details.category || 'Workshop'}
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-blue text-white shadow-sm">
+                          <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase text-white shadow-sm"
+                                style={{ backgroundColor: accentColor }}
+                              >
+                                {details.category || 'Workshop'}
+                              </span>
+                              {details.participation_type && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase bg-black/60 text-white backdrop-blur-md border border-white/20 shadow-sm">
+                                  {details.participation_type.toLowerCase() === 'team' ? (
+                                    <>
+                                      <Users className="w-3 h-3 text-google-yellow" />
+                                      <span>Team</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <User className="w-3 h-3 text-google-blue" />
+                                      <span>Individual</span>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-blue text-white shadow-sm shrink-0">
                               <CheckCircle2 className="w-3 h-3" />
                               <span>Registered</span>
                             </span>
@@ -814,17 +957,34 @@ export const StudentDashboardPage: React.FC = () => {
                       ) : (
                         <div className="p-5 pb-3 border-b border-border/60">
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <span
-                              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase"
-                              style={{
-                                backgroundColor: `${accentColor}20`,
-                                color: accentColor,
-                                border: `1px solid ${accentColor}40`,
-                              }}
-                            >
-                              {details.category || 'Workshop'}
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-blue/15 text-google-blue">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase"
+                                style={{
+                                  backgroundColor: `${accentColor}20`,
+                                  color: accentColor,
+                                  border: `1px solid ${accentColor}40`,
+                                }}
+                              >
+                                {details.category || 'Workshop'}
+                              </span>
+                              {details.participation_type && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase bg-muted text-foreground border border-border">
+                                  {details.participation_type.toLowerCase() === 'team' ? (
+                                    <>
+                                      <Users className="w-3 h-3 text-google-yellow" />
+                                      <span>Team</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <User className="w-3 h-3 text-google-blue" />
+                                      <span>Individual</span>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-google-blue/15 text-google-blue shrink-0">
                               <CheckCircle2 className="w-3 h-3" />
                               <span>Registered</span>
                             </span>

@@ -124,6 +124,12 @@ export const authService = {
     if (role === 'admin' && adminCode) {
       params.append('admin_code', adminCode);
     }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      params.append(
+        'redirect_to',
+        `${window.location.origin}/auth/callback${role === 'admin' ? '?role=admin' : ''}`
+      );
+    }
     return apiRequest<GoogleUrlResponse>(`/api/auth/google/url?${params.toString()}`, {
       method: 'GET',
     });

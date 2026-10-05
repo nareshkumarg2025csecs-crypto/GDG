@@ -123,7 +123,11 @@ export const AdminGatewayPage: React.FC = () => {
           description: 'Successfully authenticated to the GDG Admin Portal.',
         });
 
-        navigate('/admin/events', { replace: true });
+        if (!response.profile?.details?.position || !response.profile?.details?.domain) {
+          navigate('/admin/onboard', { replace: true });
+        } else {
+          navigate('/admin/events', { replace: true });
+        }
       } else {
         const response = await signup(
           {
@@ -140,7 +144,7 @@ export const AdminGatewayPage: React.FC = () => {
             title: 'Admin Account Created',
             description: `Welcome to GDG Administration, ${response.profile.full_name || response.profile.email}.`,
           });
-          navigate('/admin/events', { replace: true });
+          navigate('/admin/onboard', { replace: true });
         } else {
           setServerSuccess(
             response.message || 'Admin registration successful! Please check your email to verify your account.'
@@ -163,6 +167,7 @@ export const AdminGatewayPage: React.FC = () => {
       } else {
         sessionStorage.removeItem('pending_admin_code');
       }
+      sessionStorage.setItem('oauth_role', 'admin');
       await initiateGoogleLogin('admin', secretCode);
     } catch (err: any) {
       setServerError(err.message || 'Google administrator authentication failed.');

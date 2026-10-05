@@ -54,6 +54,16 @@ class EmailQueueService {
     headers = {},
     lastError = null,
   }) {
+    // Strip raw Buffer content from attachments — Supabase JSONB cannot serialize Node.js Buffers.
+    // The HTML email already embeds the QR via a hosted API URL so binary data is not needed for retries.
+    const safeAttachments = (attachments || []).map((att) => {
+      if (att && att.content && (Buffer.isBuffer(att.content) || att.content?.type === 'Buffer')) {
+        // Keep only metadata; strip the binary blob
+        return { filename: att.filename, contentType: att.contentType || 'application/octet-stream', stripped: true };
+      }
+      return att;
+    });
+
     const queueRecord = {
       to_email: to,
       attendee_name: attendeeName,
@@ -64,7 +74,7 @@ class EmailQueueService {
       event_id: eventId,
       form_id: formId,
       submission_id: submissionId,
-      attachments,
+      attachments: safeAttachments,
       headers,
       status: 'pending',
       attempts: 0,
@@ -87,6 +97,7 @@ class EmailQueueService {
       return { queued: true, id: data.id, source: 'database' };
     } catch (dbErr) {
       console.warn('[EmailQueueService] DB insert failed (using file fallback):', dbErr.message);
+      // For local backup also use safe attachments to avoid multi-MB files
       const localQueue = readLocalBackup();
       const localRecord = {
         ...queueRecord,
@@ -188,12 +199,17 @@ class EmailQueueService {
             .update({ status: 'processing', attempts: (item.attempts || 0) + 1 })
             .eq('id', item.id);
 
+          let dbAttachments = item.attachments || [];
+          if (typeof dbAttachments === 'string') {
+            try { dbAttachments = JSON.parse(dbAttachments); } catch { dbAttachments = []; }
+          }
+
           const result = await GmailApiService.sendMail({
             to: item.to_email,
             subject: item.subject,
             html: item.html,
             text: item.text,
-            attachments: item.attachments || [],
+            attachments: dbAttachments,
             headers: item.headers || {},
           });
 
@@ -257,12 +273,17 @@ class EmailQueueService {
     for (let i = 0; i < localQueue.length; i++) {
       const item = localQueue[i];
       if (item.status === 'pending') {
+        let localAttachments = item.attachments || [];
+        if (typeof localAttachments === 'string') {
+          try { localAttachments = JSON.parse(localAttachments); } catch { localAttachments = []; }
+        }
+
         const result = await GmailApiService.sendMail({
           to: item.to_email,
           subject: item.subject,
           html: item.html,
           text: item.text,
-          attachments: item.attachments || [],
+          attachments: localAttachments,
           headers: item.headers || {},
         });
 

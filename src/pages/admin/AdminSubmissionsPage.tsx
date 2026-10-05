@@ -230,7 +230,7 @@ export const AdminSubmissionsPage: React.FC = () => {
     setIsConnectingGoogle(true);
     try {
       localStorage.setItem('auth_link_redirect', window.location.pathname);
-      const { url } = await eventService.getGoogleLinkUrl();
+      const { url } = await eventService.getGoogleLinkUrl('admin', 'sheets');
       if (url) {
         window.location.href = url;
       } else {

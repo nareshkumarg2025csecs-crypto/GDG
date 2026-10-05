@@ -19,7 +19,7 @@ const createEventReminder = async (req, res) => {
     // 1. Verify event exists
     const { data: event, error: eventErr } = await supabaseAdmin
       .from('events')
-      .select('*')
+      .select('id, title, details')
       .eq('id', eventId)
       .single();
 
@@ -118,7 +118,10 @@ const getGoogleLinkUrl = async (req, res) => {
 
     // Admin provides all scopes (calendar, spreadsheets, drive).
     // Students only accept the strictly necessary calendar & profile permissions.
-    const isAdmin = req.user?.role === 'admin';
+    const requestedRole = req.query?.role;
+    const isExplicitSheets = req.query?.scope === 'sheets';
+    const effectiveRole = req.user?.role || req.user?.profile?.role || requestedRole;
+    const isAdmin = effectiveRole === 'admin' || isExplicitSheets;
     const scopesList = isAdmin
       ? [
           'email',

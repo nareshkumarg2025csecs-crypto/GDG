@@ -17,6 +17,7 @@ import {
   ZoomIn,
   X as XIcon,
   Loader2,
+  User,
   Users,
 } from 'lucide-react';
 import { eventService } from '@/services/eventService';
@@ -319,6 +320,26 @@ export const EventDetailPage: React.FC = () => {
                   {details.category || 'Workshop'}
                 </span>
 
+                {details.participation_type && (
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono uppercase ${
+                    details.participation_type.toLowerCase() === 'team'
+                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                      : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                  }`}>
+                    {details.participation_type.toLowerCase() === 'team' ? (
+                      <>
+                        <Users className="w-3.5 h-3.5 text-purple-500" />
+                        <span>Team Event</span>
+                      </>
+                    ) : (
+                      <>
+                        <User className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Individual Event</span>
+                      </>
+                    )}
+                  </span>
+                )}
+
                 {regState === 'registered' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
                     <CheckCircle2 className="w-3.5 h-3.5" />
@@ -405,6 +426,26 @@ export const EventDetailPage: React.FC = () => {
                       </span>
                     </div>
                   </div>
+
+                  {details.participation_type && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+                        {details.participation_type.toLowerCase() === 'team' ? (
+                          <Users className="w-5 h-5 text-purple-500" />
+                        ) : (
+                          <User className="w-5 h-5 text-google-blue" />
+                        )}
+                      </div>
+                      <div>
+                        <span className="block text-[10px] font-mono uppercase font-bold text-muted-foreground">
+                          Format
+                        </span>
+                        <span className="text-sm font-semibold capitalize">
+                          {details.participation_type.toLowerCase() === 'team' ? 'Team Event' : 'Individual Event'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {showCount && (
                     <div className="flex items-center gap-3">
