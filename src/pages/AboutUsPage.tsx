@@ -1,6 +1,4 @@
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -44,22 +42,6 @@ const AboutUsPage = () => {
           aria-labelledby="about-page-heading"
           className="pt-28 pb-16 md:pt-36 md:pb-20 container mx-auto px-6 md:px-12 max-w-4xl"
         >
-          {/* Back to Home Button */}
-          <motion.div
-            variants={fadeUp}
-            initial="hidden"
-            animate="visible"
-            custom={0}
-            className="mb-6 md:mb-8"
-          >
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
-            >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
-              <span>Back to Home</span>
-            </Link>
-          </motion.div>
 
           {/* Eyebrow label */}
           <motion.p
