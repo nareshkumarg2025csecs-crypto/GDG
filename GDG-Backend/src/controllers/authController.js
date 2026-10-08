@@ -320,18 +320,23 @@ const handleSignup = async (req, res, fixedRole) => {
 
     const userId = authDataUser.id;
 
-    // 4. Insert profile record in `public.profiles` using the Supabase Admin client (Service Role Key)
-    const { data: profileData, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert([
-        {
-          id: userId,
-          email: normalizedEmail,
-          full_name: full_name.trim(),
-          role: fixedRole,
-          details: details && typeof details === 'object' ? details : {},
-        },
-      ])
+    // 4. Insert or upsert profile record in `public.profiles` using the Supabase Admin client (Service Role Key)
+    const profilePayload = [
+      {
+        id: userId,
+        email: normalizedEmail,
+        full_name: full_name.trim(),
+        role: fixedRole,
+        details: details && typeof details === 'object' ? details : {},
+      },
+    ];
+
+    const profilesTable = supabaseAdmin.from('profiles');
+    const upsertOrInsert = typeof profilesTable.upsert === 'function'
+      ? profilesTable.upsert(profilePayload, { onConflict: 'id' })
+      : profilesTable.insert(profilePayload);
+
+    const { data: profileData, error: profileError } = await upsertOrInsert
       .select()
       .single();
 
@@ -1082,17 +1087,22 @@ const syncGoogleProfile = async (req, res) => {
     if (!profile) {
       isNewUser = true;
       const fullName = user.user_metadata?.full_name || user.user_metadata?.name || 'Google User';
-      const { data: newProfile, error: createError } = await supabaseAdmin
-        .from('profiles')
-        .insert([
-          {
-            id: user.id,
-            email: user.email,
-            full_name: fullName,
-            role: assignedRole,
-            details: {},
-          },
-        ])
+      const googleProfilePayload = [
+        {
+          id: user.id,
+          email: user.email,
+          full_name: fullName,
+          role: assignedRole,
+          details: {},
+        },
+      ];
+
+      const googleProfilesTable = supabaseAdmin.from('profiles');
+      const upsertOrInsertGoogle = typeof googleProfilesTable.upsert === 'function'
+        ? googleProfilesTable.upsert(googleProfilePayload, { onConflict: 'id' })
+        : googleProfilesTable.insert(googleProfilePayload);
+
+      const { data: newProfile, error: createError } = await upsertOrInsertGoogle
         .select()
         .single();
 

@@ -89,6 +89,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
     return () => clearInterval(interval);
   }, [resetCooldown]);
 
+  // Reset stuck loading states if user returns to tab (closes popup, presses Back, switches windows)
+  useEffect(() => {
+    const handleResetLoading = () => {
+      setIsGoogleLoading(false);
+      setIsSubmitting(false);
+    };
+
+    window.addEventListener('pageshow', handleResetLoading);
+    window.addEventListener('focus', handleResetLoading);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResetLoading();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pageshow', handleResetLoading);
+      window.removeEventListener('focus', handleResetLoading);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   const handleSendPasswordReset = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const targetEmail = (forgotPasswordEmail || email).trim();
@@ -433,6 +456,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
   const executeGoogleRedirect = async (secretCode?: string) => {
     setIsGoogleLoading(true);
     setServerError(null);
+
+    // Auto-reset loading state if user cancels popup, navigation is aborted, or window stays open
+    const safetyTimer = setTimeout(() => {
+      setIsGoogleLoading(false);
+    }, 6000);
+
     try {
       if (secretCode) {
         sessionStorage.setItem('pending_admin_code', secretCode.trim());
@@ -441,6 +470,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
       }
       await initiateGoogleLogin(role, role === 'admin' ? secretCode : undefined);
     } catch (err: any) {
+      clearTimeout(safetyTimer);
       setServerError(sanitizeErrorMessage(err));
       setIsGoogleLoading(false);
       setAdminGoogleModalOpen(false);

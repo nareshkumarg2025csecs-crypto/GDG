@@ -34,6 +34,29 @@ export const AdminGatewayPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [adminGoogleModalOpen]);
 
+  // Reset stuck loading states if user returns to tab (closes popup, presses Back, switches windows)
+  React.useEffect(() => {
+    const handleResetLoading = () => {
+      setIsGoogleLoading(false);
+      setIsSubmitting(false);
+    };
+
+    window.addEventListener('pageshow', handleResetLoading);
+    window.addEventListener('focus', handleResetLoading);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResetLoading();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pageshow', handleResetLoading);
+      window.removeEventListener('focus', handleResetLoading);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   // If already authenticated as admin, immediately redirect to admin panel
   if (!isLoading && isAuthenticated && role === 'admin') {
     return <Navigate to="/admin/events" replace />;
@@ -171,6 +194,12 @@ export const AdminGatewayPage: React.FC = () => {
   const handleGoogleAdminLogin = async (secretCode?: string) => {
     setIsGoogleLoading(true);
     setServerError(null);
+
+    // Auto-reset loading state if popup canceled or page remains mounted
+    const safetyTimer = setTimeout(() => {
+      setIsGoogleLoading(false);
+    }, 6000);
+
     try {
       if (secretCode) {
         sessionStorage.setItem('pending_admin_code', secretCode.trim());
@@ -180,6 +209,7 @@ export const AdminGatewayPage: React.FC = () => {
       sessionStorage.setItem('oauth_role', 'admin');
       await initiateGoogleLogin('admin', secretCode);
     } catch (err: any) {
+      clearTimeout(safetyTimer);
       setServerError(err.message || 'Google administrator authentication failed.');
       setIsGoogleLoading(false);
     }
