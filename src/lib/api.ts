@@ -2,10 +2,17 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_API_URL) {
     return (import.meta.env.VITE_API_URL as string).replace(/\/+$/, '');
   }
-  // In browser environments, Vite dev server proxies /api to port 5000 directly.
-  // Using relative URL eliminates cross-origin port issues, CORS preflights, and reduces egress.
+  // In browser environments:
   if (typeof window !== 'undefined') {
-    return '';
+    const isLocalhost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+    // Local development: use relative path proxied by Vite to port 5000
+    if (isLocalhost) {
+      return '';
+    }
+    // Hosted production (e.g. Vercel): target live Render backend
+    return 'https://gdg-backend-54mp.onrender.com';
   }
   return 'http://localhost:5000';
 };
