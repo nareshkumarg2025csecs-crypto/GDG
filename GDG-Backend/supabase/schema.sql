@@ -470,3 +470,66 @@ CREATE POLICY "Admins can view email queue"
     );
 
 
+-- ==============================================================================
+-- 13. Event Certificates Table (Python Script & Email Template per Event)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.event_certificates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID UNIQUE NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    script_code TEXT NOT NULL,
+    output_format TEXT DEFAULT 'pdf' NOT NULL CHECK (output_format IN ('pdf', 'png', 'jpg')),
+    email_subject TEXT DEFAULT 'Your GDG Certificate of Participation' NOT NULL,
+    email_body TEXT DEFAULT 'Thank you for attending our GDG event! Please find your official certificate attached.' NOT NULL,
+    updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Enable RLS on event_certificates
+ALTER TABLE public.event_certificates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Admins can manage event certificates" ON public.event_certificates;
+CREATE POLICY "Admins can manage event certificates"
+    ON public.event_certificates
+    FOR ALL
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+        )
+    );
+
+-- Safe column additions to form_submissions for certificate tracking
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'certificate_sent'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN certificate_sent BOOLEAN DEFAULT false NOT NULL;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'certificate_sent_at'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN certificate_sent_at TIMESTAMP WITH TIME ZONE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'form_submissions' 
+          AND column_name = 'certificate_id'
+    ) THEN
+        ALTER TABLE public.form_submissions ADD COLUMN certificate_id TEXT;
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
+

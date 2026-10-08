@@ -1,12 +1,18 @@
-import { useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Linkedin, Github, Mail } from 'lucide-react';
+import { X, Linkedin, Mail } from 'lucide-react';
 import { useTeamStore } from '@/store/teamStore';
 import { DEPARTMENT_COLORS } from '@/data/team';
 
 export default function TeamModal() {
     const { isModalOpen, selectedMember, closeModal } = useTeamStore();
     const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+    const [imgError, setImgError] = useState(false);
+
+    useEffect(() => {
+        setImgError(false);
+    }, [selectedMember?.id]);
 
     useEffect(() => {
         if (isModalOpen && closeButtonRef.current) {
@@ -37,13 +43,11 @@ export default function TeamModal() {
         if (e.target === e.currentTarget) closeModal();
     }, [closeModal]);
 
-    if (!selectedMember) return null;
-
-    const departmentColor = DEPARTMENT_COLORS[selectedMember.department];
+    const departmentColor = selectedMember ? DEPARTMENT_COLORS[selectedMember.department] : '#4285F4';
 
     return (
         <AnimatePresence>
-            {isModalOpen && (
+            {isModalOpen && selectedMember && (
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -52,6 +56,7 @@ export default function TeamModal() {
                     onClick={handleBackdropClick}
                     role="dialog"
                     aria-modal="true"
+                    aria-labelledby="team-modal-member-name"
                 >
                     <motion.div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
 
@@ -74,18 +79,31 @@ export default function TeamModal() {
                         </button>
 
                         <div className="p-8 pt-6">
-                            <div
-                                className="w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center text-3xl font-bold"
-                                style={{
-                                    backgroundColor: `${departmentColor}20`,
-                                    border: `2px solid ${departmentColor}`,
-                                    color: departmentColor,
-                                }}
-                            >
-                                {selectedMember.name.charAt(0).toUpperCase()}
-                            </div>
+                            {selectedMember.image && !imgError ? (
+                                <img
+                                    src={selectedMember.image}
+                                    alt={selectedMember.name}
+                                    onError={() => setImgError(true)}
+                                    className="w-24 h-24 mx-auto mb-6 rounded-full object-cover object-top shadow-lg"
+                                    style={{
+                                        border: `2px solid ${departmentColor}`,
+                                        boxShadow: `0 0 25px ${departmentColor}50`,
+                                    }}
+                                />
+                            ) : (
+                                <div
+                                    className="w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center text-3xl font-bold"
+                                    style={{
+                                        backgroundColor: `${departmentColor}20`,
+                                        border: `2px solid ${departmentColor}`,
+                                        color: departmentColor,
+                                    }}
+                                >
+                                    {selectedMember.name.charAt(0).toUpperCase()}
+                                </div>
+                            )}
 
-                            <h2 className="text-2xl font-bold text-white text-center mb-1">
+                            <h2 id="team-modal-member-name" className="text-2xl font-bold text-white text-center mb-1">
                                 {selectedMember.name}
                             </h2>
 
@@ -106,16 +124,30 @@ export default function TeamModal() {
                                 </span>
                             </div>
 
-                            <div className="flex justify-center gap-3">
-                                <button className="p-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all group">
-                                    <Linkedin className="w-5 h-5 text-white/40 group-hover:text-[#0A66C2]" />
-                                </button>
-                                <button className="p-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all group">
-                                    <Github className="w-5 h-5 text-white/40 group-hover:text-white" />
-                                </button>
-                                <button className="p-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all group">
-                                    <Mail className="w-5 h-5 text-white/40 group-hover:text-[#EA4335]" />
-                                </button>
+                            <div className="flex justify-center items-center gap-3">
+                                {selectedMember.linkedin ? (
+                                    <a
+                                        href={selectedMember.linkedin}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={`${selectedMember.name} on LinkedIn`}
+                                        className="p-3 rounded-full bg-white/5 hover:bg-[#0A66C2]/20 border border-white/10 hover:border-[#0A66C2] transition-all group"
+                                    >
+                                        <Linkedin className="w-5 h-5 text-white/60 group-hover:text-[#0A66C2]" aria-hidden="true" />
+                                    </a>
+                                ) : null}
+                                {selectedMember.email ? (
+                                    <a
+                                        href={`mailto:${selectedMember.email}`}
+                                        aria-label={`Email ${selectedMember.name}`}
+                                        className="p-3 rounded-full bg-white/5 hover:bg-[#EA4335]/20 border border-white/10 hover:border-[#EA4335] transition-all group"
+                                    >
+                                        <Mail className="w-5 h-5 text-white/60 group-hover:text-[#EA4335]" aria-hidden="true" />
+                                    </a>
+                                ) : null}
+                                {!selectedMember.linkedin && !selectedMember.email && (
+                                    <p className="text-xs text-white/40 font-mono">Contact details coming soon</p>
+                                )}
                             </div>
                         </div>
                     </motion.div>

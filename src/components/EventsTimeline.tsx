@@ -223,7 +223,7 @@ const EventCard = ({
           <h3 style={{
             fontSize: isMobile ? 18 : 22,
             fontWeight: 700,
-            color: 'rgb(var(--foreground))',
+            color: 'hsl(var(--foreground))',
             marginBottom: 6,
             textShadow: `0 0 20px ${displayColor}50`,
             transition: 'color 0.3s'
@@ -404,12 +404,11 @@ const TimelineUI = ({
           Journey Through Time
         </p>
         <h2
-          className="text-5xl md:text-7xl font-display transition-colors duration-300"
-          style={{ color: 'rgb(var(--foreground))', textShadow: '0 0 40px rgba(var(--primary), 0.1)' }}
+          className="text-5xl md:text-7xl font-display text-foreground transition-colors duration-300"
         >
           EVENTS
         </h2>
-        <p className="text-[rgb(var(--foreground))]/40 mt-2 text-sm transition-colors duration-300">Fly through our experiences</p>
+        <p className="text-muted-foreground mt-2 text-sm transition-colors duration-300">Fly through our experiences</p>
       </div>
 
       {/* Progress Indicator (Right Side) */}
@@ -436,17 +435,17 @@ const TimelineUI = ({
 
       {/* Scroll Hint */}
       <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-center">
-        <p className="text-[rgb(var(--foreground))]/25 text-[10px] uppercase tracking-[0.3em] mb-2">
+        <p className="text-muted-foreground/60 text-[10px] uppercase tracking-[0.3em] mb-2">
           Scroll to explore
         </p>
-        <div className="w-5 h-8 rounded-full border border-[rgb(var(--foreground))]/20 flex justify-center pt-1.5 mx-auto">
-          <div className="w-1 h-1.5 bg-[rgb(var(--foreground))]/40 rounded-full animate-bounce" />
+        <div className="w-5 h-8 rounded-full border border-border flex justify-center pt-1.5 mx-auto">
+          <div className="w-1 h-1.5 bg-foreground/40 rounded-full animate-bounce" />
         </div>
       </div>
 
       {/* Progress Bar */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-40">
-        <div className="h-0.5 bg-[rgb(var(--foreground))]/10 rounded-full overflow-hidden">
+        <div className="h-0.5 bg-foreground/10 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-150"
             style={{
@@ -512,7 +511,12 @@ const EventsTimeline = () => {
             far: 200,
           }}
           dpr={[1, 2]}
-          gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+          gl={{ antialias: true, alpha: false, powerPreference: 'default' }}
+          onCreated={({ gl }) => {
+            gl.domElement.addEventListener('webglcontextlost', (e) => {
+              e.preventDefault();
+            }, false);
+          }}
         >
           <Suspense fallback={<Loader />}>
             <ScrollControls pages={pages} damping={0.25} distance={1}>

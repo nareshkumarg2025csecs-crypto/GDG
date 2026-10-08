@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
-import { ArrowUp, Github, Twitter, Linkedin, Instagram } from 'lucide-react';
+import { ArrowUp, Linkedin, Instagram, Youtube } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
+import { TOOLS_CONFIG } from '@/config/toolsConfig';
 
 const BRAND_LETTERS = [
   { chars: 'GOOGLE', color: null },
@@ -11,13 +13,17 @@ const BRAND_LETTERS = [
 const GOOGLE_STRIPE = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
 const socialLinks = [
-  { name: 'GitHub',    icon: Github,    href: '#', hoverColor: '#ffffff' },
-  { name: 'Twitter',   icon: Twitter,   href: '#', hoverColor: '#1DA1F2' },
-  { name: 'LinkedIn',  icon: Linkedin,  href: '#', hoverColor: '#0A66C2' },
-  { name: 'Instagram', icon: Instagram, href: '#', hoverColor: '#E1306C' },
+  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/showcase/google-developer-groups/about/',           hoverColor: '#0A66C2' },
+  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/',                                          hoverColor: '#E1306C' },
+  { name: 'YouTube',   icon: Youtube,   href: 'https://youtube.com/@gdgrec?si=q6AanONH9r7qxSCm',                           hoverColor: '#FF0000' },
 ];
 
-const navLinks = ['Home', 'Events', 'Core', 'About Us'];
+const navLinks = [
+  { label: 'Home',     href: '/' },
+  { label: 'Events',   href: '/events' },
+  { label: 'Team',     href: '/team' },
+  { label: 'About Us', href: '/about-us' },
+];
 
 const Footer = () => {
   const { theme } = useTheme();
@@ -35,25 +41,25 @@ const Footer = () => {
         }}
       />
 
-      {/* Rotating decorative rings */}
-      <motion.div
-        animate={{ rotate: 360 }}
-        transition={{ duration: 70, repeat: Infinity, ease: 'linear' }}
-        className="absolute -top-40 -right-40 w-80 h-80 rounded-full pointer-events-none"
-        style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(31,31,31,0.04)'}` }}
-      />
-      <motion.div
-        animate={{ rotate: -360 }}
-        transition={{ duration: 90, repeat: Infinity, ease: 'linear' }}
-        className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full pointer-events-none"
-        style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : 'rgba(31,31,31,0.03)'}` }}
-      />
-
-      {/* Ambient glow */}
-      <div
-        className="absolute top-20 right-20 w-[300px] h-[300px] rounded-full blur-[150px] pointer-events-none"
-        style={{ background: isDark ? 'radial-gradient(circle, #4285F412 0%, transparent 70%)' : 'transparent' }}
-      />
+      {/* Rotating decorative rings & ambient glow (Desktop only for smooth mobile performance) */}
+      <div className="hidden md:block pointer-events-none">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 70, repeat: Infinity, ease: 'linear' }}
+          className="absolute -top-40 -right-40 w-80 h-80 rounded-full"
+          style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.04)' : 'rgba(31,31,31,0.04)'}` }}
+        />
+        <motion.div
+          animate={{ rotate: -360 }}
+          transition={{ duration: 90, repeat: Infinity, ease: 'linear' }}
+          className="absolute -bottom-60 -left-60 w-[500px] h-[500px] rounded-full"
+          style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.03)' : 'rgba(31,31,31,0.03)'}` }}
+        />
+        <div
+          className="absolute top-20 right-20 w-[300px] h-[300px] rounded-full blur-[150px]"
+          style={{ background: isDark ? 'radial-gradient(circle, #4285F412 0%, transparent 70%)' : 'transparent' }}
+        />
+      </div>
 
       <div className="container mx-auto px-6 md:px-12 relative z-10 max-w-7xl">
         {/* Large editorial brand headline with letter stagger */}
@@ -125,14 +131,14 @@ const Footer = () => {
             </h4>
             <ul className="space-y-3">
               {navLinks.map((link) => (
-                <li key={link}>
-                  <a
-                    href={`#${link.toLowerCase().replace(' ', '-')}`}
+                <li key={link.label}>
+                  <Link
+                    to={link.href}
                     className="link-wipe text-sm font-medium transition-colors"
                     style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
                   >
-                    {link}
-                  </a>
+                    {link.label}
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -159,9 +165,12 @@ const Footer = () => {
                 <motion.a
                   key={social.name}
                   href={social.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Visit Google Developer Groups on ${social.name}`}
                   whileHover={{ scale: 1.12, y: -4 }}
                   whileTap={{ scale: 0.92 }}
-                  className="w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 border"
+                  className="w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
                   data-physics
                   style={{
                     borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.12)',
@@ -179,18 +188,18 @@ const Footer = () => {
                     (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.04)' : 'transparent';
                   }}
                 >
-                  <social.icon className="w-4 h-4" />
+                  <social.icon className="w-4 h-4" aria-hidden="true" />
                 </motion.a>
               ))}
             </div>
 
             {/* Email */}
             <a
-              href="mailto:contact@gdg.community"
+              href="mailto:gdg@rajalakshmi.edu.in"
               className="link-wipe text-sm font-medium"
               style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
             >
-              contact@gdg.community
+              gdg@rajalakshmi.edu.in
             </a>
           </motion.div>
         </div>
@@ -208,6 +217,8 @@ const Footer = () => {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             whileHover={{ scale: 1.08, y: -4 }}
             whileTap={{ scale: 0.94 }}
+            aria-label="Scroll back to top"
+            type="button"
             className="btn-shimmer mt-5 md:mt-0 w-12 h-12 rounded-2xl flex items-center justify-center border transition-all"
             data-physics
             style={{
@@ -221,7 +232,7 @@ const Footer = () => {
                 : '0 8px 25px rgba(31,31,31,0.15)',
             }}
           >
-            <ArrowUp className="w-5 h-5" />
+            <ArrowUp className="w-5 h-5" aria-hidden="true" />
           </motion.button>
         </div>
       </div>

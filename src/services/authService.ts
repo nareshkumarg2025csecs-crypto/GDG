@@ -18,6 +18,8 @@ export interface AuthResponse {
   message: string;
   access_token: string | null;
   refresh_token: string | null;
+  requires_verification?: boolean;
+  email?: string;
   user?: {
     id: string;
     email: string;
@@ -67,6 +69,28 @@ export const authService = {
     });
   },
 
+  async resendStudentVerification(email: string): Promise<{ message: string; email: string }> {
+    return apiRequest<{ message: string; email: string }>('/api/auth/student/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest<{ success: boolean; message: string }>('/api/auth/student/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(password: string, token: string): Promise<{ success: boolean; message: string }> {
+    return apiRequest<{ success: boolean; message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ password }),
+    });
+  },
+
   async adminSignup(data: AdminSignupData): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/api/auth/admin/signup', {
       method: 'POST',
@@ -95,10 +119,23 @@ export const authService = {
     });
   },
 
+  async refreshToken(refreshToken: string): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  },
+
   async getGoogleOAuthUrl(role: UserRole = 'student', adminCode?: string): Promise<GoogleUrlResponse> {
     const params = new URLSearchParams({ role });
     if (role === 'admin' && adminCode) {
       params.append('admin_code', adminCode);
+    }
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      params.append(
+        'redirect_to',
+        `${window.location.origin}/auth/callback${role === 'admin' ? '?role=admin' : ''}`
+      );
     }
     return apiRequest<GoogleUrlResponse>(`/api/auth/google/url?${params.toString()}`, {
       method: 'GET',
@@ -118,13 +155,18 @@ export const authService = {
       provider_refresh_token?: string;
       role?: UserRole;
       admin_code?: string;
+      access_token?: string;
     },
     token: string
   ): Promise<GoogleSyncResponse> {
     return apiRequest<GoogleSyncResponse>('/api/auth/google/sync-profile', {
       method: 'POST',
       token,
-      body: JSON.stringify(payload),
+      retries: 2,
+      body: JSON.stringify({
+        ...payload,
+        access_token: token,
+      }),
     });
   },
 

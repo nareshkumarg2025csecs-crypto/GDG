@@ -1,3 +1,12 @@
+// Polyfill global WebSocket for Node.js runtimes (< Node 22) required by @supabase/supabase-js
+if (typeof globalThis.WebSocket === 'undefined') {
+  try {
+    globalThis.WebSocket = require('ws');
+  } catch (e) {
+    // Fallback if ws is not present
+  }
+}
+
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
 

@@ -55,7 +55,31 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         continue;
       }
 
-      // 3. Italic: *text* or _text_
+      // 3. Strikethrough: ~~text~~
+      const strikeMatch = remaining.match(/^~~(.*?)~~/);
+      if (strikeMatch) {
+        parts.push(
+          <del key={key++} className="line-through opacity-75">
+            {renderInline(strikeMatch[1])}
+          </del>
+        );
+        remaining = remaining.slice(strikeMatch[0].length);
+        continue;
+      }
+
+      // 4. Underline: <u>text</u>
+      const underlineMatch = remaining.match(/^<u>(.*?)<\/u>/i);
+      if (underlineMatch) {
+        parts.push(
+          <u key={key++} className="underline underline-offset-2">
+            {renderInline(underlineMatch[1])}
+          </u>
+        );
+        remaining = remaining.slice(underlineMatch[0].length);
+        continue;
+      }
+
+      // 5. Italic: *text* or _text_
       const italicMatch = remaining.match(/^(\*|_)(.*?)\1/);
       if (italicMatch) {
         parts.push(
@@ -67,7 +91,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         continue;
       }
 
-      // 4. Inline code: `code`
+      // 6. Inline code: `code`
       const codeMatch = remaining.match(/^`([^`]+)`/);
       if (codeMatch) {
         parts.push(
@@ -185,6 +209,34 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         >
           {renderInline(line.slice(2))}
         </blockquote>
+      );
+      return;
+    }
+
+    // Horizontal Rule (---, ***, ___)
+    if (/^(\s*[-*_]\s*){3,}$/.test(line.trim())) {
+      flushList();
+      blocks.push(<hr key={index} className="my-4 border-t border-border/80" />);
+      return;
+    }
+
+    // Task List (- [ ] or - [x])
+    const taskMatch = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.+)/);
+    if (taskMatch) {
+      flushList();
+      const isChecked = taskMatch[2].toLowerCase() === 'x';
+      blocks.push(
+        <div key={index} className="flex items-start gap-2.5 my-1.5 text-xs sm:text-sm pl-1">
+          <input
+            type="checkbox"
+            checked={isChecked}
+            readOnly
+            className="mt-1 h-3.5 w-3.5 rounded border-border text-google-blue focus:ring-0 cursor-default pointer-events-none"
+          />
+          <span className={isChecked ? 'line-through text-muted-foreground/75' : 'text-foreground'}>
+            {renderInline(taskMatch[3])}
+          </span>
+        </div>
       );
       return;
     }

@@ -28,3 +28,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scanner app
+gdg-scanner/
+
+# Agent skills cache
+.agents/
+skills-lock.json
+
+.vercel

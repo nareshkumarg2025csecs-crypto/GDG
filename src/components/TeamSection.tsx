@@ -1,115 +1,112 @@
 /**
  * TeamSection.tsx
  * 
- * Combined Team Section with 3D Garage and 2D Fallback
- * 
- * Features:
- * - 3D holographic garage by default (Part 1 & 2)
- * - 2D fallback cards for mobile or low-performance (Part 3)
- * - Toggle between views
+ * Combined Team Section with:
+ * 1. Redesigned 3D Holographic Command Garage (zero blur, zero overlapping, no emojis)
+ * 2. Dedicated 2D Leads Showcase (Leads only, customizable via src/data/team.ts)
+ * 3. Dedicated Department Details Display Section (like the Team details page)
  */
 
-import React, { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react'
+import React, { useState, useRef, useCallback, useEffect, lazy, Suspense, useMemo } from 'react'
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useTheme } from '@/contexts/ThemeContext'
+import { TeamMember, TeamId, HOME_LEADS, TEAM_MEMBERS } from '@/data/team'
+import { useTeamStore } from '@/store/teamStore'
+import TeamModal from '@/components/team/TeamModal'
+import { Link } from 'react-router-dom'
+import {
+    Linkedin,
+    Mail,
+    ArrowRight,
+    Sparkles,
+    Users,
+    Shield,
+    Terminal,
+    Palette,
+    Video,
+    Layers,
+} from 'lucide-react'
 
 // Lazy load 3D component for performance
 const TeamGarage3D = lazy(() => import('./TeamGarage3D'))
 
 // ================================
-// TYPES & DATA
+// LEADS CATEGORY FILTER PILLS (NO EMOJIS)
 // ================================
 
-interface TeamMember {
-    id: number
-    name: string
-    role: string
-    codename: string
-    team: 'leads' | 'techops' | 'design' | 'media' | 'logistics'
-    color: string
-    initial: string
-    status: 'ACTIVE' | 'STANDBY'
-}
-
-interface TeamBay {
-    id: 'leads' | 'techops' | 'design' | 'media' | 'logistics'
-    name: string
+interface LeadCategory {
+    id: 'all' | TeamId
     label: string
     color: string
-    description: string
 }
 
-const teamBays: TeamBay[] = [
-    { id: 'leads', name: 'LEADS', label: '// LEADERSHIP', color: '#9E9E9E', description: 'GDG on Campus leadership team' },
-    { id: 'techops', name: 'TECH_OPS', label: '// TECHNICAL OPERATIONS', color: '#4285F4', description: 'Backend architects & code masters' },
-    { id: 'design', name: 'DESIGN', label: '// VISUAL SYSTEMS', color: '#EA4335', description: 'UI/UX & brand identity specialists' },
-    { id: 'media', name: 'MEDIA', label: '// CONTENT OPS', color: '#FBBC04', description: 'Photography, video & social' },
-    { id: 'logistics', name: 'LOGISTICS', label: '// OPERATIONS', color: '#34A853', description: 'Event planning & coordination' },
-]
-
-const teamMembers: TeamMember[] = [
-    { id: 0, name: 'Rakesh', role: 'Lead', codename: 'ORBIT', team: 'leads', color: '#9E9E9E', initial: 'R', status: 'ACTIVE' },
-    { id: 9, name: 'Kishore', role: 'Co-lead', codename: 'PULSE', team: 'leads', color: '#9E9E9E', initial: 'K', status: 'ACTIVE' },
-    { id: 1, name: 'Lokesh JR', role: 'Tech-Ops Lead', codename: 'CIPHER', team: 'techops', color: '#4285F4', initial: 'L', status: 'ACTIVE' },
-    { id: 2, name: 'Prasanna', role: 'Tech-Ops Co-Lead', codename: 'VECTOR', team: 'techops', color: '#4285F4', initial: 'P', status: 'STANDBY' },
-    { id: 3, name: 'Aishwarya', role: 'Design Lead', codename: 'PRISM', team: 'design', color: '#EA4335', initial: 'A', status: 'ACTIVE' },
-    { id: 4, name: 'Akshithaa', role: 'Design Co-Lead', codename: 'PIXEL', team: 'design', color: '#EA4335', initial: 'A', status: 'STANDBY' },
-    { id: 5, name: 'Benin', role: 'Media Lead', codename: 'LENS', team: 'media', color: '#FBBC04', initial: 'B', status: 'ACTIVE' },
-    { id: 6, name: 'Madhusha Harini', role: 'Media Co-Lead', codename: 'SIGNAL', team: 'media', color: '#FBBC04', initial: 'M', status: 'STANDBY' },
-    { id: 7, name: 'Venkat', role: 'Logistics Lead', codename: 'NEXUS', team: 'logistics', color: '#34A853', initial: 'V', status: 'ACTIVE' },
-    { id: 8, name: 'Aboorvan', role: 'Logistics Co-Lead', codename: 'RELAY', team: 'logistics', color: '#34A853', initial: 'A', status: 'STANDBY' },
+const LEAD_CATEGORIES: LeadCategory[] = [
+    { id: 'all', label: 'ALL LEADS', color: '#4285F4' },
+    { id: 'leads', label: 'LEADERSHIP', color: '#4285F4' },
+    { id: 'techops', label: 'TECH-OPS', color: '#4285F4' },
+    { id: 'design', label: 'DESIGN', color: '#EA4335' },
+    { id: 'media', label: 'MEDIA', color: '#FBBC04' },
+    { id: 'logistics', label: 'OPERATIONS', color: '#34A853' },
 ]
 
 // ================================
-// HOLOGRAPHIC 2D CARD (PART 3)
+// HOLOGRAPHIC 2D CARD
 // ================================
 
 interface HolographicCardProps {
     member: TeamMember
     index: number
+    onCardClick: (member: TeamMember) => void
 }
 
-function HolographicCard({ member, index }: HolographicCardProps) {
+function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
     const cardRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
-
-    const mouseX = useMotionValue(0)
-    const mouseY = useMotionValue(0)
-
-    const springConfig = { stiffness: 150, damping: 15, mass: 0.5 }
-    const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [15, -15]), springConfig)
-    const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-15, 15]), springConfig)
-    const foilX = useSpring(useTransform(mouseX, [-0.5, 0.5], [100, -100]), springConfig)
-    const foilY = useSpring(useTransform(mouseY, [-0.5, 0.5], [100, -100]), springConfig)
+    const [imgError, setImgError] = useState(false)
+    const [tilt, setTilt] = useState<{ rx: number; ry: number; fx: number; fy: number }>({ rx: 0, ry: 0, fx: 50, fy: 50 })
+    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768)
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (!cardRef.current) return
+        if (isTouch || !cardRef.current) return
         const rect = cardRef.current.getBoundingClientRect()
         const x = (e.clientX - rect.left) / rect.width - 0.5
         const y = (e.clientY - rect.top) / rect.height - 0.5
-        mouseX.set(x)
-        mouseY.set(y)
-    }, [mouseX, mouseY])
+        setTilt({
+            rx: -y * 14,
+            ry: x * 14,
+            fx: (x + 0.5) * 100,
+            fy: (y + 0.5) * 100
+        })
+    }, [isTouch])
 
     const handleMouseLeave = useCallback(() => {
         setIsHovered(false)
-        mouseX.set(0)
-        mouseY.set(0)
-    }, [mouseX, mouseY])
+        setTilt({ rx: 0, ry: 0, fx: 50, fy: 50 })
+    }, [])
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: index * 0.1, duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: Math.min(index * 0.04, 0.3), duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
             className="perspective-1000"
         >
-            <motion.div
+            <div
                 ref={cardRef}
-                style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
+                style={{
+                    transform: (!isTouch && isHovered)
+                        ? `perspective(1000px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`
+                        : 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
+                    transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.35s ease-out',
+                    transformStyle: 'preserve-3d',
+                    willChange: isHovered ? 'transform' : 'auto'
+                }}
                 onMouseMove={handleMouseMove}
-                onMouseEnter={() => setIsHovered(true)}
+                onMouseEnter={() => {
+                    if (!isTouch) setIsHovered(true)
+                }}
                 onMouseLeave={handleMouseLeave}
+                onClick={() => onCardClick(member)}
                 className="relative cursor-pointer group"
             >
                 <div
@@ -121,23 +118,23 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                             ? `0 25px 50px -12px ${member.color}40, 0 0 40px ${member.color}20, inset 0 1px 0 ${member.color}30`
                             : `0 10px 30px -10px rgba(0,0,0,0.1)`,
                         transition: 'border-color 0.3s, box-shadow 0.3s',
-                        color: 'var(--foreground)' // Enforce text color inheritance
+                        color: 'var(--foreground)'
                     }}
                 >
                     {/* Holographic Foil Overlay */}
-                    <motion.div
-                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                    <div
+                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10"
                         style={{
                             background: `linear-gradient(115deg, transparent 20%, ${member.color}15 40%, ${member.color}30 50%, ${member.color}15 60%, transparent 80%)`,
                             backgroundSize: '200% 200%',
-                            backgroundPosition: `${foilX}% ${foilY}%`,
+                            backgroundPosition: `${tilt.fx}% ${tilt.fy}%`,
                             mixBlendMode: 'overlay',
                         }}
                     />
 
                     {/* Scanlines */}
                     <div
-                        className="absolute inset-0 pointer-events-none opacity-30"
+                        className="absolute inset-0 pointer-events-none opacity-20 z-10"
                         style={{
                             backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 4px)`,
                             animation: isHovered ? 'scanlines 8s linear infinite' : 'none',
@@ -145,7 +142,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                     />
 
                     {/* Status Badge */}
-                    <div className="absolute top-3 right-3 z-10">
+                    <div className="absolute top-3 right-3 z-20">
                         <div
                             className="px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider"
                             style={{
@@ -158,70 +155,103 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                         </div>
                     </div>
 
-                    {/* Avatar */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <motion.div
-                            animate={isHovered ? { scale: 1.1, rotate: 5 } : { scale: 1, rotate: 0 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                            className="w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-display"
-                            style={{
-                                backgroundColor: `${member.color}20`,
-                                color: member.color,
-                                border: `2px solid ${member.color}50`,
-                                boxShadow: `0 0 30px ${member.color}40`,
-                            }}
-                        >
-                            {member.initial}
-                        </motion.div>
+                    {/* Avatar / Photo (Zero-Egress Local Asset with Monogram Fallback) */}
+                    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                        {member.image && !imgError ? (
+                            <img
+                                src={member.image}
+                                alt={member.name}
+                                loading="lazy"
+                                decoding="async"
+                                onError={() => setImgError(true)}
+                                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                            />
+                        ) : (
+                            <motion.div
+                                animate={isHovered ? { scale: 1.1, rotate: 5 } : { scale: 1, rotate: 0 }}
+                                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                                className="w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-display"
+                                style={{
+                                    backgroundColor: `${member.color}20`,
+                                    color: member.color,
+                                    border: `2px solid ${member.color}50`,
+                                    boxShadow: `0 0 30px ${member.color}40`,
+                                }}
+                            >
+                                {member.initial}
+                            </motion.div>
+                        )}
                     </div>
 
-                    {/* Bottom Info */}
-                    <div className="absolute bottom-0 left-0 right-0 p-4" style={{ background: `linear-gradient(to top, ${member.color}E6 0%, transparent 100%)` }}>
-                        <p className="text-[10px] font-mono tracking-[0.3em] mb-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>// {member.codename}</p>
-                        <h4 className="font-display text-lg leading-tight break-words" style={{ color: 'rgb(var(--foreground))', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.name}</h4>
-                        <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{member.role}</p>
+                    {/* Bottom Info Gradient */}
+                    <div
+                        className="absolute bottom-0 left-0 right-0 p-4 z-20"
+                        style={{
+                            background: `linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.8) 60%, transparent 100%)`,
+                        }}
+                    >
+                        <div className="flex justify-between items-end">
+                            <div className="flex-1 min-w-0 mr-2">
+                                <p className="text-[10px] font-mono tracking-[0.3em] mb-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                                    // {member.codename}
+                                </p>
+                                <h4 className="font-display text-base sm:text-lg leading-tight break-words text-white" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                                    {member.name}
+                                </h4>
+                                <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.8)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                                    {member.role}
+                                </p>
+                            </div>
+                            <div className="flex gap-1.5 relative z-30" onClick={(e) => e.stopPropagation()}>
+                                {member.linkedin ? (
+                                    <a
+                                        href={member.linkedin}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`${member.name} on LinkedIn`}
+                                        className="p-1.5 rounded-full bg-white/10 hover:bg-[#0A66C2] transition-colors backdrop-blur-sm group/icon"
+                                    >
+                                        <Linkedin className="w-3.5 h-3.5 text-white/80 group-hover/icon:text-white" />
+                                    </a>
+                                ) : (
+                                    <span
+                                        title="LinkedIn profile pending"
+                                        className="p-1.5 rounded-full bg-white/5 opacity-30 cursor-not-allowed backdrop-blur-sm"
+                                    >
+                                        <Linkedin className="w-3.5 h-3.5 text-white/40" />
+                                    </span>
+                                )}
+                                {member.email ? (
+                                    <a
+                                        href={`mailto:${member.email}`}
+                                        title={`Email ${member.name}`}
+                                        className="p-1.5 rounded-full bg-white/10 hover:bg-[#EA4335] transition-colors backdrop-blur-sm group/icon"
+                                    >
+                                        <Mail className="w-3.5 h-3.5 text-white/80 group-hover/icon:text-white" />
+                                    </a>
+                                ) : (
+                                    <span
+                                        title="Email pending"
+                                        className="p-1.5 rounded-full bg-white/5 opacity-30 cursor-not-allowed backdrop-blur-sm"
+                                    >
+                                        <Mail className="w-3.5 h-3.5 text-white/40" />
+                                    </span>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Corner decorations */}
-                    <div className="absolute top-0 left-0 w-8 h-8" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
-                    <div className="absolute bottom-0 right-0 w-8 h-8" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
+                    <div className="absolute top-0 left-0 w-8 h-8 pointer-events-none z-10" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
+                    <div className="absolute bottom-0 right-0 w-8 h-8 pointer-events-none z-10" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
                 </div>
-            </motion.div>
-        </motion.div >
+            </div>
+        </motion.div>
     )
 }
 
 // ================================
-// BAY TAB
-// ================================
-
-interface BayTabProps {
-    bay: TeamBay
-    isActive: boolean
-    onClick: () => void
-}
-
-function BayTab({ bay, isActive, onClick }: BayTabProps) {
-    return (
-        <button
-            onClick={onClick}
-            className="relative px-4 md:px-6 py-3 text-left transition-all duration-300"
-            style={{
-                borderLeft: isActive ? `3px solid ${bay.color}` : '3px solid transparent',
-                background: isActive ? `linear-gradient(90deg, ${bay.color}15, transparent)` : 'transparent',
-            }}
-        >
-            {isActive && (
-                <motion.div layoutId="activeBay" className="absolute inset-0" style={{ boxShadow: `inset 0 0 30px ${bay.color}20` }} />
-            )}
-            <p className="text-[10px] font-mono tracking-[0.2em] mb-0.5" style={{ color: bay.color }}>{bay.label}</p>
-            <p className="font-display text-lg md:text-xl transition-colors duration-300" style={{ color: isActive ? 'rgb(var(--foreground))' : 'rgba(var(--foreground), 0.4)' }}>{bay.name}</p>
-        </button>
-    )
-}
-
-// ================================
-// 2D FALLBACK VIEW
+// 2D LEADS SHOWCASE & DEPARTMENT DETAILS VIEW
 // ================================
 
 interface TeamSection2DProps {
@@ -230,92 +260,162 @@ interface TeamSection2DProps {
 }
 
 function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) {
-    const [activeBay, setActiveBay] = useState<TeamBay['id']>('leads')
+    const [selectedCategory, setSelectedCategory] = useState<'all' | TeamId>('all')
     const { theme } = useTheme()
-    // Override activeBayData color for light mode to always be yellow-400 or related
-    const rawActiveBayData = teamBays.find(b => b.id === activeBay)!
+    const { openModal } = useTeamStore()
 
-    const filteredMembers = teamMembers.filter(m => m.team === activeBay)
-
-    // Create theme-aware active bay data
-    const activeBayData = {
-        ...rawActiveBayData,
-        color: theme === 'light' ? 'rgba(var(--text-primary-raw), 0.8)' : rawActiveBayData.color
-    }
+    // 2D View strictly shows HOME_LEADS as requested
+    const filteredLeads = useMemo(() => {
+        if (selectedCategory === 'all') return HOME_LEADS
+        return HOME_LEADS.filter((m) => m.team === selectedCategory)
+    }, [selectedCategory])
 
     return (
-        <section id="team" className="py-20 md:py-32 relative overflow-hidden bg-background transition-colors duration-300">
-            {/* View toggle - Always visible */}
+        <div className="py-20 md:py-32 relative overflow-hidden bg-background transition-colors duration-300">
+            {/* View toggle in Top Right */}
             {showToggle && onSwitchTo3D && (
-                <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.15)'}` }}>
+                <div
+                    className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-xl p-1 backdrop-blur-sm"
+                    style={{
+                        backgroundColor: 'rgb(var(--card-bg))',
+                        border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(31,31,31,0.15)'}`,
+                    }}
+                >
                     <button
+                        type="button"
+                        aria-label="Switch to 3D Garage view"
                         onClick={onSwitchTo3D}
-                        className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300"
-                        style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.5)' : 'rgba(31,31,31,0.5)' }}
+                        className="px-3.5 py-1.5 text-xs font-mono font-bold rounded-lg transition-all duration-300 text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     >
                         3D GARAGE
                     </button>
                     <button
-                        className="px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 bg-gradient-to-r from-green-500 to-cyan-500 text-white shadow-lg shadow-green-500/30"
+                        type="button"
+                        aria-label="Switch to 2D Cards view"
+                        aria-current="true"
+                        className="px-3.5 py-1.5 text-xs font-mono font-bold rounded-lg transition-all duration-300 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25"
                     >
-                        2D CARDS
+                        2D LEADS
                     </button>
                 </div>
             )}
 
-            <div className="absolute inset-0 opacity-[0.03]" style={{
-                backgroundImage: `linear-gradient(rgb(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--foreground)) 1px, transparent 1px)`,
-                backgroundSize: '40px 40px',
-            }} />
-
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[150px] opacity-20"
-                style={{ background: theme === 'light' ? 'radial-gradient(circle, rgba(var(--surface-300), 0.5), transparent)' : `radial-gradient(circle, ${activeBayData.color}, transparent)` }} />
+            {/* Background grid */}
+            <div
+                className="absolute inset-0 opacity-[0.03]"
+                style={{
+                    backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
+                    backgroundSize: '40px 40px',
+                }}
+            />
 
             <div className="container mx-auto px-4 md:px-6 relative z-10">
-                <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="mb-12 md:mb-16">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
+                {/* ======================================================== */}
+                {/* SECTION 1: CHAPTER LEADS SHOWCASE (LEADS ONLY)           */}
+                {/* ======================================================== */}
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    className="mb-8 md:mb-12"
+                >
+                    <div className="flex items-center gap-3 mb-3">
+                        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                        <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-blue-500 font-bold">
+                            LEADERSHIP // CORE OPERATIVES
+                        </p>
                     </div>
-                    <h2 className="text-4xl md:text-6xl lg:text-7xl font-display text-[rgb(var(--foreground))] mb-2 transition-colors duration-300">
-                        CORE <span style={{ color: theme === 'light' ? 'rgb(var(--text-primary-raw))' : rawActiveBayData.color, textShadow: theme === 'light' ? 'none' : `0 0 40px ${rawActiveBayData.color}60` }}>TEAM</span>
+                    <h2 className="text-4xl md:text-6xl font-display font-bold text-foreground mb-3 tracking-tight">
+                        CHAPTER <span className="text-blue-500">LEADS</span>
                     </h2>
-                    <p className="text-[rgb(var(--foreground))]/30 font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {filteredMembers.length} OPERATIVES ASSIGNED</p>
+                    <p className="text-muted-foreground font-mono text-xs md:text-sm max-w-xl">
+                        Meet the student leaders driving engineering, design, operations, and media at Google Developer Groups on Campus.
+                    </p>
                 </motion.div>
 
-                <div className="flex flex-wrap gap-2 md:gap-0 mb-10 md:mb-14 border-b pb-4 md:pb-0 md:border-b-0" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.1)' }}>
-                    {teamBays.map(bay => (
-                        <BayTab key={bay.id} bay={bay} isActive={activeBay === bay.id} onClick={() => setActiveBay(bay.id)} />
-                    ))}
+                {/* Filter Pills for Lead Categories (Strictly NO Emojis) */}
+                <div className="flex flex-wrap items-center gap-2 mb-10 pb-4 border-b border-border/60">
+                    {LEAD_CATEGORIES.map((cat) => {
+                        const isSelected = selectedCategory === cat.id
+                        const count = cat.id === 'all'
+                            ? HOME_LEADS.length
+                            : HOME_LEADS.filter((m) => m.team === cat.id).length
+                        return (
+                            <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setSelectedCategory(cat.id)}
+                                className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all duration-300 flex items-center gap-2 ${
+                                    isSelected
+                                        ? 'bg-primary text-primary-foreground shadow-md scale-105'
+                                        : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted'
+                                }`}
+                            >
+                                <span>{cat.label}</span>
+                                <span
+                                    className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                                        isSelected ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
+                                    }`}
+                                >
+                                    {count}
+                                </span>
+                            </button>
+                        )
+                    })}
                 </div>
 
-                <motion.p key={activeBay} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="text-[rgb(var(--foreground))]/50 text-sm mb-10 max-w-md transition-colors duration-300">{rawActiveBayData.description}</motion.p>
-
-                <motion.div key={`grid-${activeBay}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-                    {filteredMembers.map((member, index) => (
-                        <HolographicCard key={member.id} member={member} index={index} />
+                {/* Grid of Leads */}
+                <motion.div
+                    key={`leads-grid-${selectedCategory}`}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 mb-20"
+                >
+                    {filteredLeads.map((member, index) => (
+                        <HolographicCard
+                            key={member.id}
+                            member={member}
+                            index={index}
+                            onCardClick={(m) => openModal(m)}
+                        />
                     ))}
                 </motion.div>
 
-                <div className="mt-12 pt-6 border-t" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.1)' }}>
-                    <div className="flex flex-wrap items-center justify-between gap-4 text-[10px] font-mono" style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(31,31,31,0.35)' }}>
-                        <div className="flex items-center gap-4 md:gap-6">
-                            <span>SYSTEM: <span className={theme === 'light' ? 'text-green-600' : 'text-green-500'}>ONLINE</span></span>
-                            <span>MEMBERS: <span style={{ color: 'rgb(var(--foreground))' }}>{teamMembers.length}</span></span>
+
+                {/* ======================================================== */}
+                {/* SECTION 3: CALL TO ACTION - VIEW ALL OPERATIVES          */}
+                {/* ======================================================== */}
+                <div className="p-6 sm:p-8 rounded-2xl bg-muted/40 border border-border flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+                            <Users className="w-6 h-6 text-blue-500" />
                         </div>
-                        <span className="flex items-center gap-2">
-                            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${theme === 'light' ? 'bg-green-600' : 'bg-green-500'}`} />
-                            RECRUITMENT: <span className={theme === 'light' ? 'text-red-600' : 'text-red-500'}>CLOSED</span>
-                        </span>
+                        <div>
+                            <h3 className="font-display font-bold text-foreground text-base sm:text-lg">
+                                Meet Our Complete Team
+                            </h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground">
+                                Explore all {TEAM_MEMBERS.length} members across Tech-Ops, Web, AI, Design, Media, and Operations.
+                            </p>
+                        </div>
                     </div>
+
+                    <Link
+                        to="/team"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white font-mono text-xs font-bold transition-all shadow-lg hover:shadow-google-blue/25 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
+                    >
+                        <span>VIEW ALL {TEAM_MEMBERS.length} OPERATIVES</span>
+                        <ArrowRight className="w-4 h-4" />
+                    </Link>
                 </div>
             </div>
 
             <style>{`
-        @keyframes scanlines { 0% { background-position: 0 0; } 100% { background-position: 0 100px; } }
-        .perspective-1000 { perspective: 1000px; }
-      `}</style>
-        </section>
+                @keyframes scanlines { 0% { background-position: 0 0; } 100% { background-position: 0 100px; } }
+                .perspective-1000 { perspective: 1000px; }
+            `}</style>
+        </div>
     )
 }
 
@@ -324,8 +424,10 @@ function TeamSection2D({ onSwitchTo3D, showToggle = true }: TeamSection2DProps) 
 // ================================
 
 export default function TeamSection() {
-    const [view, setView] = useState<'3d' | '2d'>('3d')
-    const [isMobile, setIsMobile] = useState(false)
+    const [view, setView] = useState<'3d' | '2d'>('2d')
+    const [isMobile, setIsMobile] = useState(() =>
+        typeof window !== 'undefined' ? window.innerWidth < 768 : false
+    )
 
     useEffect(() => {
         const check = () => setIsMobile(window.innerWidth < 768)
@@ -334,48 +436,78 @@ export default function TeamSection() {
         return () => window.removeEventListener('resize', check)
     }, [])
 
-    // Force 2D on mobile (no toggle on mobile)
+    // Force 2D on mobile devices
     const actualView = isMobile ? '2d' : view
 
-    if (actualView === '2d') {
-        return <TeamSection2D onSwitchTo3D={() => setView('3d')} showToggle={!isMobile} />
-    }
+    const { theme } = useTheme()
+    const isDark = theme !== 'light'
 
     return (
         <section id="team" className="relative">
-            {/* View toggle - VISIBLE */}
-            <div className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-lg p-1 backdrop-blur-sm" style={{ backgroundColor: 'rgb(var(--card-bg))', border: `1px solid ${isMobile ? 'transparent' : 'rgba(var(--foreground), 0.15)'}` }}>
-                <button
-                    onClick={() => setView('3d')}
-                    className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '3d'
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg shadow-blue-500/30'
-                        : ''}`}
-                    style={view !== '3d' ? { color: 'rgba(var(--foreground), 0.5)' } : undefined}
+            {/* View toggle on Desktop */}
+            {!isMobile && (
+                <div
+                    className="absolute top-6 right-6 z-30 flex items-center gap-1 rounded-xl p-1 backdrop-blur-md transition-colors"
+                    style={{
+                        backgroundColor: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+                        border: isDark ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(0, 0, 0, 0.12)',
+                        boxShadow: isDark
+                            ? '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
+                            : '0 10px 25px -5px rgba(0, 0, 0, 0.08)',
+                    }}
                 >
-                    3D GARAGE
-                </button>
-                <button
-                    onClick={() => setView('2d')}
-                    className={`px-4 py-2 text-sm font-mono font-bold rounded-md transition-all duration-300 ${view === '2d'
-                        ? 'bg-gradient-to-r from-green-500 to-cyan-500 text-white shadow-lg shadow-green-500/30'
-                        : ''}`}
-                    style={view !== '2d' ? { color: 'rgba(var(--foreground), 0.5)' } : undefined}
-                >
-                    2D CARDS
-                </button>
-            </div>
-
-            <Suspense fallback={
-                <div className="h-screen bg-background flex items-center justify-center">
-                    <div className="flex gap-2">
-                        {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
-                            <div key={color} className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: color, animationDelay: `${i * 0.15}s` }} />
-                        ))}
-                    </div>
+                    <button
+                        type="button"
+                        aria-label="Switch to 3D Garage view"
+                        aria-pressed={actualView === '3d'}
+                        onClick={() => setView('3d')}
+                        className={`px-3.5 py-1.5 text-xs font-mono font-bold rounded-lg transition-all duration-300 ${
+                            actualView === '3d'
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                : isDark
+                                ? 'text-slate-400 hover:text-white'
+                                : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                        3D GARAGE
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Switch to 2D Leads view"
+                        aria-pressed={actualView === '2d'}
+                        onClick={() => setView('2d')}
+                        className={`px-3.5 py-1.5 text-xs font-mono font-bold rounded-lg transition-all duration-300 ${
+                            actualView === '2d'
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                : isDark
+                                ? 'text-slate-400 hover:text-white'
+                                : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                        2D LEADS
+                    </button>
                 </div>
-            }>
-                <TeamGarage3D />
-            </Suspense>
+            )}
+
+            {actualView === '2d' ? (
+                <TeamSection2D onSwitchTo3D={() => setView('3d')} showToggle={false} />
+            ) : (
+                <Suspense
+                    fallback={
+                        <div className="h-[80vh] bg-slate-950 flex items-center justify-center">
+                            <div className="flex items-center gap-2 font-mono text-xs text-blue-400">
+                                <Sparkles className="w-4 h-4 animate-spin text-blue-400" />
+                                <span>LOADING COMMAND GARAGE...</span>
+                            </div>
+                        </div>
+                    }
+                >
+                    <TeamGarage3D />
+                </Suspense>
+            )}
+
+            {/* Global Team Modal for Dossier Bio and Working Links */}
+            <TeamModal />
         </section>
     )
 }

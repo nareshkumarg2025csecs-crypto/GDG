@@ -24,6 +24,39 @@ export const AdminGatewayPage: React.FC = () => {
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
   const [adminGoogleModalOpen, setAdminGoogleModalOpen] = useState(false);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && adminGoogleModalOpen) {
+        setAdminGoogleModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [adminGoogleModalOpen]);
+
+  // Reset stuck loading states if user returns to tab (closes popup, presses Back, switches windows)
+  React.useEffect(() => {
+    const handleResetLoading = () => {
+      setIsGoogleLoading(false);
+      setIsSubmitting(false);
+    };
+
+    window.addEventListener('pageshow', handleResetLoading);
+    window.addEventListener('focus', handleResetLoading);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleResetLoading();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pageshow', handleResetLoading);
+      window.removeEventListener('focus', handleResetLoading);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   // If already authenticated as admin, immediately redirect to admin panel
   if (!isLoading && isAuthenticated && role === 'admin') {
     return <Navigate to="/admin/events" replace />;
@@ -123,7 +156,11 @@ export const AdminGatewayPage: React.FC = () => {
           description: 'Successfully authenticated to the GDG Admin Portal.',
         });
 
-        navigate('/admin/events', { replace: true });
+        if (!response.profile?.details?.position || !response.profile?.details?.domain) {
+          navigate('/admin/onboard', { replace: true });
+        } else {
+          navigate('/admin/events', { replace: true });
+        }
       } else {
         const response = await signup(
           {
@@ -140,7 +177,7 @@ export const AdminGatewayPage: React.FC = () => {
             title: 'Admin Account Created',
             description: `Welcome to GDG Administration, ${response.profile.full_name || response.profile.email}.`,
           });
-          navigate('/admin/events', { replace: true });
+          navigate('/admin/onboard', { replace: true });
         } else {
           setServerSuccess(
             response.message || 'Admin registration successful! Please check your email to verify your account.'
@@ -157,14 +194,22 @@ export const AdminGatewayPage: React.FC = () => {
   const handleGoogleAdminLogin = async (secretCode?: string) => {
     setIsGoogleLoading(true);
     setServerError(null);
+
+    // Auto-reset loading state if popup canceled or page remains mounted
+    const safetyTimer = setTimeout(() => {
+      setIsGoogleLoading(false);
+    }, 6000);
+
     try {
       if (secretCode) {
         sessionStorage.setItem('pending_admin_code', secretCode.trim());
       } else {
         sessionStorage.removeItem('pending_admin_code');
       }
+      sessionStorage.setItem('oauth_role', 'admin');
       await initiateGoogleLogin('admin', secretCode);
     } catch (err: any) {
+      clearTimeout(safetyTimer);
       setServerError(err.message || 'Google administrator authentication failed.');
       setIsGoogleLoading(false);
     }
@@ -447,17 +492,24 @@ export const AdminGatewayPage: React.FC = () => {
 
       {/* Google Admin Code Verification Modal */}
       {adminGoogleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-code-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setAdminGoogleModalOpen(false)}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="bg-card border border-border p-6 rounded-3xl max-w-sm w-full space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-2xl bg-google-red/10 text-google-red flex items-center justify-center">
               <KeyRound className="w-6 h-6" />
             </div>
             <div className="space-y-1">
-              <h3 className="font-bold text-base text-foreground font-sans">Admin Code Verification</h3>
+              <h3 id="admin-code-modal-title" className="font-bold text-base text-foreground font-sans">Admin Code Verification</h3>
               <p className="text-xs text-muted-foreground">
                 Enter your secret Admin Verification Code to authorize your Google Administrator privileges.
               </p>

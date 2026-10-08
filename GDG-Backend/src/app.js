@@ -9,7 +9,11 @@ const { sanitizeInput } = require('./middleware/cleanInput');
 const { generalApiLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') {
+  dotenv.config({ override: true });
+} else {
+  dotenv.config();
+}
 
 const app = express();
 
@@ -31,9 +35,22 @@ app.use(
       // Allow requests with no origin (e.g. mobile apps, curl, server-to-server, unit tests)
       if (!origin) return callback(null, true);
 
-      const isAllowed = allowedOrigins.some(
-        (allowed) => allowed === origin || allowed === '*'
-      );
+      // In development or local testing, allow requests from LAN IPs (e.g. mobile on 192.168.x.x or 10.x.x.x)
+      const isLocalOrLAN = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(origin);
+      if (process.env.NODE_ENV !== 'production' && isLocalOrLAN) {
+        return callback(null, true);
+      }
+
+      const isAllowed =
+        allowedOrigins.some((allowed) => {
+          if (allowed === origin || allowed === '*') return true;
+          if (allowed.startsWith('*.')) {
+            const rootDomain = allowed.slice(2);
+            return origin.endsWith(rootDomain);
+          }
+          return false;
+        }) ||
+        /^https:\/\/[a-zA-Z0-9._-]+\.vercel\.app$/.test(origin);
 
       if (isAllowed) {
         return callback(null, true);

@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 export interface OptionItem {
   label: string;
   value: string;
+  disabled?: boolean;
+  badge?: string;
+  subtext?: string;
 }
 
 interface SearchableSelectProps {
@@ -153,14 +156,21 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
               triggerClassName
             )}
           >
-            <span
-              className={cn(
-                'truncate pr-2 block',
-                !selectedOption ? 'text-muted-foreground' : 'text-foreground font-medium'
+            <div className="flex items-center gap-2 truncate pr-2">
+              <span
+                className={cn(
+                  'truncate block',
+                  !selectedOption ? 'text-muted-foreground' : 'text-foreground font-medium'
+                )}
+              >
+                {selectedOption ? selectedOption.label : placeholder}
+              </span>
+              {selectedOption?.badge && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20">
+                  {selectedOption.badge}
+                </span>
               )}
-            >
-              {selectedOption ? selectedOption.label : placeholder}
-            </span>
+            </div>
             <ChevronDown
               className={cn(
                 'w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200',
@@ -227,23 +237,51 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             ) : (
               filteredOptions.map((opt) => {
                 const isSelected = opt.value === value;
+                const isDisabled = Boolean(opt.disabled);
                 return (
                   <button
                     key={opt.value}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => {
+                      if (isDisabled) return;
                       onChange(opt.value);
                       setOpen(false);
                       setSearchQuery('');
                     }}
                     className={cn(
-                      'w-full text-left px-3 py-2.5 rounded-lg text-xs sm:text-sm font-sans flex items-center justify-between transition-colors cursor-pointer group select-none',
-                      isSelected
+                      'w-full text-left px-3 py-2.5 rounded-lg text-xs sm:text-sm font-sans flex items-center justify-between transition-colors select-none',
+                      isDisabled
+                        ? 'opacity-55 cursor-not-allowed bg-muted/30 text-muted-foreground'
+                        : isSelected
                         ? selectedItemStyles[accentColor]
-                        : 'text-foreground hover:bg-muted active:bg-muted/80'
+                        : 'text-foreground hover:bg-muted active:bg-muted/80 cursor-pointer group'
                     )}
                   >
-                    <span className="truncate pr-2 font-normal">{opt.label}</span>
+                    <div className="flex flex-col min-w-0 pr-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={cn('truncate font-normal', isSelected && 'font-semibold', isDisabled && 'line-through text-muted-foreground/75')}>
+                          {opt.label}
+                        </span>
+                        {opt.badge && (
+                          <span
+                            className={cn(
+                              'text-[10px] px-1.5 py-0.5 rounded-md font-semibold shrink-0 tracking-wider',
+                              isDisabled
+                                ? 'bg-destructive/15 text-destructive border border-destructive/25 uppercase'
+                                : 'bg-google-blue/10 text-google-blue border border-google-blue/20'
+                            )}
+                          >
+                            {opt.badge}
+                          </span>
+                        )}
+                      </div>
+                      {opt.subtext && (
+                        <span className="text-[10px] text-muted-foreground/80 font-mono mt-0.5">
+                          {opt.subtext}
+                        </span>
+                      )}
+                    </div>
                     {isSelected && (
                       <Check className={cn('w-4 h-4 shrink-0', checkColorStyles[accentColor])} />
                     )}

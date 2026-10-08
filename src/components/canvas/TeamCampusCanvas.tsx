@@ -176,8 +176,13 @@ export default function TeamCampusCanvas({ className }: TeamCampusCanvasProps) {
     return (
         <div className={`w-full h-full ${className}`}>
             <Canvas
-                gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+                gl={{ antialias: true, alpha: true, powerPreference: 'default' }}
                 dpr={[1, 2]}
+                onCreated={({ gl }) => {
+                    gl.domElement.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault();
+                    }, false);
+                }}
             >
                 <color attach="background" args={['#111112']} />
                 <ambientLight intensity={0.4} />

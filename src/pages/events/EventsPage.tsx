@@ -10,15 +10,15 @@ import {
   CalendarPlus,
   CalendarCheck,
   ArrowRight,
-  ArrowLeft,
-  Home,
   Sparkles,
   Layers,
   Image as ImageIcon,
   QrCode,
   X as XIcon,
+  User,
   Users,
 } from 'lucide-react';
+import Header from '@/components/Header';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
@@ -81,35 +81,16 @@ export const EventsPage: React.FC = () => {
         } catch {
           // ignore
         }
+      }
 
-        const formMap: Record<string, EventForm> = {};
-        await Promise.all(
-          publishedEvents.map(async (ev) => {
-            try {
-              const { forms } = await formService.getFormsByEvent(ev.id);
-              if (forms && forms.length > 0) {
-                formMap[ev.id] = forms[0];
-              }
-            } catch {
-              // ignore per-event form failure
-            }
-          })
-        );
-        setFormsByEvent(formMap);
-      } else {
-        // Fetch forms for each event anonymously (forms endpoint is public)
-        const formMap: Record<string, EventForm> = {};
-        await Promise.all(
-          publishedEvents.map(async (ev) => {
-            try {
-              const { forms } = await formService.getFormsByEvent(ev.id);
-              if (forms && forms.length > 0) formMap[ev.id] = forms[0];
-            } catch {
-              // ignore
-            }
-          })
-        );
-        setFormsByEvent(formMap);
+      // Fetch batch forms summary in 1 single fast call (cuts N queries down to 1)
+      try {
+        const summaryRes = await formService.getFormsSummary();
+        if (summaryRes?.formsByEvent) {
+          setFormsByEvent(summaryRes.formsByEvent);
+        }
+      } catch {
+        // ignore form summary failure
       }
     } catch (err: any) {
       // Don't show raw token/auth errors to the user — just fail silently for events
@@ -214,40 +195,23 @@ export const EventsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-24 pb-20 px-4 sm:px-6 lg:px-8">
-      {/* Background Decorative Ambient */}
-      <div
-        className="fixed inset-0 opacity-10 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(66, 133, 244, 0.15) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(66, 133, 244, 0.15) 1px, transparent 1px)
-          `,
-          backgroundSize: '60px 60px',
-        }}
-      />
+    <div className="min-h-screen bg-background text-foreground">
+      <Header />
+      <main id="main-content" className="pt-24 sm:pt-28 pb-20 px-4 sm:px-6 lg:px-8">
+        {/* Background Decorative Ambient */}
+        <div
+          className="fixed inset-0 opacity-10 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(66, 133, 244, 0.15) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(66, 133, 244, 0.15) 1px, transparent 1px)
+            `,
+            backgroundSize: '60px 60px',
+          }}
+        />
 
-      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        {/* Top Back Navigation Bar */}
-        <div className="flex items-center justify-between">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
-            <span>Back to Home</span>
-          </Link>
-
-          <Link
-            to="/"
-            className="p-2 rounded-full border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Go to Home"
-          >
-            <Home className="w-4 h-4" />
-          </Link>
-        </div>
-
-        {/* Hero Section */}
+        <div className="max-w-7xl mx-auto space-y-8 relative z-10">
+          {/* Hero Section */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20 font-mono">
             <Sparkles className="w-3.5 h-3.5" />
@@ -268,6 +232,7 @@ export const EventsPage: React.FC = () => {
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
+              aria-label="Search events by title, topic, or venue"
               placeholder="Search events, topics, venues..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -348,6 +313,8 @@ export const EventsPage: React.FC = () => {
                       <img
                         src={banner}
                         alt={event.title}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
@@ -356,16 +323,33 @@ export const EventsPage: React.FC = () => {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
                       
                       {/* Top Overlay Badge */}
-                      <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
-                        <span
-                          className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md"
-                          style={{
-                            backgroundColor: `${accentColor}dd`,
-                            color: '#ffffff',
-                          }}
-                        >
-                          {details.category || 'Workshop'}
-                        </span>
+                      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md"
+                            style={{
+                              backgroundColor: `${accentColor}dd`,
+                              color: '#ffffff',
+                            }}
+                          >
+                            {details.category || 'Workshop'}
+                          </span>
+                          {details.participation_type && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md bg-black/60 text-white border border-white/20 shadow-sm">
+                              {details.participation_type.toLowerCase() === 'team' ? (
+                                <>
+                                  <Users className="w-3 h-3 text-google-yellow" />
+                                  <span>Team</span>
+                                </>
+                              ) : (
+                                <>
+                                  <User className="w-3 h-3 text-google-blue" />
+                                  <span>Individual</span>
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
 
                         {regState === 'registered' && (
                           <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-google-green text-white font-mono shadow-sm">
@@ -414,17 +398,34 @@ export const EventsPage: React.FC = () => {
                         background: `radial-gradient(circle at 80% 20%, ${accentColor}40 0%, transparent 70%)`,
                       }}
                     >
-                      <div className="flex items-center justify-between mb-3">
-                        <span
-                          className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
-                          style={{
-                            backgroundColor: `${accentColor}20`,
-                            color: accentColor,
-                            border: `1px solid ${accentColor}40`,
-                          }}
-                        >
-                          {details.category || 'Workshop'}
-                        </span>
+                      <div className="flex items-center justify-between mb-3 gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
+                            style={{
+                              backgroundColor: `${accentColor}20`,
+                              color: accentColor,
+                              border: `1px solid ${accentColor}40`,
+                            }}
+                          >
+                            {details.category || 'Workshop'}
+                          </span>
+                          {details.participation_type && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono uppercase bg-muted/80 text-foreground border border-border shadow-sm">
+                              {details.participation_type.toLowerCase() === 'team' ? (
+                                <>
+                                  <Users className="w-3 h-3 text-google-yellow" />
+                                  <span>Team</span>
+                                </>
+                              ) : (
+                                <>
+                                  <User className="w-3 h-3 text-google-blue" />
+                                  <span>Individual</span>
+                                </>
+                              )}
+                            </span>
+                          )}
+                        </div>
 
                         {attachedForm && regState === 'registered' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
@@ -457,7 +458,7 @@ export const EventsPage: React.FC = () => {
 
                       <Link
                         to={`/events/${event.id}`}
-                        className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-1"
+                        className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-2 break-words"
                       >
                         {event.title}
                       </Link>
@@ -499,6 +500,21 @@ export const EventsPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
                           <span className="truncate">{details.location || details.venue}</span>
+                        </div>
+                      )}
+                      {details.participation_type && (
+                        <div className="flex items-center gap-2 text-foreground/80 font-medium">
+                          {details.participation_type.toLowerCase() === 'team' ? (
+                            <>
+                              <Users className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                              <span>Team Event</span>
+                            </>
+                          ) : (
+                            <>
+                              <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                              <span>Individual Event</span>
+                            </>
+                          )}
                         </div>
                       )}
                       {attachedForm && (attachedForm.show_submission_count !== false && attachedForm.schema?.show_submission_count !== false) && (
@@ -717,6 +733,7 @@ export const EventsPage: React.FC = () => {
           eventUrl={qrModalEvent.url}
         />
       )}
+      </main>
     </div>
   );
 };

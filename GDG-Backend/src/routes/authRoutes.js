@@ -1,10 +1,14 @@
 const express = require('express');
 const {
   studentSignup,
+  resendStudentVerification,
+  studentForgotPassword,
+  resetPassword,
   adminSignup,
   studentLogin,
   adminLogin,
   logout,
+  refreshToken,
   getGoogleOAuthUrl,
   syncGoogleProfile,
   getGmailOAuthUrl,
@@ -18,13 +22,15 @@ const {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  scannerAdminEmailLogin,
+  getScannerVerifiedAdmins,
 } = require('../controllers/authController');
 const {
   getGoogleLinkUrl,
   saveGoogleTokens,
   getGoogleLinkStatus,
 } = require('../controllers/calendarController');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
 const {
   adminLoginLimiter,
   studentLoginLimiter,
@@ -36,6 +42,8 @@ const {
   validateStudentSignup,
   validateAdminSignup,
   validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
 } = require('../middleware/validator');
 
 const router = express.Router();
@@ -46,6 +54,26 @@ router.post(
   studentSignupLimiter,
   validateStudentSignup,
   studentSignup
+);
+
+router.post(
+  '/student/resend-verification',
+  studentSignupLimiter,
+  resendStudentVerification
+);
+
+router.post(
+  '/student/forgot-password',
+  studentLoginLimiter,
+  validateForgotPassword,
+  studentForgotPassword
+);
+
+router.post(
+  '/reset-password',
+  requireAuth,
+  validateResetPassword,
+  resetPassword
 );
 
 router.post(
@@ -76,8 +104,25 @@ router.post(
   adminLogin
 );
 
+// Mobile Scanner App Fast Admin Email Login (Links with existing admin GAuth & password accounts)
+router.get(
+  '/scanner/verified-admins',
+  adminCodeValidationLimiter,
+  optionalAuth,
+  getScannerVerifiedAdmins
+);
+
+router.post(
+  '/scanner/admin-email-login',
+  adminLoginLimiter,
+  scannerAdminEmailLogin
+);
+
 // Common Logout Route
 router.post('/logout', requireAuth, logout);
+
+// Session Refresh Route (Silently refreshes access token using refresh_token)
+router.post('/refresh', studentLoginLimiter, refreshToken);
 
 // Google OAuth Sign-in & Profile Sync
 router.get('/google/url', getGoogleOAuthUrl);

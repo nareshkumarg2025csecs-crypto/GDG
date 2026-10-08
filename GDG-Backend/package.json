@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "description": "Node.js + Express backend for college club website with Supabase Auth and Database",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node --max-old-space-size=384 src/server.js",
+    "dev": "node --max-old-space-size=384 --watch src/server.js",
+    "build": "pip3 install --break-system-packages -r requirements.txt || pip3 install -r requirements.txt || pip install -r requirements.txt || true",
+    "postinstall": "pip3 install --break-system-packages -r requirements.txt || pip3 install -r requirements.txt || pip install -r requirements.txt || true",
     "test": "cross-env NODE_ENV=test jest --runInBand --detectOpenHandles"
   },
   "keywords": [
@@ -28,7 +33,9 @@
     "hpp": "^0.2.3",
     "multer": "^2.3.0",
     "nodemailer": "^10.0.1",
-    "qrcode": "^1.5.4"
+    "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

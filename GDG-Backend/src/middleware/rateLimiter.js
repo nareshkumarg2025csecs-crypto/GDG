@@ -126,27 +126,40 @@ const shouldSkipGeneral = (req) => {
   return false;
 };
 
+/**
+ * User-aware key generator:
+ * Differentiates authenticated students by their user ID so that multiple students
+ * sharing a college campus Wi-Fi / NAT IP address do not collide on rate limits.
+ */
+const userOrIpKeyGenerator = (req) => {
+  const userId = req.user?.id;
+  if (userId) {
+    return `user_${userId}`;
+  }
+  return `ip_${getClientIp(req)}`;
+};
+
 const generalApiLimiter = rateLimit({
   windowMs: securityConfig.rateLimits.generalApi.windowMs,
   max: securityConfig.rateLimits.generalApi.max,
-  keyGenerator: ipKeyGenerator,
+  keyGenerator: userOrIpKeyGenerator,
   handler: rateLimitHandler,
   skip: shouldSkipGeneral,
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// 5. Form Submission Limiter (prevents registration flooding, mail spam, and database abuse)
+// 5. Form Submission Limiter (prevents registration flooding, mail spam, and database abuse while handling campus bursts)
 const formSubmissionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // max 20 submissions per 15 minutes
+  max: 60, // max 60 submissions per 15 minutes per user
   keyGenerator: (req) => {
     const userId = req.user?.id;
     const ip = getClientIp(req);
     return userId ? `user_sub_${userId}` : `ip_sub_${ip}`;
   },
   handler: rateLimitHandler,
-  skip: shouldSkip,
+  skip: shouldSkipGeneral,
   standardHeaders: true,
   legacyHeaders: false,
 });

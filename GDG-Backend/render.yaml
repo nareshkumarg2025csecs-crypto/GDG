@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: gdg-backend
+    env: node
+    plan: free
+    rootDir: GDG-Backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22
+      - key: PORT
+        value: 10000
+      - key: CLIENT_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ADMIN_SIGNUP_CODE
+        sync: false
+      - key: SCANNER_TOKEN_SECRET
+        sync: false
+      - key: EMAIL_ID
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

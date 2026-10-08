@@ -33,6 +33,7 @@ import {
   Send,
   Copy,
   QrCode,
+  User,
   Users,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
@@ -41,6 +42,7 @@ import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { MarkdownEditorField } from '@/components/admin/MarkdownEditorField';
 import {
   type ClubEvent,
   type EventForm,
@@ -62,9 +64,12 @@ import {
 import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
 
 export interface EmailDraftConfig {
+  enabled: boolean;
   mode: 'default' | 'custom';
   subject: string;
   body: string;
+  custom_message?: string;
+  edit_mode?: 'simple' | 'advanced';
   include_qr: boolean;
 }
 
@@ -98,16 +103,35 @@ const GOOGLE_THEME_COLORS = [
   { name: 'Purple Neon', hex: '#A142F4' },
 ];
 
+const HACKATHON_TRACK_OPTIONS = [
+  'Artificial Intelligence & Machine Learning',
+  'Web3, Blockchain & FinTech',
+  'Cloud Architecture & DevOps',
+  'Cybersecurity & Ethical Hacking',
+  'Open Innovation & Social Good',
+];
+
 /**
  * Interactive Dropdown Options Editor
- * Allows typing commas naturally without character loss, plus pill tag removal.
+ * Allows typing commas naturally without character loss, plus pill tag removal,
+ * and optional per-option seat / slot capacity limits (e.g. hackathons).
  */
 function SelectOptionsEditor({
   options = [],
   onChange,
+  enableLimits = false,
+  onToggleLimits,
+  optionLimits = {},
+  onChangeLimits,
+  isHackathon = false,
 }: {
   options: string[];
   onChange: (opts: string[]) => void;
+  enableLimits?: boolean;
+  onToggleLimits?: (enabled: boolean) => void;
+  optionLimits?: Record<string, number | null>;
+  onChangeLimits?: (limits: Record<string, number | null>) => void;
+  isHackathon?: boolean;
 }) {
   const [textValue, setTextValue] = useState((options || []).join(', '));
 
@@ -122,79 +146,238 @@ function SelectOptionsEditor({
       .map((o) => o.trim())
       .filter(Boolean);
     onChange(parsed);
+    if (optionLimits && onChangeLimits) {
+      const parsedSet = new Set(parsed);
+      const nextLimits: Record<string, number | null> = {};
+      let hasChanges = false;
+      for (const [k, v] of Object.entries(optionLimits)) {
+        if (parsedSet.has(k)) {
+          nextLimits[k] = v;
+        } else {
+          hasChanges = true;
+        }
+      }
+      if (hasChanges) {
+        onChangeLimits(nextLimits);
+      }
+    }
   };
 
   const handleRemoveOption = (index: number) => {
+    const removedOpt = options[index];
     const next = options.filter((_, i) => i !== index);
     onChange(next);
+    if (optionLimits && removedOpt in optionLimits) {
+      const nextLimits = { ...optionLimits };
+      delete nextLimits[removedOpt];
+      onChangeLimits?.(nextLimits);
+    }
+  };
+
+  const handleApplyBatchLimit = (limitNum: number | null) => {
+    const nextLimits: Record<string, number | null> = {};
+    options.forEach((opt) => {
+      nextLimits[opt] = limitNum;
+    });
+    onChangeLimits?.(nextLimits);
   };
 
   return (
-    <div className="space-y-2">
-      <label className="block text-[11px] font-semibold text-muted-foreground">
-        Dropdown Options (comma-separated or use pills below)
-      </label>
+    <div className="space-y-3 p-3 rounded-xl bg-muted/20 border border-border/60">
+      <div>
+        <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+          Dropdown Options (comma-separated or use pills below)
+        </label>
 
-      {/* Option Tags Preview */}
-      {options.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pb-0.5">
-          {options.map((opt, i) => (
-            <span
-              key={i}
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20"
-            >
-              <span>{opt}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveOption(i)}
-                className="hover:text-destructive text-google-blue/70 transition-colors font-bold text-xs"
-                title="Remove option"
+        {/* Option Tags Preview */}
+        {options.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pb-2">
+            {options.map((opt, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20"
               >
-                &times;
-              </button>
-            </span>
-          ))}
+                <span>{opt}</span>
+                {enableLimits && optionLimits?.[opt] ? (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-google-blue text-white font-mono">
+                    {optionLimits[opt]} slots
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveOption(i)}
+                  className="hover:text-destructive text-google-blue/70 transition-colors font-bold text-xs"
+                  title="Remove option"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <input
+          type="text"
+          placeholder="Option A, Option B, Option C"
+          value={textValue}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onBlur={() => {
+            const cleaned = textValue
+              .split(',')
+              .map((o) => o.trim())
+              .filter(Boolean);
+            onChange(cleaned);
+            setTextValue(cleaned.join(', '));
+          }}
+          className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
+        />
+
+        {/* Presets */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2">
+          <span className="text-[10px] text-muted-foreground font-mono">Presets:</span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...HACKATHON_TRACK_OPTIONS]);
+              setTextValue(HACKATHON_TRACK_OPTIONS.join(', '));
+              onToggleLimits?.(true);
+              const hackLimits: Record<string, number> = {};
+              HACKATHON_TRACK_OPTIONS.forEach((t) => {
+                hackLimits[t] = 30;
+              });
+              onChangeLimits?.(hackLimits);
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue font-semibold transition-colors flex items-center gap-1"
+          >
+            <Sparkles className="w-3 h-3" />
+            Hackathon Tracks (5 Tracks @ 30 slots)
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...DEPARTMENT_OPTIONS]);
+              setTextValue(DEPARTMENT_OPTIONS.join(', '));
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Standard Departments ({DEPARTMENT_OPTIONS.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onChange([...YEAR_OF_STUDY_OPTIONS]);
+              setTextValue(YEAR_OF_STUDY_OPTIONS.join(', '));
+            }}
+            className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Study Years (1st - 4th)
+          </button>
         </div>
-      )}
+      </div>
 
-      <input
-        type="text"
-        placeholder="Option A, Option B, Option C"
-        value={textValue}
-        onChange={(e) => handleTextChange(e.target.value)}
-        onBlur={() => {
-          const cleaned = textValue
-            .split(',')
-            .map((o) => o.trim())
-            .filter(Boolean);
-          onChange(cleaned);
-          setTextValue(cleaned.join(', '));
-        }}
-        className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
-      />
+      {/* Option Limits Toggle & Customization Panel */}
+      <div className="pt-2.5 border-t border-border/50">
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(enableLimits)}
+              onChange={(e) => onToggleLimits?.(e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-input text-google-blue focus:ring-google-blue"
+            />
+            <div>
+              <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <span>Restrict Slots / Seats per Option</span>
+                <span className={`text-[10px] px-2 py-0.2 rounded-full font-semibold border ${
+                  enableLimits
+                    ? 'bg-google-green/10 text-google-green border-google-green/20'
+                    : 'bg-muted text-muted-foreground border-border'
+                }`}>
+                  {enableLimits ? 'Restrictions Enabled' : 'Fully Open (No Limits)'}
+                </span>
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Set individual capacity for hackathon tracks or workshop seats. When full, students cannot select it.
+              </p>
+            </div>
+          </label>
+        </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <span className="text-[10px] text-muted-foreground font-mono">Presets:</span>
-        <button
-          type="button"
-          onClick={() => {
-            onChange([...DEPARTMENT_OPTIONS]);
-            setTextValue(DEPARTMENT_OPTIONS.join(', '));
-          }}
-          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Standard Departments ({DEPARTMENT_OPTIONS.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            onChange([...YEAR_OF_STUDY_OPTIONS]);
-            setTextValue(YEAR_OF_STUDY_OPTIONS.join(', '));
-          }}
-          className="text-[10px] px-2 py-0.5 rounded-md border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Study Years (1st - 4th)
-        </button>
+        {enableLimits && (
+          <div className="mt-3 p-3 rounded-xl bg-card border border-border/80 space-y-3 animate-in fade-in">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground pb-1 border-b border-border/40">
+              <span>Option / Track Name</span>
+              <span>Capacity (Max Seats)</span>
+            </div>
+
+            {options.length === 0 ? (
+              <div className="text-xs text-muted-foreground italic py-2 text-center">
+                Add options above to define slot restrictions.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {options.map((opt) => {
+                  const currentLimit = optionLimits?.[opt];
+                  const hasLimit = currentLimit !== null && currentLimit !== undefined && currentLimit > 0;
+                  return (
+                    <div
+                      key={opt}
+                      className="flex items-center justify-between gap-3 p-2 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors"
+                    >
+                      <span className="text-xs font-medium text-foreground truncate max-w-[200px] sm:max-w-xs" title={opt}>
+                        {opt}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="Unlimited"
+                          value={hasLimit ? currentLimit : ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Math.max(1, parseInt(e.target.value, 10) || 0);
+                            onChangeLimits?.({
+                              ...(optionLimits || {}),
+                              [opt]: val,
+                            });
+                          }}
+                          className="w-24 px-2.5 py-1 text-xs rounded-md border border-input bg-background text-foreground text-right focus:outline-none focus:ring-1 focus:ring-google-blue"
+                        />
+                        <span className="text-[10px] text-muted-foreground font-mono w-12 text-right">
+                          {hasLimit ? 'seats' : 'open'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {options.length > 0 && (
+              <div className="pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] text-muted-foreground font-mono">Quick Set All:</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[20, 30, 50, 100].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleApplyBatchLimit(num)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-border bg-background hover:bg-muted text-foreground transition-colors font-medium"
+                    >
+                      All {num}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleApplyBatchLimit(null)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Clear (All Open)
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -208,6 +391,8 @@ export const AdminEventEditorPage: React.FC = () => {
   // Core Event Details State
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Workshop');
+  const [enableParticipationType, setEnableParticipationType] = useState<boolean>(false);
+  const [participationType, setParticipationType] = useState<'individual' | 'team'>('individual');
   const [location, setLocation] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -239,11 +424,39 @@ export const AdminEventEditorPage: React.FC = () => {
   const [showSubmissionCount, setShowSubmissionCount] = useState<boolean>(true); // Whether public users see the live count
   const [formFields, setFormFields] = useState<FormField[]>(DEFAULT_FORM_FIELDS);
 
+  // Derived: minimum of option_limits sums across fields that have enable_option_limits enabled.
+  // When this is > 0, the overall submission limit is auto-managed and the manual input is locked.
+  const trackCapacityTotal = React.useMemo(() => {
+    const fieldSums: number[] = [];
+
+    for (const f of formFields) {
+      if (f.enable_option_limits && Array.isArray(f.options) && f.options.length > 0) {
+        const limits = f.option_limits && typeof f.option_limits === 'object' ? f.option_limits : {};
+        let currentFieldSum = 0;
+        for (const opt of f.options) {
+          const val = limits[opt];
+          if (val === null || val === undefined || Number(val) <= 0) {
+            return 0; // Incomplete option limits; do not derive overall total
+          }
+          currentFieldSum += Number(val);
+        }
+        fieldSums.push(currentFieldSum);
+      }
+    }
+    return fieldSums.length > 0 ? Math.min(...fieldSums) : 0;
+  }, [formFields]);
+
+  // Effective limit: prefer track-computed total; fall back to manual input
+  const effectiveSubmissionLimit = trackCapacityTotal > 0 ? trackCapacityTotal : (submissionLimit === '' ? null : Number(submissionLimit));
+
   // Email Notification & Draft Configuration State
   const [emailConfig, setEmailConfig] = useState<EmailDraftConfig>({
+    enabled: true,
     mode: 'default',
     subject: 'Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})',
     body: DEFAULT_EMAIL_HTML_DRAFT,
+    custom_message: '',
+    edit_mode: 'simple',
     include_qr: true,
   });
   const [emailViewMode, setEmailViewMode] = useState<'visual' | 'code'>('code');
@@ -254,6 +467,27 @@ export const AdminEventEditorPage: React.FC = () => {
     mode: 'default',
     content: DEFAULT_QR_PAYLOAD_PRESET,
   });
+
+  // Google Sheets Linking State & Manual Sync
+  const [googleLinkStatus, setGoogleLinkStatus] = useState<{ connected: boolean; has_refresh_token?: boolean } | null>(null);
+  const [isSyncingSheetNow, setIsSyncingSheetNow] = useState(false);
+
+  useEffect(() => {
+    eventService.getGoogleLinkStatus().then((res) => {
+      setGoogleLinkStatus(res);
+    }).catch(() => {});
+
+    // Check if returned from Google OAuth authorization
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_connected') === 'true') {
+      toast({
+        title: 'Google Account Authorized! 🎉',
+        description: 'Your account has been connected with Google Sheets permissions.',
+      });
+      window.history.replaceState({}, '', window.location.pathname);
+      eventService.getGoogleLinkStatus().then(setGoogleLinkStatus).catch(() => {});
+    }
+  }, []);
 
   // Helper to generate realistic mock preview data for any question field
   const getDemoFieldValue = (field: FormField): string => {
@@ -311,8 +545,153 @@ export const AdminEventEditorPage: React.FC = () => {
     return res;
   };
 
+  // Helper to format organizer custom message with proper paragraphs, line breaks, auto-linking, and session buttons
+  const formatOrganizerMessageToHtml = (customMsg: string, fallbackTitle: string = 'GDG Tech Summit 2026') => {
+    let msg = (customMsg || '').trim();
+    if (!msg) {
+      return `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #334155; font-size: 14px;">We look forward to welcoming you to <strong>${fallbackTitle}</strong>! Please find your digital event pass and schedule details below.</p>`;
+    }
+
+    // Interpolate placeholders
+    msg = msg
+      .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+      .replace(/\{\{\s*email\s*\}\}/gi, 'alex.johnson@campus.edu')
+      .replace(/\{\{\s*event_title\s*\}\}/gi, title || fallbackTitle)
+      .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+      .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+      .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+      .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+
+    // 1. Auto-link any plain URLs (e.g. Google Meet links) that are not already wrapped in <a> tags
+    let autoLinked = msg.replace(
+      /(^|[^">])(https?:\/\/[^\s<"']+)/g,
+      '$1<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #4285F4; font-weight: 700; text-decoration: underline; word-break: break-all;">$2</a>'
+    );
+
+    // 2. If a Google Meet or Zoom link is present without an explicit action button, add a prominent button
+    if (
+      /https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(autoLinked) &&
+      !/Join Google Meet/i.test(autoLinked)
+    ) {
+      const meetMatch = autoLinked.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
+      if (meetMatch) {
+        const meetUrl = meetMatch[0];
+        const buttonHtml = `\n\n<div style="margin: 14px 0 18px 0;"><a href="${meetUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">Join Google Meet Session &rarr;</a></div>\n\n`;
+        autoLinked = autoLinked.replace(
+          new RegExp(`(<a[^>]*>${meetUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/a>)`),
+          `$1${buttonHtml}`
+        );
+      }
+    }
+
+    // 3. Normalize newlines and preserve all line breaks so lines never collapse continuously into one
+    const normalized = autoLinked.replace(/\r\n/g, '\n');
+    const blocks = normalized.split(/\n{2,}/);
+
+    return blocks
+      .map((block) => {
+        const trimmedBlock = block.trim();
+        if (!trimmedBlock) return '';
+        if (/^<(?:div|table|ul|ol|h[1-6]|blockquote)[\s>]/i.test(trimmedBlock)) {
+          return trimmedBlock.replace(/\n/g, '<br/>');
+        }
+        if (/^<p[\s>]/i.test(trimmedBlock)) {
+          return trimmedBlock.replace(/\n/g, '<br/>');
+        }
+        const withBr = trimmedBlock.replace(/\n/g, '<br/>');
+        return `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #334155; font-size: 14px;">${withBr}</p>`;
+      })
+      .filter(Boolean)
+      .join('');
+  };
+
+  // Helper to construct clean visual HTML when organizer writes a simple custom message
+  const buildSimpleCustomEmailHtml = (customMsg: string, includeQr: boolean) => {
+    const formattedCustomMsg = formatOrganizerMessageToHtml(customMsg, title || 'GDG Tech Summit 2026');
+
+    const rawQrTemplate =
+      qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
+        ? qrConfig.content
+        : DEFAULT_QR_PAYLOAD_PRESET;
+    const populatedQrContent = populateSampleQrPayload(rawQrTemplate);
+    const qrPayload = encodeURIComponent(populatedQrContent);
+
+    const qrCardMarkup = includeQr ? `
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+        Official Digital Event Pass
+      </div>
+      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
+        TKT-GDG8492
+      </div>
+      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
+        <img
+          src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}"
+          alt="Ticket QR - TKT-GDG8492"
+          width="150"
+          height="150"
+          style="display: block; border-radius: 8px; margin: 0 auto;"
+        />
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
+        📱 Present this QR pass at the venue entrance desk for verification.
+      </div>
+    </div>` : '';
+
+    return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
+      <div style="background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%); height: 6px;"></div>
+      <div style="padding: 24px 32px 16px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+        <div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+          <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
+        </div>
+        <div style="font-size: 11px; font-weight: 700; color: #4285F4; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">
+          Registration Confirmed
+        </div>
+      </div>
+      <div style="padding: 28px 32px; color: #334155; font-size: 15px; line-height: 1.6;">
+        <h2 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
+          Welcome to ${title || 'GDG Tech Summit 2026'}!
+        </h2>
+        <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b;">
+          Hi <strong>Alex Johnson</strong>, your seat has been reserved!
+        </p>
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 16px 20px; margin: 18px 0;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #166534; margin-bottom: 8px;">
+            📢 Organizer Message
+          </div>
+          ${formattedCustomMsg}
+        </div>
+        ${qrCardMarkup}
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 20px 0;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+            Key Event Details
+          </div>
+          <div style="font-size: 13px; margin-bottom: 6px;">📅 <strong>Date:</strong> ${startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'}</div>
+          <div style="font-size: 13px; margin-bottom: 6px;">⏰ <strong>Time:</strong> ${startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}</div>
+          <div style="font-size: 13px; margin-bottom: 6px;">📍 <strong>Venue:</strong> ${location || 'Campus Main Auditorium'}</div>
+          <div style="font-size: 13px; color: #0284c7;">🎟️ <strong>Ticket ID:</strong> <code>TKT-GDG8492</code></div>
+        </div>
+        <div style="text-align: center; margin: 26px 0 10px 0;">
+          <a href="http://localhost:8081/events/register?ticket=TKT-GDG8492" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+            View Digital Pass Online &rarr;
+          </a>
+        </div>
+      </div>
+      <div style="padding: 18px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
+        <p style="margin: 0 0 4px 0; font-weight: 600; color: #64748b;">Google Developer Groups On Campus</p>
+        <p style="margin: 0;">Automated confirmation email &bull; No reply needed</p>
+      </div>
+    </div>`;
+  };
+
   // Helper to construct visual HTML for email preview with identical design and in-body QR placement as default pass
   const buildVisualEmailHtml = (rawBody: string, includeQr: boolean) => {
+    if (emailConfig.mode === 'custom' && emailConfig.edit_mode === 'simple') {
+      return buildSimpleCustomEmailHtml(emailConfig.custom_message || '', includeQr);
+    }
+
     let content = rawBody || '';
 
     // Interpolate standard attendee & event placeholders
@@ -429,6 +808,7 @@ export const AdminEventEditorPage: React.FC = () => {
   // Image Quality & Size Settings
   const [imageQuality, setImageQuality] = useState<'original' | '2k' | 'hd'>('original');
   const [imageMeta, setImageMeta] = useState<{ width: number; height: number; sizeKb: number; name: string } | null>(null);
+  const [isUploadingPoster, setIsUploadingPoster] = useState<boolean>(false);
 
   // Prevent background scroll when modal preview is open (Desktop & Mobile)
   useEffect(() => {
@@ -446,7 +826,7 @@ export const AdminEventEditorPage: React.FC = () => {
   }, [showPreviewModal, showEmailPreviewModal]);
 
 
-  // Convert uploaded image file to high-resolution, crystal-clear Base64 data URL without blur
+  // Upload image file directly to Supabase storage bucket with crisp resolution
   const processImageFile = (file: File, qualityPreset: 'original' | '2k' | 'hd' = imageQuality) => {
     if (!file.type.startsWith('image/')) {
       toast({
@@ -457,26 +837,45 @@ export const AdminEventEditorPage: React.FC = () => {
       return;
     }
 
+    setIsUploadingPoster(true);
+
     const reader = new FileReader();
+    reader.onerror = () => {
+      setIsUploadingPoster(false);
+      toast({
+        title: 'Error Reading Image',
+        description: 'Failed to read the image file from disk.',
+        variant: 'destructive',
+      });
+    };
     reader.onload = (event) => {
       const img = new window.Image();
+      img.onerror = () => {
+        setIsUploadingPoster(false);
+        toast({
+          title: 'Error Decoding Image',
+          description: 'Failed to decode image data. Please ensure it is a valid image.',
+          variant: 'destructive',
+        });
+      };
       img.onload = () => {
-        let maxW = 2560; // Ultra high resolution default
-        let maxH = 1440;
-        let compressionQuality = 0.95;
+        // Egress-Optimized Resolution: 1920x1080 provides crystal-clear retina display while keeping file size under 250KB
+        let maxW = 1920;
+        let maxH = 1080;
+        let compressionQuality = 0.82;
 
         if (qualityPreset === '2k') {
-          maxW = 2048;
-          maxH = 1152;
-          compressionQuality = 0.92;
+          maxW = 1920;
+          maxH = 1080;
+          compressionQuality = 0.85;
         } else if (qualityPreset === 'hd') {
           maxW = 1440;
-          maxH = 900;
-          compressionQuality = 0.90;
+          maxH = 810;
+          compressionQuality = 0.80;
         } else if (qualityPreset === 'original') {
-          maxW = 3840; // 4K max ceiling to prevent crash while retaining 100% crispness
-          maxH = 2160;
-          compressionQuality = 0.96;
+          maxW = 2048;
+          maxH = 1152;
+          compressionQuality = 0.85;
         }
 
         let { width, height } = img;
@@ -495,27 +894,54 @@ export const AdminEventEditorPage: React.FC = () => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          // High quality image smoothing algorithms
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          const exportFormat = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-          const base64Data = canvas.toDataURL(exportFormat, compressionQuality);
-          const sizeKb = Math.round((base64Data.length * 3) / 4 / 1024);
+          // WebP format offers 60-80% smaller size at identical visual crispness compared to PNG/JPEG
+          const exportFormat = 'image/webp';
+          canvas.toBlob(
+            async (blob) => {
+              if (!blob) {
+                setIsUploadingPoster(false);
+                return;
+              }
 
-          setBannerUrl(base64Data);
-          setImageMeta({
-            width,
-            height,
-            sizeKb,
-            name: file.name,
-          });
+              try {
+                // Ensure extension is .webp
+                const baseName = file.name.replace(/\.[^/.]+$/, '');
+                const uploadFile = new File([blob], `${baseName}.webp`, { type: exportFormat });
+                const uploadRes = await eventService.uploadPoster(uploadFile, id);
+                const sizeKb = Math.round(blob.size / 1024);
 
-          toast({
-            title: 'High-Res Poster Uploaded! 🖼️',
-            description: `${width}×${height}px (${sizeKb} KB) • Crisp & blur-free.`,
-          });
+                setBannerUrl(uploadRes.url);
+                setImageMeta({
+                  width,
+                  height,
+                  sizeKb,
+                  name: `${baseName}.webp`,
+                });
+
+                toast({
+                  title: 'Poster Optimized & Uploaded! 🚀',
+                  description: `${width}×${height}px (${sizeKb} KB) • Saved with 1-yr cache header.`,
+                });
+              } catch (uploadErr: any) {
+                console.error('Poster bucket upload error:', uploadErr);
+                toast({
+                  title: 'Poster Upload Failed',
+                  description: uploadErr.message || 'Could not upload poster to storage bucket.',
+                  variant: 'destructive',
+                });
+              } finally {
+                setIsUploadingPoster(false);
+              }
+            },
+            exportFormat,
+            compressionQuality
+          );
+        } else {
+          setIsUploadingPoster(false);
         }
       };
       img.src = event.target?.result as string;
@@ -557,6 +983,9 @@ export const AdminEventEditorPage: React.FC = () => {
 
         setTitle(event.title || '');
         setCategory(details.category || 'Workshop');
+        const isPartTypeEnabled = details.enable_participation_type ?? Boolean(details.participation_type);
+        setEnableParticipationType(Boolean(isPartTypeEnabled));
+        setParticipationType(details.participation_type === 'team' ? 'team' : 'individual');
         setLocation(details.location || details.venue || '');
         setCapacity(details.capacity ? String(details.capacity) : '');
         setBannerUrl(details.banner_url || details.coverImage || details.cover_image || '');
@@ -635,14 +1064,31 @@ export const AdminEventEditorPage: React.FC = () => {
             }
 
             // Load existing Email Draft configuration
+            const isEmailEnabled =
+              form.schema?.email_config?.enabled !== undefined
+                ? form.schema.email_config.enabled
+                : form.schema?.send_qr_email !== undefined
+                ? form.schema.send_qr_email
+                : details.send_qr_email !== false;
+
             if (form.schema?.email_config) {
               const cfg = form.schema.email_config;
               setEmailConfig({
+                enabled: isEmailEnabled,
                 mode: cfg.mode === 'custom' ? 'custom' : 'default',
                 subject: cfg.subject || 'Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})',
                 body: cfg.body || cfg.html || DEFAULT_EMAIL_HTML_DRAFT,
-                include_qr: cfg.include_qr !== false,
+                custom_message: cfg.custom_message || '',
+                edit_mode: cfg.edit_mode || (cfg.custom_message ? 'simple' : (cfg.body && cfg.body !== DEFAULT_EMAIL_HTML_DRAFT ? 'advanced' : 'simple')),
+                include_qr: cfg.include_qr !== undefined ? cfg.include_qr !== false : (details.include_qr !== false),
               });
+            } else {
+              const hasExplicitQr = details.include_qr !== undefined ? details.include_qr !== false : (form.schema?.include_qr !== undefined ? form.schema.include_qr !== false : true);
+              setEmailConfig((prev) => ({
+                ...prev,
+                enabled: isEmailEnabled,
+                include_qr: hasExplicitQr,
+              }));
             }
 
             // Load existing QR Code Scanned Payload configuration
@@ -900,6 +1346,8 @@ export const AdminEventEditorPage: React.FC = () => {
         description: primaryDescription.trim(),
         custom_sections: customSections,
         category: category.trim(),
+        participation_type: enableParticipationType ? participationType : null,
+        enable_participation_type: enableParticipationType,
         location: location.trim(),
         venue: location.trim(),
         banner_url: bannerUrl.trim() || undefined,
@@ -911,6 +1359,8 @@ export const AdminEventEditorPage: React.FC = () => {
         endTime: endTime || startTime,
         end_time: endTime || startTime,
         capacity: capacity ? Number(capacity) : undefined,
+        send_qr_email: emailConfig.enabled,
+        include_qr: emailConfig.enabled ? emailConfig.include_qr !== false : false,
         status: (targetPublished ? 'published' : 'draft') as 'draft' | 'published',
         published: targetPublished,
       };
@@ -932,7 +1382,10 @@ export const AdminEventEditorPage: React.FC = () => {
 
       // Handle attached form
       if (hasForm && savedEventId) {
-        const parsedSubLimit = submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit);
+        // Use track-computed total if tracks define limits; otherwise use manual input
+        const parsedSubLimit = trackCapacityTotal > 0
+          ? trackCapacityTotal
+          : (submissionLimit === '' || Number(submissionLimit) <= 0 ? null : Number(submissionLimit));
         const parsedOpensAt = opensAt ? new Date(opensAt).toISOString() : null;
         const parsedExpiresAt = expiresAt ? new Date(expiresAt).toISOString() : null;
 
@@ -942,6 +1395,7 @@ export const AdminEventEditorPage: React.FC = () => {
           opens_at?: string | null;
           submission_limit?: number | null;
           show_submission_count?: boolean;
+          send_qr_email?: boolean;
           email_config?: EmailDraftConfig;
           qr_config?: QrCodeConfig;
         } = {
@@ -951,6 +1405,7 @@ export const AdminEventEditorPage: React.FC = () => {
           expires_at: parsedExpiresAt,
           submission_limit: parsedSubLimit,
           show_submission_count: showSubmissionCount,
+          send_qr_email: emailConfig.enabled,
           email_config: emailConfig,
           qr_config: qrConfig,
         };
@@ -1189,6 +1644,86 @@ export const AdminEventEditorPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Participation Format (Individual / Team) with Admin Enable/Disable Toggle */}
+          <div className="p-4 rounded-2xl border border-input bg-card/60 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-foreground">
+                    Participation Format (Individual / Team)
+                  </label>
+                  {enableParticipationType && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
+                      participationType === 'team'
+                        ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                        : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                    }`}>
+                      {participationType === 'team' ? 'Team Mode' : 'Individual Mode'}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Enable this option to display whether attendees join as individuals or as teams across all event cards and passes.
+                </p>
+              </div>
+
+              {/* Enable / Disable Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enableParticipationType}
+                onClick={() => setEnableParticipationType(!enableParticipationType)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-google-blue focus:ring-offset-2 ${
+                  enableParticipationType ? 'bg-google-blue' : 'bg-muted'
+                }`}
+                title={enableParticipationType ? 'Disable participation type' : 'Enable participation type'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    enableParticipationType ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {enableParticipationType && (
+              <div className="pt-2 border-t border-border/50 flex flex-wrap items-center gap-3">
+                <span className="text-xs font-medium text-foreground/80">Select Type:</span>
+                <div className="inline-flex rounded-xl p-1 bg-background border border-input">
+                  <button
+                    type="button"
+                    onClick={() => setParticipationType('individual')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      participationType === 'individual'
+                        ? 'bg-google-blue text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Individual</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setParticipationType('team')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      participationType === 'team'
+                        ? 'bg-purple-600 text-white shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Team</span>
+                  </button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  {participationType === 'team'
+                    ? '👥 Attendees participate in teams. Team badge will be shown on event cards.'
+                    : '👤 Attendees participate individually. Individual badge will be shown on event cards.'}
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Date & Time Pickers with Visible Calendar Trigger Icon */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -1239,7 +1774,7 @@ export const AdminEventEditorPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Event Banner / Poster Image (Upload Base64 or URL) */}
+          {/* Event Banner / Poster Image (Storage Bucket Upload or URL) */}
           <div className="space-y-3 pt-2 border-t border-border/60">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
@@ -1247,7 +1782,7 @@ export const AdminEventEditorPage: React.FC = () => {
                   Event Poster / Banner Image (Optional)
                 </label>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Upload directly as crisp Base64 (zero storage bucket limits) or paste an image URL.
+                  Uploaded directly to cloud storage bucket (CDN-hosted) or paste an image URL.
                 </p>
               </div>
 
@@ -1293,24 +1828,35 @@ export const AdminEventEditorPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Hidden File Input for Base64 Image Upload */}
+            {/* Hidden File Input for Image Upload */}
             <input
               ref={imageInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={handleImageFileUpload}
+              disabled={isUploadingPoster}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
               {/* Upload Button */}
               <button
                 type="button"
+                disabled={isUploadingPoster}
                 onClick={() => imageInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-google-blue/40 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-google-blue/40 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs sm:text-sm font-semibold transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <UploadCloud className="w-4 h-4" />
-                <span>Upload Image ({imageQuality.toUpperCase()})</span>
+                {isUploadingPoster ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Uploading to Bucket...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Upload to Bucket ({imageQuality.toUpperCase()})</span>
+                  </>
+                )}
               </button>
 
               {/* Or Paste URL */}
@@ -1318,16 +1864,15 @@ export const AdminEventEditorPage: React.FC = () => {
                 <Image className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
                   type="url"
-                  placeholder="Or paste image URL (https://...)"
-                  value={bannerUrl.startsWith('data:') ? 'Base64 High-Res Image Loaded' : bannerUrl}
+                  placeholder={bannerUrl.startsWith('data:') ? 'Legacy poster active (upload new image to migrate to bucket)' : 'Or paste image URL (https://...)'}
+                  value={bannerUrl.startsWith('data:') ? '' : bannerUrl}
                   onChange={(e) => setBannerUrl(e.target.value)}
-                  readOnly={bannerUrl.startsWith('data:')}
                   className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
                 />
               </div>
             </div>
 
-            {/* Live Banner Preview (Works with both Base64 Data URI & URL) */}
+            {/* Live Banner Preview (Works with Storage Bucket URL, URL & Legacy Base64) */}
             {bannerUrl && (
               <div className="relative rounded-2xl overflow-hidden border border-border h-48 sm:h-64 bg-black/40 group">
                 <img
@@ -1343,8 +1888,10 @@ export const AdminEventEditorPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-google-green" />
                     <p className="text-white text-xs font-semibold font-mono">
-                      {bannerUrl.startsWith('data:')
-                        ? `Base64 Uploaded Poster ${imageMeta ? `(${imageMeta.width}×${imageMeta.height}px • ${imageMeta.sizeKb} KB)` : ''}`
+                      {bannerUrl.includes('supabase.co') || bannerUrl.includes('storage')
+                        ? `Storage Bucket Poster ${imageMeta ? `(${imageMeta.width}×${imageMeta.height}px • ${imageMeta.sizeKb} KB)` : '☁️'}`
+                        : bannerUrl.startsWith('data:')
+                        ? 'Legacy Base64 Poster'
                         : 'Image URL Preview'}
                     </p>
                   </div>
@@ -1352,8 +1899,9 @@ export const AdminEventEditorPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={isUploadingPoster}
                       onClick={() => imageInputRef.current?.click()}
-                      className="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium backdrop-blur-sm transition-colors"
+                      className="px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium backdrop-blur-sm transition-colors disabled:opacity-50"
                     >
                       Replace
                     </button>
@@ -1523,34 +2071,29 @@ export const AdminEventEditorPage: React.FC = () => {
                         />
                       </div>
                     </div>
+                  ) : sec.type === 'markdown' ? (
+                    <MarkdownEditorField
+                      value={sec.content}
+                      onChange={(content) => handleUpdateSection(idx, { content })}
+                      placeholder="Write content, details, requirements or formatted markdown..."
+                      rows={5}
+                    />
                   ) : (
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="block text-[11px] font-semibold text-muted-foreground">
-                          {sec.type === 'markdown'
-                            ? 'Markdown Content (supports **bold**, lists, headers, links)'
-                            : 'Content'}
+                          Content
                         </label>
                       </div>
                       <textarea
                         rows={4}
-                        placeholder="Write content, details, requirements or formatted markdown..."
+                        placeholder="Write content or details..."
                         value={sec.content}
                         onChange={(e) => handleUpdateSection(idx, { content: e.target.value })}
                         data-lenis-prevent="true"
                         onWheel={(e) => e.stopPropagation()}
                         className="w-full px-3.5 py-2 rounded-xl border border-input bg-card text-sm text-foreground font-mono text-xs focus:outline-none focus:ring-1 focus:ring-google-green resize-y leading-relaxed overscroll-contain"
                       />
-                    </div>
-                  )}
-
-                  {/* Live Rendered Markdown Preview inside the field */}
-                  {sec.type === 'markdown' && sec.content.trim() && (
-                    <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 text-xs">
-                      <p className="text-[10px] font-mono uppercase font-bold text-muted-foreground mb-1">
-                        Rendered Markdown Preview:
-                      </p>
-                      <MarkdownRenderer content={sec.content} />
                     </div>
                   )}
                 </div>
@@ -1850,23 +2393,62 @@ export const AdminEventEditorPage: React.FC = () => {
                     />
                   </div>
                   {sheetsUrl && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          localStorage.setItem('auth_link_redirect', window.location.pathname);
-                          const { url } = await eventService.getGoogleLinkUrl();
-                          if (url) window.location.href = url;
-                        } catch (err: any) {
-                          toast({ title: 'Error', description: err.message || 'Could not initiate Google connection.', variant: 'destructive' });
-                        }
-                      }}
-                      className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold hover:bg-google-green/20 transition-all shrink-0"
-                      title="Grant Google Sheets write token (login session remains unchanged)"
-                    >
-                      <TableProperties className="w-3.5 h-3.5" />
-                      <span>Authorize Google Account</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {googleLinkStatus?.connected && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-google-green" />
+                          <span>Google Account Linked</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            localStorage.setItem('auth_link_redirect', window.location.pathname);
+                            const { url } = await eventService.getGoogleLinkUrl('admin', 'sheets');
+                            if (url) window.location.href = url;
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message || 'Could not initiate Google connection.', variant: 'destructive' });
+                          }
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-google-green/10 border border-google-green/30 text-google-green text-xs font-semibold hover:bg-google-green/20 transition-all shrink-0"
+                        title="Grant Google Sheets write token (login session remains unchanged)"
+                      >
+                        <TableProperties className="w-3.5 h-3.5" />
+                        <span>{googleLinkStatus?.connected ? 'Re-link Google Account' : 'Authorize Google Account'}</span>
+                      </button>
+
+                      {existingFormId && (
+                        <button
+                          type="button"
+                          disabled={isSyncingSheetNow}
+                          onClick={async () => {
+                            setIsSyncingSheetNow(true);
+                            try {
+                              const res = await eventService.syncSheetForAdmin(existingFormId);
+                              toast({
+                                title: 'Google Sheet Synced! 🚀',
+                                description: res.message || 'Submissions synced to Google Sheet successfully.',
+                              });
+                            } catch (err: any) {
+                              toast({
+                                title: 'Sync Notice',
+                                description: err.message || 'Could not sync submissions to Google Sheet.',
+                                variant: 'destructive',
+                              });
+                            } finally {
+                              setIsSyncingSheetNow(false);
+                            }
+                          }}
+                          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-muted border border-border text-xs font-semibold hover:bg-muted/80 transition-all shrink-0 disabled:opacity-50"
+                          title="Test Google Sheet sync now"
+                        >
+                          <Send className="w-3.5 h-3.5 text-foreground" />
+                          <span>{isSyncingSheetNow ? 'Syncing...' : 'Sync Sheet Now'}</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 {sheetsUrl && (
@@ -1897,15 +2479,24 @@ export const AdminEventEditorPage: React.FC = () => {
                   <label className="block text-xs font-semibold text-foreground flex items-center gap-2">
                     <span>Attendee Capacity &amp; Submission Limit</span>
                     <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                      submissionLimit
+                      effectiveSubmissionLimit
                         ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 font-bold'
                         : 'bg-muted text-muted-foreground border-border'
                     }`}>
-                      {submissionLimit ? `${submissionLimit} Slots Max` : 'Unlimited Slots'}
+                      {effectiveSubmissionLimit ? `${effectiveSubmissionLimit} Slots Max` : 'Unlimited Slots'}
                     </span>
+                    {trackCapacityTotal > 0 && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border bg-google-blue/10 text-google-blue border-google-blue/30 flex items-center gap-1">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        Auto from Tracks
+                      </span>
+                    )}
                   </label>
                   <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed max-w-xl">
-                    Set the maximum registrations allowed for this event. Once the limit is reached, registration automatically locks and public pages display <strong className="text-amber-500 font-semibold">"Event Slot is Full"</strong> so no more registrations are accepted.
+                    {trackCapacityTotal > 0
+                      ? <>Total capacity is <strong className="text-google-blue">auto-calculated as the sum of all track slot limits ({trackCapacityTotal} total)</strong>. Edit individual track limits above to adjust capacity.
+                      </>
+                      : <>Set the maximum registrations allowed for this event. Once the limit is reached, registration automatically locks and public pages display <strong className="text-amber-500 font-semibold">"Event Slot is Full"</strong>.</>}
                   </p>
                 </div>
               </div>
@@ -1913,76 +2504,92 @@ export const AdminEventEditorPage: React.FC = () => {
               {/* Status Badge */}
               <div className="text-xs font-mono px-3 py-1.5 rounded-xl bg-muted/60 border border-border shrink-0 self-start sm:self-auto flex items-center gap-1.5">
                 <span className="text-muted-foreground">Capacity:</span>
-                <span className={submissionLimit ? 'text-amber-500 font-bold' : 'text-google-blue font-bold'}>
-                  {submissionLimit ? `${submissionLimit} Capped` : 'Open / Unlimited'}
+                <span className={effectiveSubmissionLimit ? 'text-amber-500 font-bold' : 'text-google-blue font-bold'}>
+                  {effectiveSubmissionLimit ? `${effectiveSubmissionLimit} Capped` : 'Open / Unlimited'}
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div className="space-y-1.5">
-                <div className="relative">
-                  <Users className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="e.g. 50 (Leave empty for unlimited)"
-                    value={submissionLimit}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setSubmissionLimit('');
-                      } else {
-                        const num = parseInt(val, 10);
-                        setSubmissionLimit(isNaN(num) || num <= 0 ? '' : num);
-                      }
-                    }}
-                    className="w-full pl-9 pr-14 py-2 rounded-xl border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 font-mono"
-                  />
-                  {submissionLimit !== '' && (
-                    <button
-                      type="button"
-                      onClick={() => setSubmissionLimit('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
-                      title="Clear limit"
-                    >
-                      Clear
-                    </button>
-                  )}
+            {trackCapacityTotal > 0 ? (
+              /* Read-only view: track limits control capacity */
+              <div className="p-3.5 rounded-xl bg-google-blue/5 border border-google-blue/20 flex items-center gap-3">
+                <Sparkles className="w-4 h-4 text-google-blue shrink-0" />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold text-google-blue">
+                    Capacity Auto-Managed: {trackCapacityTotal} total slots
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    The overall registration limit is automatically set to the sum of all per-track slot limits. To change total capacity, update the individual track limits in the dropdown question above.
+                  </p>
                 </div>
+                <span className="font-mono text-2xl font-bold text-google-blue shrink-0">{trackCapacityTotal}</span>
               </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <Users className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="e.g. 50 (Leave empty for unlimited)"
+                      value={submissionLimit}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setSubmissionLimit('');
+                        } else {
+                          const num = parseInt(val, 10);
+                          setSubmissionLimit(isNaN(num) || num <= 0 ? '' : num);
+                        }
+                      }}
+                      className="w-full pl-9 pr-14 py-2 rounded-xl border border-input bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 font-mono"
+                    />
+                    {submissionLimit !== '' && (
+                      <button
+                        type="button"
+                        onClick={() => setSubmissionLimit('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-muted-foreground hover:text-foreground px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+                        title="Clear limit"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-              {/* Quick Preset Buttons */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-mono text-muted-foreground mr-1">Presets:</span>
-                {[30, 50, 100, 200, 500].map((preset) => (
+                {/* Quick Preset Buttons */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-mono text-muted-foreground mr-1">Presets:</span>
+                  {[30, 50, 100, 200, 500].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setSubmissionLimit(preset)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                        submissionLimit === preset
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
                   <button
-                    key={preset}
                     type="button"
-                    onClick={() => setSubmissionLimit(preset)}
+                    onClick={() => setSubmissionLimit('')}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                      submissionLimit === preset
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                      submissionLimit === ''
+                        ? 'bg-google-blue text-white border-google-blue shadow-xs'
                         : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    {preset}
+                    Unlimited
                   </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSubmissionLimit('')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                    submissionLimit === ''
-                      ? 'bg-google-blue text-white border-google-blue shadow-xs'
-                      : 'border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Unlimited
-                </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Toggle: Show Live Count to Users */}
             <div className="flex items-center justify-between p-3.5 rounded-xl bg-background/80 border border-border/80">
@@ -2165,6 +2772,38 @@ export const AdminEventEditorPage: React.FC = () => {
               >
                 + File Upload
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultLimits: Record<string, number> = {};
+                  HACKATHON_TRACK_OPTIONS.forEach((t) => {
+                    defaultLimits[t] = 30;
+                  });
+                  setFormFields((prev) => [
+                    ...prev,
+                    {
+                      id: `f_${Date.now()}`,
+                      name: 'hackathon_track',
+                      label: 'Preferred Hackathon Domain / Track',
+                      type: 'hackathon_track',
+                      required: true,
+                      options: [...HACKATHON_TRACK_OPTIONS],
+                      enable_option_limits: true,
+                      option_limits: defaultLimits,
+                      allow_other: false,
+                    },
+                  ]);
+                  toast({
+                    title: 'Hackathon Track Added ⚡',
+                    description: 'Added 5 tracks with 30 slots capacity each.',
+                  });
+                }}
+                className="px-2.5 py-1 rounded-lg border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-[11px] font-semibold text-google-blue transition-colors flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                + Hackathon Domain (Tracks &amp; Slots)
+              </button>
             </div>
 
             {formFields.length === 0 ? (
@@ -2213,13 +2852,33 @@ export const AdminEventEditorPage: React.FC = () => {
                         </label>
                         <select
                           value={field.type}
-                          onChange={(e) =>
-                            handleUpdateField(idx, {
-                              type: e.target.value as FormField['type'],
-                              max_file_size_mb: e.target.value === 'file' ? (field.max_file_size_mb || 10) : field.max_file_size_mb,
-                              allowed_file_types: e.target.value === 'file' ? (field.allowed_file_types || '*') : field.allowed_file_types,
-                            })
-                          }
+                          onChange={(e) => {
+                            const newType = e.target.value as FormField['type'];
+                            const updates: Partial<FormField> = {
+                              type: newType,
+                              max_file_size_mb: newType === 'file' ? (field.max_file_size_mb || 10) : field.max_file_size_mb,
+                              allowed_file_types: newType === 'file' ? (field.allowed_file_types || '*') : field.allowed_file_types,
+                            };
+                            if (newType === 'hackathon_track') {
+                              if (!field.label || field.label === 'New Question' || field.label.trim() === '') {
+                                updates.label = 'Preferred Hackathon Domain / Track';
+                              }
+                              updates.name = field.name || 'hackathon_track';
+                              if (!field.options || field.options.length === 0) {
+                                updates.options = [...HACKATHON_TRACK_OPTIONS];
+                              }
+                              updates.enable_option_limits = true;
+                              updates.allow_other = false;
+                              if (!field.option_limits || Object.keys(field.option_limits).length === 0) {
+                                const defaultLimits: Record<string, number> = {};
+                                (updates.options || HACKATHON_TRACK_OPTIONS).forEach((t) => {
+                                  defaultLimits[t] = 30;
+                                });
+                                updates.option_limits = defaultLimits;
+                              }
+                            }
+                            handleUpdateField(idx, updates);
+                          }}
                           className="w-full px-3 py-1.5 rounded-lg border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-google-blue"
                         >
                           <option value="text">Short Text</option>
@@ -2227,16 +2886,22 @@ export const AdminEventEditorPage: React.FC = () => {
                           <option value="number">Number</option>
                           <option value="email">Email</option>
                           <option value="select">Dropdown Select</option>
+                          <option value="hackathon_track">Hackathon Track / Domain (Limited Slots)</option>
                           <option value="checkbox">Checkbox (Yes/No)</option>
                           <option value="file">File Upload</option>
                         </select>
                       </div>
                     </div>
 
-                    {field.type === 'select' && (
+                    {(field.type === 'select' || field.type === 'hackathon_track') && (
                       <SelectOptionsEditor
                         options={field.options || []}
                         onChange={(opts) => handleUpdateField(idx, { options: opts })}
+                        enableLimits={field.enable_option_limits}
+                        onToggleLimits={(enabled) => handleUpdateField(idx, { enable_option_limits: enabled })}
+                        optionLimits={field.option_limits}
+                        onChangeLimits={(limits) => handleUpdateField(idx, { option_limits: limits })}
+                        isHackathon={field.type === 'hackathon_track'}
                       />
                     )}
 
@@ -2320,224 +2985,505 @@ export const AdminEventEditorPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Default vs Custom Toggle */}
-              <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl border border-border self-start sm:self-auto">
+              {/* Master Email On/Off Switch */}
+              <div className="flex items-center gap-2.5 bg-muted/60 px-3 py-1.5 rounded-xl border border-border self-start sm:self-auto">
+                <span className="text-xs font-semibold text-foreground">Send Email:</span>
                 <button
                   type="button"
-                  onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'default' }))}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    emailConfig.mode === 'default'
-                      ? 'bg-google-blue text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
+                  role="switch"
+                  aria-checked={emailConfig.enabled}
+                  onClick={() => setEmailConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    emailConfig.enabled ? 'bg-google-green' : 'bg-muted-foreground/30'
                   }`}
                 >
-                  Default QR Pass
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      emailConfig.enabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'custom' }))}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    emailConfig.mode === 'custom'
-                      ? 'bg-google-blue text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Custom Email Draft
-                </button>
+                <span className={`text-xs font-bold font-mono uppercase ${emailConfig.enabled ? 'text-google-green' : 'text-muted-foreground'}`}>
+                  {emailConfig.enabled ? 'ON' : 'OFF'}
+                </span>
               </div>
             </div>
 
-            {emailConfig.mode === 'default' ? (
-              /* Default Branded Pass Card */
-              <div className="p-5 rounded-2xl bg-muted/30 border border-border space-y-3">
+            {!emailConfig.enabled ? (
+              /* Email Disabled Information Card */
+              <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center text-google-blue shrink-0 mt-0.5">
-                    <Sparkles className="w-5 h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-5 h-5" />
                   </div>
                   <div className="space-y-1">
-                    <h3 className="text-sm font-bold text-foreground">
-                      Standard GDG Digital Pass Email
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <span>Email Delivery Disabled</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500 font-mono uppercase font-semibold">
+                        On-Screen Confirmation Only
+                      </span>
                     </h3>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Every registered student receives an official branded confirmation with their sequential Ticket ID, event schedule, campus venue, calendar synchronization links, and an inline scannable QR pass for fast desk check-in.
+                      No automated emails will be sent and no QR code pass will be generated. Upon completing registration, students will simply receive a clear confirmation message directly on their screen.
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-2 flex flex-wrap items-center gap-3">
+                <div className="pt-1 flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setShowEmailPreviewModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm"
+                    onClick={() => setEmailConfig((prev) => ({ ...prev, enabled: true }))}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-google-blue text-white hover:bg-google-blue/90 transition-all shadow-xs"
                   >
-                    <Eye className="w-3.5 h-3.5 text-google-blue" />
-                    <span>Preview Default Email Structure</span>
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Turn On Confirmation Email</span>
                   </button>
                   <span className="text-[11px] text-muted-foreground">
-                    Zero setup required &bull; 100% responsive layout with QR code
+                    Saves email sending quotas for internal or testing sessions.
                   </span>
                 </div>
               </div>
             ) : (
-              /* Custom Email Draft Editor */
-              <div className="space-y-4">
-                {/* Subject Line */}
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-foreground">
-                    Email Subject Line
-                  </label>
-                  <input
-                    type="text"
-                    value={emailConfig.subject}
-                    onChange={(e) => setEmailConfig((prev) => ({ ...prev, subject: e.target.value }))}
-                    placeholder="Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-sans shadow-sm"
-                  />
-                </div>
-
-                {/* Variable helper tags chips */}
-                <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
-                      Dynamic Placeholders (Click to insert):
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      Automatically populated for each registrant
-                    </span>
+              <div className="space-y-6">
+                {/* Mode Selector: Default vs Custom */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-muted/30 border border-border">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-foreground">Email Template Format</div>
+                    <div className="text-[11px] text-muted-foreground">Choose standard automated GDG pass or customize the message.</div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { tag: '{{name}}', label: 'Attendee Name' },
-                      { tag: '{{event_title}}', label: 'Event Title' },
-                      { tag: '{{ticket_id}}', label: 'Ticket ID' },
-                      { tag: '{{qr_code}}', label: 'Digital Pass QR Card' },
-                      { tag: '{{date}}', label: 'Event Date' },
-                      { tag: '{{time}}', label: 'Event Time' },
-                      { tag: '{{venue}}', label: 'Venue' },
-                      { tag: '{{ticket_link}}', label: 'Digital Pass URL' },
-                    ].map(({ tag, label }) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => {
-                          setEmailConfig((prev) => ({
-                            ...prev,
-                            body: prev.body + ' ' + tag,
-                          }));
-                          toast({ title: 'Tag Inserted', description: `Added ${tag} to draft.` });
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
-                      >
-                        <span className="text-google-blue font-bold">{tag}</span>
-                        <span className="text-[10px] text-muted-foreground">({label})</span>
-                      </button>
-                    ))}
+                  <div className="flex items-center gap-1.5 bg-muted/80 p-1 rounded-xl border border-border self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'default' }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        emailConfig.mode === 'default'
+                          ? 'bg-google-blue text-white shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Default QR Pass
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailConfig((prev) => ({ ...prev, mode: 'custom' }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        emailConfig.mode === 'custom'
+                          ? 'bg-google-blue text-white shadow-xs'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      Custom Email Draft
+                    </button>
                   </div>
                 </div>
 
-                {/* Draft Content Editor with HTML Code / Visual Preview Toggle */}
-                <div className="space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <label className="block text-xs font-semibold text-foreground">
-                      Email Body Content (Raw HTML Code Supported)
-                    </label>
-                    <div className="flex items-center gap-2">
+                {emailConfig.mode === 'default' ? (
+                  /* Default Branded Pass Card */
+                  <div className="p-5 rounded-2xl bg-muted/30 border border-border space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center text-google-blue shrink-0 mt-0.5">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h3 className="text-sm font-bold text-foreground">
+                          Standard GDG Digital Pass Email
+                        </h3>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          Every registered student receives an official branded confirmation with their sequential Ticket ID, event schedule, campus venue, calendar synchronization links, and an inline scannable QR pass for fast desk check-in.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={emailConfig.include_qr !== false}
+                          onChange={(e) => setEmailConfig((prev) => ({ ...prev, include_qr: e.target.checked }))}
+                          className="rounded border-input text-google-blue focus:ring-google-blue w-4 h-4"
+                        />
+                        <span className="text-xs font-semibold text-foreground select-none">
+                          Include Official Digital Pass QR Card in email
+                        </span>
+                      </label>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEmailConfig((prev) => ({
-                            ...prev,
-                            body: DEFAULT_EMAIL_HTML_DRAFT,
-                          }));
-                          toast({
-                            title: 'Default Structure Loaded',
-                            description: 'Loaded standard GDG confirmation pass HTML template.',
-                          });
-                        }}
-                        className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-semibold text-google-blue transition-colors"
+                        onClick={() => setShowEmailPreviewModal(true)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-xs self-start sm:self-auto"
                       >
-                        Reset to Default HTML Pass
+                        <Eye className="w-3.5 h-3.5 text-google-blue" />
+                        <span>Preview Default Email Structure</span>
                       </button>
+                    </div>
 
-                      <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border border-border text-[11px]">
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                      <span>•</span>
+                      {emailConfig.include_qr !== false ? (
+                        <span>Email contains student Ticket ID, event schedule, venue, calendar sync links, and the check-in QR code pass.</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">QR code excluded: Email contains Ticket ID and schedule without generating or sending a QR pass.</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  /* Custom Email Draft Editor */
+                  <div className="space-y-5">
+                    {/* Subject Line with Quick Tags */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-foreground">
+                          Email Subject Line
+                        </label>
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          Supports dynamic tags
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={emailConfig.subject}
+                        onChange={(e) => setEmailConfig((prev) => ({ ...prev, subject: e.target.value }))}
+                        placeholder="Registration Confirmed: {{event_title}} (Ticket {{ticket_id}})"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-sans shadow-xs"
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[10px] text-muted-foreground font-mono font-semibold">Subject Tags:</span>
+                        {[
+                          { tag: '{{event_title}}', label: 'Title' },
+                          { tag: '{{ticket_id}}', label: 'Ticket' },
+                          { tag: '{{name}}', label: 'Name' },
+                          { tag: '{{date}}', label: 'Date' },
+                          { tag: '{{venue}}', label: 'Venue' },
+                        ].map(({ tag, label }) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setEmailConfig((prev) => ({
+                                ...prev,
+                                subject: (prev.subject || '') + ' ' + tag,
+                              }));
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-[10px] font-mono text-muted-foreground hover:text-foreground transition-all"
+                          >
+                            <span className="text-google-blue font-bold">{tag}</span>
+                            <span>({label})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sub-mode switcher: Simple Custom Message vs Full HTML */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-muted/40 border border-border">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-foreground">Message Editing Mode</span>
+                        <p className="text-[11px] text-muted-foreground">
+                          Simple mode lets anyone add custom notes without dealing with complex HTML tables.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 bg-muted p-1 rounded-lg border border-border self-start sm:self-auto">
                         <button
                           type="button"
-                          onClick={() => setEmailViewMode('code')}
-                          className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
-                            emailViewMode === 'code'
-                              ? 'bg-card text-foreground shadow-xs'
+                          onClick={() => setEmailConfig((prev) => ({ ...prev, edit_mode: 'simple' }))}
+                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                            (emailConfig.edit_mode || 'simple') === 'simple'
+                              ? 'bg-google-blue text-white shadow-xs'
                               : 'text-muted-foreground hover:text-foreground'
                           }`}
                         >
-                          &lt;/&gt; HTML Code
+                          ✨ Simple Custom Message
                         </button>
                         <button
                           type="button"
-                          onClick={() => setEmailViewMode('visual')}
-                          className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
-                            emailViewMode === 'visual'
-                              ? 'bg-card text-foreground shadow-xs'
+                          onClick={() => setEmailConfig((prev) => ({ ...prev, edit_mode: 'advanced' }))}
+                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                            emailConfig.edit_mode === 'advanced'
+                              ? 'bg-google-blue text-white shadow-xs'
                               : 'text-muted-foreground hover:text-foreground'
                           }`}
                         >
-                          👁️ Live Output
+                          &lt;/&gt; Full HTML (Advanced)
                         </button>
                       </div>
                     </div>
-                  </div>
 
-                  {emailViewMode === 'code' ? (
-                    <textarea
-                      rows={12}
-                      value={emailConfig.body}
-                      onChange={(e) => setEmailConfig((prev) => ({ ...prev, body: e.target.value }))}
-                      placeholder="Write your custom HTML email draft here..."
-                      data-lenis-prevent="true"
-                      onWheel={(e) => e.stopPropagation()}
-                      className="w-full p-3.5 rounded-xl border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-mono leading-relaxed shadow-sm overscroll-contain"
-                    />
-                  ) : (
-                    <div
-                      data-lenis-prevent="true"
-                      onWheel={(e) => e.stopPropagation()}
-                      className="p-4 sm:p-5 rounded-2xl border border-border bg-white text-slate-900 shadow-sm max-h-[550px] overflow-y-auto overscroll-contain"
-                    >
-                      <div
-                        className="text-xs leading-relaxed"
-                        dangerouslySetInnerHTML={{
-                          __html: buildVisualEmailHtml(emailConfig.body, emailConfig.include_qr),
-                        }}
-                      />
+                    {/* Simple Message Mode */}
+                    {(emailConfig.edit_mode || 'simple') === 'simple' ? (
+                      <div className="space-y-3 p-4 sm:p-5 rounded-2xl bg-card border border-border shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <label className="block text-xs font-bold text-foreground">
+                              Custom Message / Instructions for Attendees
+                            </label>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              Write what students should know (e.g. laptop requirements, schedule, Discord link). Formatted automatically inside the official email with the QR pass!
+                            </p>
+                          </div>
+
+                          {/* Quick starters */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] text-muted-foreground font-mono font-semibold">Quick Starters:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailConfig((prev) => ({
+                                  ...prev,
+                                  custom_message:
+                                    `Hi {{name}},\n\nThank you for registering for {{event_title}}!\n\n🎥 Online Workshop / Google Meet Details:\n- Date: {{date}}\n- Time: {{time}}\n- Platform: Google Meet\n- Direct Meeting Link: https://meet.google.com/xyz-abcd-efg\n\nPlease join 5 minutes early to test your audio and video. Looking forward to having you with us!`,
+                                }));
+                                toast({ title: 'Template Loaded', description: 'Google Meet workshop notice with clickable link loaded.' });
+                              }}
+                              className="px-2 py-1 rounded-md bg-google-blue/10 hover:bg-google-blue/20 text-google-blue border border-google-blue/30 text-[10px] font-semibold transition-colors"
+                            >
+                              🎥 GMeet Workshop
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailConfig((prev) => ({
+                                  ...prev,
+                                  custom_message:
+                                    `Hi {{name}},\n\nWelcome to {{event_title}}! Your ticket ID is {{ticket_id}}.\n\n🏁 Hackathon Guidelines:\n- Team formation opens at the start of the event.\n- Wifi credentials and Discord channels will be shared upon check-in.\n- Please present your QR code pass at desk {{venue}}.`,
+                                }));
+                                toast({ title: 'Template Loaded', description: 'Hackathon guidelines loaded.' });
+                              }}
+                              className="px-2 py-1 rounded-md bg-google-green/10 hover:bg-google-green/20 text-google-green border border-google-green/30 text-[10px] font-semibold transition-colors"
+                            >
+                              🏁 Hackathon
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailConfig((prev) => ({
+                                  ...prev,
+                                  custom_message:
+                                    `Hi {{name}},\n\nThank you for registering for {{event_title}}! We look forward to seeing you at {{venue}} on {{date}} at {{time}}.\n\nPlease save your Ticket ID ({{ticket_id}}) and present your digital QR pass below for fast check-in.`,
+                                }));
+                                toast({ title: 'Template Loaded', description: 'Welcome note loaded.' });
+                              }}
+                              className="px-2 py-1 rounded-md bg-google-yellow/10 hover:bg-google-yellow/20 text-amber-600 dark:text-amber-400 border border-amber-400/30 text-[10px] font-semibold transition-colors"
+                            >
+                              📋 Welcome Note
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Placeholders chips */}
+                        <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl bg-muted/40 border border-border">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                            Insert Tag:
+                          </span>
+                          {[
+                            { tag: '{{name}}', label: 'Name' },
+                            { tag: '{{event_title}}', label: 'Event' },
+                            { tag: '{{ticket_id}}', label: 'Ticket' },
+                            { tag: '{{date}}', label: 'Date' },
+                            { tag: '{{time}}', label: 'Time' },
+                            { tag: '{{venue}}', label: 'Venue' },
+                            { tag: '{{ticket_link}}', label: 'Link' },
+                          ].map(({ tag, label }) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => {
+                                setEmailConfig((prev) => ({
+                                  ...prev,
+                                  custom_message: (prev.custom_message || '') + ' ' + tag,
+                                }));
+                                toast({ title: 'Tag Inserted', description: `Added ${tag}` });
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                            >
+                              <span className="text-google-blue font-bold">{tag}</span>
+                              <span className="text-[10px] text-muted-foreground">({label})</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Textarea */}
+                        <textarea
+                          rows={6}
+                          value={emailConfig.custom_message || ''}
+                          onChange={(e) => setEmailConfig((prev) => ({ ...prev, custom_message: e.target.value }))}
+                          placeholder="Type your custom email message here (e.g. Welcome to {{event_title}}! Please bring your laptop with software installed and present your digital pass below)..."
+                          data-lenis-prevent="true"
+                          onWheel={(e) => e.stopPropagation()}
+                          className="w-full p-3.5 rounded-xl border border-input bg-card text-xs sm:text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-sans leading-relaxed shadow-xs overscroll-contain"
+                        />
+
+                        {/* Live Message Preview Card */}
+                        <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono flex items-center gap-1.5">
+                              <Eye className="w-3.5 h-3.5 text-google-blue" />
+                              <span>Live Preview of Organizer Message Box</span>
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              Rendered inside official GDG email layout
+                            </span>
+                          </div>
+                          <div
+                            className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-foreground leading-relaxed overflow-x-auto"
+                            dangerouslySetInnerHTML={{
+                              __html: emailConfig.custom_message?.trim()
+                                ? formatOrganizerMessageToHtml(
+                                    emailConfig.custom_message,
+                                    title || 'GDG Tech Summit 2026'
+                                  )
+                                : '<span class="text-muted-foreground italic">Type a message above or pick a Quick Starter to see it rendered here.</span>',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      /* Full HTML Advanced Mode */
+                      <div className="space-y-3">
+                        {/* Variable helper tags chips */}
+                        <div className="p-3.5 rounded-xl bg-muted/40 border border-border space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground font-mono">
+                              Dynamic Placeholders (Click to insert):
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              Automatically populated for each registrant
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { tag: '{{name}}', label: 'Attendee Name' },
+                              { tag: '{{event_title}}', label: 'Event Title' },
+                              { tag: '{{ticket_id}}', label: 'Ticket ID' },
+                              { tag: '{{qr_code}}', label: 'Digital Pass QR Card' },
+                              { tag: '{{date}}', label: 'Event Date' },
+                              { tag: '{{time}}', label: 'Event Time' },
+                              { tag: '{{venue}}', label: 'Venue' },
+                              { tag: '{{ticket_link}}', label: 'Digital Pass URL' },
+                            ].map(({ tag, label }) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => {
+                                  setEmailConfig((prev) => ({
+                                    ...prev,
+                                    body: prev.body + ' ' + tag,
+                                  }));
+                                  toast({ title: 'Tag Inserted', description: `Added ${tag} to draft.` });
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[11px] font-mono font-medium text-foreground transition-all shadow-xs"
+                              >
+                                <span className="text-google-blue font-bold">{tag}</span>
+                                <span className="text-[10px] text-muted-foreground">({label})</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Draft Content Editor with HTML Code / Visual Preview Toggle */}
+                        <div className="space-y-2">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <label className="block text-xs font-semibold text-foreground">
+                              Email Body Content (Raw HTML Code Supported)
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEmailConfig((prev) => ({
+                                    ...prev,
+                                    body: DEFAULT_EMAIL_HTML_DRAFT,
+                                  }));
+                                  toast({
+                                    title: 'Default Structure Loaded',
+                                    description: 'Loaded standard GDG confirmation pass HTML template.',
+                                  });
+                                }}
+                                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-semibold text-google-blue transition-colors"
+                              >
+                                Reset to Default HTML Pass
+                              </button>
+
+                              <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border border-border text-[11px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setEmailViewMode('code')}
+                                  className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
+                                    emailViewMode === 'code'
+                                      ? 'bg-card text-foreground shadow-xs'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  &lt;/&gt; HTML Code
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEmailViewMode('visual')}
+                                  className={`px-2 py-0.5 rounded-md font-semibold transition-all ${
+                                    emailViewMode === 'visual'
+                                      ? 'bg-card text-foreground shadow-xs'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  👁️ Live Output
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {emailViewMode === 'code' ? (
+                            <textarea
+                              rows={12}
+                              value={emailConfig.body}
+                              onChange={(e) => setEmailConfig((prev) => ({ ...prev, body: e.target.value }))}
+                              placeholder="Write your custom HTML email draft here..."
+                              data-lenis-prevent="true"
+                              onWheel={(e) => e.stopPropagation()}
+                              className="w-full p-3.5 rounded-xl border border-input bg-card text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue font-mono leading-relaxed shadow-xs overscroll-contain"
+                            />
+                          ) : (
+                            <div
+                              data-lenis-prevent="true"
+                              onWheel={(e) => e.stopPropagation()}
+                              className="p-4 sm:p-5 rounded-2xl border border-border bg-white text-slate-900 shadow-sm max-h-[550px] overflow-y-auto overscroll-contain"
+                            >
+                              <div
+                                className="text-xs leading-relaxed"
+                                dangerouslySetInnerHTML={{
+                                  __html: buildVisualEmailHtml(emailConfig.body, emailConfig.include_qr),
+                                }}
+                              />
+                            </div>
+                          )}
+                          <p className="text-[11px] text-muted-foreground">
+                            Accepts pure HTML tags (<code>&lt;div&gt;</code>, <code>&lt;p&gt;</code>, <code>&lt;a&gt;</code>, <code>&lt;table&gt;</code>, inline styles, etc.) or standard formatted text with line breaks.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Include QR Pass Toggle & Preview Button */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={emailConfig.include_qr}
+                          onChange={(e) => setEmailConfig((prev) => ({ ...prev, include_qr: e.target.checked }))}
+                          className="rounded border-input text-google-blue focus:ring-google-blue w-4 h-4"
+                        />
+                        <span className="text-xs font-medium text-foreground select-none">
+                          Include Official Digital Pass QR Card in email
+                        </span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowEmailPreviewModal(true)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border border-google-blue/40 bg-google-blue/10 text-google-blue hover:bg-google-blue/20 transition-all shadow-xs"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Preview Full Email Layout</span>
+                      </button>
                     </div>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">
-                    Accepts pure HTML tags (<code>&lt;div&gt;</code>, <code>&lt;p&gt;</code>, <code>&lt;a&gt;</code>, <code>&lt;table&gt;</code>, inline styles, etc.) or standard formatted text with line breaks.
-                  </p>
-                </div>
-
-                {/* Include QR Pass Toggle & Preview Button */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={emailConfig.include_qr}
-                      onChange={(e) => setEmailConfig((prev) => ({ ...prev, include_qr: e.target.checked }))}
-                      className="rounded border-input text-google-blue focus:ring-google-blue w-4 h-4"
-                    />
-                    <span className="text-xs font-medium text-foreground select-none">
-                      Include Official Digital Pass QR Card in email
-                    </span>
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowEmailPreviewModal(true)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold border border-google-blue/40 bg-google-blue/10 text-google-blue hover:bg-google-blue/20 transition-all shadow-sm"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Preview Custom Email</span>
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2928,12 +3874,33 @@ Pass: {{ticket_link}}`,
 
                 {/* Title & Badge */}
                 <div className="space-y-2">
-                  <span
-                    className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase inline-block"
-                    style={{ backgroundColor: `${themeColor}20`, color: themeColor }}
-                  >
-                    {category || 'Workshop'}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase inline-block"
+                      style={{ backgroundColor: `${themeColor}20`, color: themeColor }}
+                    >
+                      {category || 'Workshop'}
+                    </span>
+                    {enableParticipationType && (
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono uppercase ${
+                        participationType === 'team'
+                          ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
+                          : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                      }`}>
+                        {participationType === 'team' ? (
+                          <>
+                            <Users className="w-3.5 h-3.5" />
+                            <span>Team Event</span>
+                          </>
+                        ) : (
+                          <>
+                            <User className="w-3.5 h-3.5" />
+                            <span>Individual Event</span>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
                   <h2 className="text-2xl sm:text-4xl font-bold font-sans">
                     {title || 'Untitled Event'}
                   </h2>
@@ -3060,7 +4027,9 @@ Pass: {{ticket_link}}`,
                   const draftContent =
                     emailConfig.mode === 'default'
                       ? (DEFAULT_EMAIL_HTML_DRAFT || emailConfig.body)
-                      : (emailConfig.body || '');
+                      : (emailConfig.edit_mode === 'simple'
+                          ? buildSimpleCustomEmailHtml(emailConfig.custom_message || '', emailConfig.include_qr)
+                          : (emailConfig.body || ''));
 
                   const hasHtmlMarkup = /<\/?[a-z][\s\S]*>/i.test(draftContent);
 

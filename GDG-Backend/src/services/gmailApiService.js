@@ -344,16 +344,60 @@ class GmailApiService {
 
       const fromAddress = senderEmail || process.env.EMAIL_ID || 'me';
 
+      // Normalize attachments: ensure buffer contents serialized as JSON ({ type: 'Buffer', data: [...] }) are restored as real Buffers
+      const normalizedAttachments = (Array.isArray(attachments) ? attachments : []).map((att) => {
+        if (!att || typeof att !== 'object') return att;
+        let content = att.content;
+
+        if (content) {
+          if (Buffer.isBuffer(content)) {
+            // Already a proper Buffer instance
+          } else if (typeof content === 'object') {
+            // Case 1: JSON-serialized Node buffer: { type: 'Buffer', data: [...] }
+            if (content.type === 'Buffer' && Array.isArray(content.data)) {
+              content = Buffer.from(content.data);
+            } else if (Array.isArray(content)) {
+              // Case 2: Array of byte integers: [137, 80, ...]
+              content = Buffer.from(content);
+            } else if (content.data && (Array.isArray(content.data) || typeof content.data === 'string')) {
+              // Case 3: { data: '...', encoding: 'base64' }
+              content = Buffer.from(content.data, content.encoding || 'utf8');
+            } else {
+              // Case 4: Plain object with numeric indices: { "0": 137, "1": 80, ... }
+              const keys = Object.keys(content);
+              if (keys.length > 0 && keys.every((k) => !isNaN(Number(k)))) {
+                content = Buffer.from(Object.values(content));
+              }
+            }
+          } else if (typeof content === 'string') {
+            // If base64 data URI: data:image/png;base64,...
+            if (content.startsWith('data:') && content.includes('base64,')) {
+              const base64Data = content.split('base64,')[1];
+              content = Buffer.from(base64Data, 'base64');
+            }
+          }
+        }
+
+        return {
+          ...att,
+          content,
+        };
+      });
+
+      const safeText = typeof text === 'string' ? text : (html ? String(html).replace(/<[^>]+>/g, '') : '');
+      const safeHtml = typeof html === 'string' ? html : `<p>${safeText || 'GDG Notification'}</p>`;
+      const safeSubject = typeof subject === 'string' ? subject : 'GDG On Campus Notification';
+
       // Compile full RFC 2822 MIME message including headers, HTML, and inline CID images
       const composer = new MailComposer({
         from: `"GDG On Campus" <${fromAddress}>`,
         replyTo: fromAddress,
         to,
-        subject,
-        text,
-        html,
-        attachments,
-        headers,
+        subject: safeSubject,
+        text: safeText,
+        html: safeHtml,
+        attachments: normalizedAttachments,
+        headers: headers && typeof headers === 'object' ? headers : {},
       });
 
       const mimeBuffer = await composer.compile().build();

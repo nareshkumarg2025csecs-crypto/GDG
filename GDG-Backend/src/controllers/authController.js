@@ -1,13 +1,192 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { supabase, supabaseAdmin } = require('../config/supabase');
-const { validateAdminSignupCode } = require('../config/authConfig');
+const { validateAdminSignupCode, getScannerTokenSecret } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
 const GoogleCalendarService = require('../services/googleCalendarService');
 const GoogleDriveService = require('../services/googleDriveService');
 const GmailApiService = require('../services/gmailApiService');
 const EmailQueueService = require('../services/emailQueueService');
+
+/**
+ * Escapes unsafe HTML characters to prevent XSS / HTML injection in generated emails.
+ *
+ * @param {any} str
+ * @returns {string}
+ */
+const escapeHtml = (str) => {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+/**
+ * Builds the official Google Developer Groups branded HTML verification email.
+ *
+ * @param {string} fullName
+ * @param {string} actionLink
+ * @returns {string}
+ */
+const buildVerificationEmailHtml = (fullName, actionLink) => {
+  const safeFullName = escapeHtml(fullName);
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Student Email</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="height: 4px; background: linear-gradient(90deg, #4285F4 0%, #EA4335 33%, #FBBC05 66%, #34A853 100%);"></td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 36px 20px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.5px;">
+                Google Developer Groups
+              </h1>
+              <p style="margin: 4px 0 0; font-size: 13px; font-weight: 600; color: #4285F4; text-transform: uppercase; letter-spacing: 1px;">
+                Student Community On Campus
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 36px 32px;">
+              <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
+                Welcome, ${safeFullName}! 👋
+              </h2>
+              <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #475569;">
+                Thank you for creating an account with our GDG student community. To finish setting up your account and access workshops, hackathons, and certifications, please verify your email address.
+              </p>
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 28px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${actionLink}" target="_blank" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 2px 8px rgba(66, 133, 244, 0.35);">
+                      Verify Email &amp; Continue to Onboarding →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0 0 16px; font-size: 12px; line-height: 1.5; color: #64748b;">
+                Once verified, you will be automatically redirected to your onboarding page to complete your academic profile.
+              </p>
+              <div style="background-color: #f1f5f9; border-radius: 8px; padding: 12px; margin-top: 20px;">
+                <p style="margin: 0 0 6px; font-size: 11px; font-weight: 600; color: #475569;">
+                  Button not working? Paste this link into your browser:
+                </p>
+                <p style="margin: 0; font-size: 11px; color: #4285F4; word-break: break-all;">
+                  <a href="${actionLink}" style="color: #4285F4; text-decoration: underline;">${actionLink}</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 36px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                This link will expire in 24 hours. If you did not sign up for a GDG account, you can safely disregard this email.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+};
+
+/**
+ * Builds the official Google Developer Groups branded HTML password reset email.
+ *
+ * @param {string} fullName
+ * @param {string} actionLink
+ * @returns {string}
+ */
+const buildPasswordResetEmailHtml = (fullName, actionLink) => {
+  const safeFullName = escapeHtml(fullName);
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your GDG Password</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="height: 4px; background: linear-gradient(90deg, #4285F4 0%, #EA4335 33%, #FBBC05 66%, #34A853 100%);"></td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 36px 20px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #0f172a; letter-spacing: -0.5px;">
+                Google Developer Groups
+              </h1>
+              <p style="margin: 4px 0 0; font-size: 13px; font-weight: 600; color: #4285F4; text-transform: uppercase; letter-spacing: 1px;">
+                Student Community On Campus
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 36px 32px;">
+              <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
+                Hello, ${safeFullName}! 
+              </h2>
+              <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #475569;">
+                We received a request to reset your password for your Google Developer Groups student account. Click the button below to set a new password:
+              </p>
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 28px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${actionLink}" target="_blank" style="display: inline-block; background-color: #EA4335; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 2px 8px rgba(234, 67, 53, 0.35);">
+                      Reset Password →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0 0 16px; font-size: 12px; line-height: 1.5; color: #64748b;">
+                This link will safely expire in 1 hour. If you did not request a password reset, you can safely ignore this email and your password will remain unchanged.
+              </p>
+              <div style="background-color: #f1f5f9; border-radius: 8px; padding: 12px; margin-top: 20px;">
+                <p style="margin: 0 0 6px; font-size: 11px; font-weight: 600; color: #475569;">
+                  Button not working? Paste this link into your browser:
+                </p>
+                <p style="margin: 0; font-size: 11px; color: #4285F4; word-break: break-all;">
+                  <a href="${actionLink}" style="color: #4285F4; text-decoration: underline;">${actionLink}</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 36px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Security notice: Never share this link with anyone. GDG admins will never ask you for your password or reset link.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+};
 
 /**
  * Helper function for user signup with a fixed role.
@@ -74,44 +253,90 @@ const handleSignup = async (req, res, fixedRole) => {
       });
     }
 
-    // 3. Create user in Supabase Auth using the public client
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: {
-        data: {
-          full_name: full_name.trim(),
-          role: fixedRole,
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+    const redirectUrl = `${clientUrl}/auth/callback?type=signup`;
+
+    let authDataUser = null;
+    let authSession = null;
+    let actionLink = null;
+
+    if (fixedRole === 'student' && typeof supabaseAdmin.auth?.admin?.generateLink === 'function') {
+      // 3a. Generate signup verification link via Supabase Auth Admin
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            full_name: full_name.trim(),
+            role: 'student',
+          },
+          redirectTo: redirectUrl,
         },
-      },
-    });
-
-    if (authError || !authData || !authData.user) {
-      await logActivity(req, {
-        user_id: null,
-        action: 'signup_failed',
-        details: { email: normalizedEmail, role: fixedRole, reason: authError?.message || 'Supabase signup failed' },
       });
 
-      return res.status(400).json({
-        error: authError ? authError.message : 'Signup failed.',
+      if (linkError || !linkData || !linkData.user) {
+        await logActivity(req, {
+          user_id: null,
+          action: 'signup_failed',
+          details: { email: normalizedEmail, role: fixedRole, reason: linkError?.message || 'Supabase generateLink failed' },
+        });
+
+        return res.status(400).json({
+          error: linkError ? linkError.message : 'Signup failed.',
+        });
+      }
+
+      authDataUser = linkData.user;
+      actionLink = linkData.properties?.action_link;
+    } else {
+      // 3b. Create user in Supabase Auth using the public client (for admin, or fallback)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            full_name: full_name.trim(),
+            role: fixedRole,
+          },
+        },
       });
+
+      if (authError || !authData || !authData.user) {
+        await logActivity(req, {
+          user_id: null,
+          action: 'signup_failed',
+          details: { email: normalizedEmail, role: fixedRole, reason: authError?.message || 'Supabase signup failed' },
+        });
+
+        return res.status(400).json({
+          error: authError ? authError.message : 'Signup failed.',
+        });
+      }
+
+      authDataUser = authData.user;
+      authSession = authData.session;
     }
 
-    const userId = authData.user.id;
+    const userId = authDataUser.id;
 
-    // 4. Insert profile record in `public.profiles` using the Supabase Admin client (Service Role Key)
-    const { data: profileData, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert([
-        {
-          id: userId,
-          email: normalizedEmail,
-          full_name: full_name.trim(),
-          role: fixedRole,
-          details: details && typeof details === 'object' ? details : {},
-        },
-      ])
+    // 4. Insert or upsert profile record in `public.profiles` using the Supabase Admin client (Service Role Key)
+    const profilePayload = [
+      {
+        id: userId,
+        email: normalizedEmail,
+        full_name: full_name.trim(),
+        role: fixedRole,
+        details: details && typeof details === 'object' ? details : {},
+      },
+    ];
+
+    const profilesTable = supabaseAdmin.from('profiles');
+    const upsertOrInsert = typeof profilesTable.upsert === 'function'
+      ? profilesTable.upsert(profilePayload, { onConflict: 'id' })
+      : profilesTable.insert(profilePayload);
+
+    const { data: profileData, error: profileError } = await upsertOrInsert
       .select()
       .single();
 
@@ -135,7 +360,54 @@ const handleSignup = async (req, res, fixedRole) => {
       });
     }
 
-    // Log successful signup
+    // 5. If student signup with verification link, send verification email via Gmail API
+    if (fixedRole === 'student' && actionLink) {
+      const emailSubject = 'Verify your email - Google Developer Groups (GDG)';
+      const emailHtml = buildVerificationEmailHtml(full_name.trim(), actionLink);
+      const emailText = `Welcome to Google Developer Groups, ${full_name.trim()}!\n\nPlease click the following link to verify your email and proceed to onboarding:\n${actionLink}\n\nThis link expires in 24 hours.`;
+
+      const sendRes = await GmailApiService.sendMail({
+        to: normalizedEmail,
+        subject: emailSubject,
+        html: emailHtml,
+        text: emailText,
+      });
+
+      console.log(`[Student Signup] Verification email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
+
+      let emailEnqueued = false;
+      if (!sendRes.success) {
+        console.warn(`[Student Signup] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+        EmailQueueService.enqueue({
+          to: normalizedEmail,
+          subject: emailSubject,
+          html: emailHtml,
+          text: emailText,
+        });
+        emailEnqueued = true;
+      }
+
+      await logActivity(req, {
+        user_id: userId,
+        action: 'signup_verification_sent',
+        details: { email: normalizedEmail, full_name: full_name.trim(), email_sent: sendRes.success, enqueued: emailEnqueued },
+      });
+
+      return res.status(201).json({
+        message: 'Verification link sent to your email. Please check your inbox and verify your account to proceed to onboarding.',
+        requires_verification: true,
+        email: normalizedEmail,
+        access_token: null,
+        refresh_token: null,
+        user: {
+          id: authDataUser.id,
+          email: authDataUser.email,
+        },
+        profile: profileData,
+      });
+    }
+
+    // Log successful signup (for admin or direct signup fallback)
     await logActivity(req, {
       user_id: userId,
       action: 'signup',
@@ -144,11 +416,11 @@ const handleSignup = async (req, res, fixedRole) => {
 
     return res.status(201).json({
       message: `${fixedRole.charAt(0).toUpperCase() + fixedRole.slice(1)} registered successfully.`,
-      access_token: authData.session ? authData.session.access_token : null,
-      refresh_token: authData.session ? authData.session.refresh_token : null,
+      access_token: authSession ? authSession.access_token : null,
+      refresh_token: authSession ? authSession.refresh_token : null,
       user: {
-        id: authData.user.id,
-        email: authData.user.email,
+        id: authDataUser.id,
+        email: authDataUser.email,
       },
       profile: profileData,
     });
@@ -186,9 +458,9 @@ const handleLogin = async (req, res, expectedRole) => {
     const normalizedEmail = email.trim().toLowerCase();
 
     // 1. Fetch user profile upfront to check lockout status
-    const { data: profile } = await supabaseAdmin
+    let { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details, locked_until, failed_login_count, created_at')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
@@ -235,6 +507,21 @@ const handleLogin = async (req, res, expectedRole) => {
 
     // 4. Handle Failed Authentication
     if (authError || !authData || !authData.user || !authData.session) {
+      const errMsg = authError?.message?.toLowerCase() || '';
+      if (errMsg.includes('not confirmed') || errMsg.includes('email not confirmed')) {
+        await logActivity(req, {
+          user_id: profile ? profile.id : null,
+          action: 'unconfirmed_login_attempt',
+          details: { email: normalizedEmail, role: expectedRole },
+        });
+
+        return res.status(403).json({
+          error: 'Please verify your email address before logging in. Check your inbox for the verification link.',
+          code: 'EMAIL_NOT_VERIFIED',
+          email: normalizedEmail,
+        });
+      }
+
       let currentFailedCount = 1;
 
       if (profile) {
@@ -298,6 +585,16 @@ const handleLogin = async (req, res, expectedRole) => {
     }
 
     const userId = authData.user.id;
+    if (!profile) {
+      const { data: profileById } = await supabaseAdmin
+        .from('profiles')
+        .select('id, email, full_name, role, details, locked_until, failed_login_count, created_at')
+        .eq('id', userId)
+        .maybeSingle();
+      if (profileById) {
+        profile = profileById;
+      }
+    }
 
     // 5. Strict Role Verification
     if (!profile || profile.role !== expectedRole) {
@@ -314,6 +611,21 @@ const handleLogin = async (req, res, expectedRole) => {
 
       return res.status(403).json({
         error: `Access denied. Role mismatch: ${profile?.role || 'unknown'} account cannot log in via the ${expectedRole} login route.`,
+      });
+    }
+
+    // If student has not yet confirmed their email, block login and instruct to verify
+    if (expectedRole === 'student' && authData.user && !authData.user.email_confirmed_at) {
+      await logActivity(req, {
+        user_id: userId,
+        action: 'unconfirmed_login_attempt',
+        details: { email: normalizedEmail, role: expectedRole },
+      });
+
+      return res.status(403).json({
+        error: 'Please verify your email address before logging in. Check your inbox for the verification link.',
+        code: 'EMAIL_NOT_VERIFIED',
+        email: normalizedEmail,
       });
     }
 
@@ -364,6 +676,246 @@ const studentSignup = async (req, res) => {
 };
 
 /**
+ * POST /api/auth/student/resend-verification
+ */
+const resendStudentVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Validation error: email is required.' });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+    const redirectUrl = `${clientUrl}/auth/callback?type=signup`;
+
+    if (typeof supabaseAdmin.auth?.admin?.generateLink !== 'function') {
+      return res.status(501).json({
+        error: 'Email verification generation is not available in current environment.',
+      });
+    }
+
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: normalizedEmail,
+      options: {
+        redirectTo: redirectUrl,
+      },
+    });
+
+    if (linkError || !linkData?.properties?.action_link) {
+      return res.status(400).json({
+        error: linkError?.message || 'Could not generate verification link for this email.',
+      });
+    }
+
+    const actionLink = linkData.properties.action_link;
+
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    const fullName = profile?.full_name || 'Student';
+
+    const emailSubject = 'Verify your email - Google Developer Groups (GDG)';
+    const emailHtml = buildVerificationEmailHtml(fullName, actionLink);
+    const emailText = `Hello ${fullName},\n\nPlease click the link below to verify your email and proceed to onboarding:\n${actionLink}\n\nThis link expires in 24 hours.`;
+
+    const sendRes = await GmailApiService.sendMail({
+      to: normalizedEmail,
+      subject: emailSubject,
+      html: emailHtml,
+      text: emailText,
+    });
+
+    console.log(`[Resend Verification] Email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
+
+    let emailEnqueued = false;
+    if (!sendRes.success) {
+      console.warn(`[Resend Verification] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+      EmailQueueService.enqueue({
+        to: normalizedEmail,
+        subject: emailSubject,
+        html: emailHtml,
+        text: emailText,
+      });
+      emailEnqueued = true;
+    }
+
+    await logActivity(req, {
+      user_id: profile ? profile.id : null,
+      action: 'resend_verification_email',
+      details: { email: normalizedEmail, email_sent: sendRes.success, enqueued: emailEnqueued },
+    });
+
+    return res.status(200).json({
+      message: 'A fresh verification link has been sent to your email.',
+      email: normalizedEmail,
+    });
+  } catch (error) {
+    console.error('resendStudentVerification error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while resending verification email.',
+    });
+  }
+};
+
+/**
+ * POST /api/auth/student/forgot-password
+ * Generates a password recovery link and dispatches a branded reset email via Gmail API.
+ */
+const studentForgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        error: 'Validation error: email is required.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Check if student profile exists in database
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, full_name, role')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (!profile || profile.role !== 'student') {
+      // Don't leak user existence for non-students / non-existent emails, but confirm message
+      return res.status(200).json({
+        success: true,
+        message: 'If a student account exists with this email, a password reset link has been sent.',
+      });
+    }
+
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+    const redirectUrl = `${clientUrl}/auth/reset-password`;
+
+    // 2. Generate Supabase recovery link via Admin API
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email: normalizedEmail,
+      options: {
+        redirectTo: redirectUrl,
+      },
+    });
+
+    if (linkError || !linkData?.properties?.action_link) {
+      console.error('generateLink recovery error:', linkError);
+      return res.status(500).json({
+        error: 'Could not generate password reset link. Please try again later.',
+      });
+    }
+
+    const actionLink = linkData.properties.action_link;
+    const fullName = profile.full_name || 'Student';
+
+    // 3. Send branded email via Gmail REST API
+    const emailSubject = 'Reset your password - Google Developer Groups (GDG)';
+    const emailHtml = buildPasswordResetEmailHtml(fullName, actionLink);
+    const emailText = `Hello ${fullName},\n\nPlease click the link below to reset your password:\n${actionLink}\n\nThis link expires in 1 hour. If you did not request this, please ignore this email.`;
+
+    const sendRes = await GmailApiService.sendMail({
+      to: normalizedEmail,
+      subject: emailSubject,
+      html: emailHtml,
+      text: emailText,
+    });
+
+    console.log(`[Forgot Password] Reset email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
+
+    let emailEnqueued = false;
+    if (!sendRes.success) {
+      console.warn(`[Forgot Password] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+      EmailQueueService.enqueue({
+        to: normalizedEmail,
+        subject: emailSubject,
+        html: emailHtml,
+        text: emailText,
+      });
+      emailEnqueued = true;
+    }
+
+    await logActivity(req, {
+      user_id: profile.id,
+      action: 'forgot_password_requested',
+      details: { email: normalizedEmail, email_sent: sendRes.success, enqueued: emailEnqueued },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password reset link sent to your email. Please check your inbox.',
+      email: normalizedEmail,
+    });
+  } catch (error) {
+    console.error('studentForgotPassword error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while processing password reset request.',
+    });
+  }
+};
+
+/**
+ * POST /api/auth/reset-password
+ * Authenticated via Bearer token (obtained from recovery magic link):
+ * Updates the user's password and clears any lockout flags.
+ */
+const resetPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const userId = req.user.id;
+
+    if (!password) {
+      return res.status(400).json({
+        error: 'Validation error: new password is required.',
+      });
+    }
+
+    // 1. Update password in Supabase Auth via Admin client
+    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password }
+    );
+
+    if (updateError) {
+      console.error('updateUserById reset password error:', updateError);
+      return res.status(400).json({
+        error: updateError.message || 'Failed to update password.',
+      });
+    }
+
+    // 2. Clear lockout status and failed attempts in public.profiles
+    await supabaseAdmin
+      .from('profiles')
+      .update({
+        failed_login_count: 0,
+        locked_until: null,
+      })
+      .eq('id', userId);
+
+    await logActivity(req, {
+      user_id: userId,
+      action: 'password_reset_success',
+      details: { user_id: userId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password updated successfully. You can now log in with your new password.',
+    });
+  } catch (error) {
+    console.error('resetPassword controller error:', error);
+    return res.status(500).json({
+      error: 'Internal server error while resetting password.',
+    });
+  }
+};
+
+/**
  * POST /api/auth/admin/signup
  */
 const adminSignup = async (req, res) => {
@@ -409,6 +961,58 @@ const logout = async (req, res) => {
 };
 
 /**
+ * POST /api/auth/refresh
+ * Exchanges a valid refresh_token for a new access_token and refresh_token pair.
+ * Keeps the user session perpetually alive and prevents unexpected logouts.
+ */
+const refreshToken = async (req, res) => {
+  try {
+    const { refresh_token } = req.body || {};
+    if (!refresh_token || typeof refresh_token !== 'string' || !refresh_token.trim()) {
+      return res.status(400).json({
+        error: 'Validation error: refresh_token is required.',
+      });
+    }
+
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refresh_token.trim(),
+    });
+
+    if (error || !data?.session) {
+      return res.status(401).json({
+        error: 'Invalid or expired refresh token. Please sign in again.',
+        details: error ? error.message : undefined,
+      });
+    }
+
+    const { session, user } = data;
+
+    // Fetch user profile to return current role
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    return res.status(200).json({
+      message: 'Token refreshed successfully.',
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      profile: profile || null,
+    });
+  } catch (err) {
+    console.error('Refresh token error:', err);
+    return res.status(500).json({
+      error: 'Internal server error while refreshing session token.',
+    });
+  }
+};
+
+/**
  * GET /api/auth/google/url
  */
 const getGoogleOAuthUrl = async (req, res) => {
@@ -429,32 +1033,35 @@ const getGoogleOAuthUrl = async (req, res) => {
       }
     }
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const redirectUrl = `${clientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
+    let detectedClientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+    if (req.headers.origin) {
+      detectedClientUrl = req.headers.origin;
+    } else if (req.headers.referer) {
+      try {
+        detectedClientUrl = new URL(req.headers.referer).origin;
+      } catch {}
+    }
 
-    // Admin provides all needed scopes (drive, spreadsheets, calendar).
-    // Students ONLY accept the very needed ones (calendar.events and profile).
-    const scopesString = role === 'admin'
-      ? 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive'
-      : 'https://www.googleapis.com/auth/calendar.events';
+    // If the mobile app or web client supplies its direct redirect URI, use it directly!
+    const redirectUrl =
+      req.query.redirect_to ||
+      req.query.redirect_url ||
+      `${detectedClientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
 
-    const requestedScopes = role === 'admin'
-      ? [
-          'https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/calendar.events',
-          'https://www.googleapis.com/auth/drive',
-        ]
-      : [
-          'https://www.googleapis.com/auth/calendar.events',
-        ];
+    console.log('[OAuth] Generated OAuth redirectTo:', redirectUrl);
+
+    // Both Admin and Students use clean standard identity scopes (openid, email, profile).
+    // prompt is set to 'select_account' without 'consent' or 'offline' access so Google does NOT
+    // force a consent screen or verification warning for either admins or students.
+    const scopesString = 'openid email profile';
+    const requestedScopes = ['openid', 'email', 'profile'];
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         scopes: scopesString,
         queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+          prompt: 'select_account',
         },
         redirectTo: redirectUrl,
       },
@@ -487,11 +1094,20 @@ const getGoogleOAuthUrl = async (req, res) => {
 const syncGoogleProfile = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token = null;
+
+    if (authHeader && /^bearer\s+/i.test(authHeader)) {
+      token = authHeader.replace(/^bearer\s+/i, '').trim();
+    } else if (req.body?.access_token || req.body?.token) {
+      token = typeof (req.body.access_token || req.body.token) === 'string'
+        ? (req.body.access_token || req.body.token).trim()
+        : null;
+    }
+
+    if (!token) {
       return res.status(401).json({ error: 'Unauthorized: Missing Bearer token.' });
     }
 
-    const token = authHeader.split(' ')[1];
     const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !userData?.user) {
@@ -504,7 +1120,7 @@ const syncGoogleProfile = async (req, res) => {
     // Check if the user already has an existing profile in the database
     let { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, role, details')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -532,22 +1148,30 @@ const syncGoogleProfile = async (req, res) => {
     if (!profile) {
       isNewUser = true;
       const fullName = user.user_metadata?.full_name || user.user_metadata?.name || 'Google User';
-      const { data: newProfile, error: createError } = await supabaseAdmin
-        .from('profiles')
-        .insert([
-          {
-            id: user.id,
-            email: user.email,
-            full_name: fullName,
-            role: assignedRole,
-            details: {},
-          },
-        ])
+      const googleProfilePayload = [
+        {
+          id: user.id,
+          email: user.email,
+          full_name: fullName,
+          role: assignedRole,
+          details: {},
+        },
+      ];
+
+      const googleProfilesTable = supabaseAdmin.from('profiles');
+      const upsertOrInsertGoogle = typeof googleProfilesTable.upsert === 'function'
+        ? googleProfilesTable.upsert(googleProfilePayload, { onConflict: 'id' })
+        : googleProfilesTable.insert(googleProfilePayload);
+
+      const { data: newProfile, error: createError } = await upsertOrInsertGoogle
         .select()
         .single();
 
       if (createError) {
-        return res.status(500).json({ error: 'Failed to create profile for Google user.' });
+        return res.status(500).json({
+          error: 'Failed to create profile for Google user.',
+          details: createError.message,
+        });
       }
       profile = newProfile;
     } else if (role === 'admin' && profile.role !== 'admin' && validateAdminSignupCode(admin_code)) {
@@ -563,29 +1187,40 @@ const syncGoogleProfile = async (req, res) => {
       }
     }
 
+    let tokensSaved = false;
     if (provider_token) {
-      await GoogleCalendarService.saveUserTokens(user.id, {
-        access_token: provider_token,
-        refresh_token: provider_refresh_token,
-        expires_in: 3600,
-      });
+      try {
+        await GoogleCalendarService.saveUserTokens(user.id, {
+          access_token: provider_token,
+          refresh_token: provider_refresh_token,
+          expires_in: 3600,
+        });
+        tokensSaved = true;
+      } catch (tokenErr) {
+        console.warn('Non-fatal: Failed to save Google provider tokens in syncGoogleProfile:', tokenErr.message);
+      }
     }
 
-    await logActivity(req, {
-      user_id: user.id,
-      action: isNewUser ? 'signup' : 'login',
-      details: { email: user.email, provider: 'google', role: profile.role },
-    });
+    try {
+      await logActivity(req, {
+        user_id: user.id,
+        action: isNewUser ? 'signup' : 'login',
+        details: { email: user.email, provider: 'google', role: profile.role },
+      });
+    } catch (logErr) {
+      console.warn('Non-fatal: Activity log failed in syncGoogleProfile:', logErr.message);
+    }
 
     return res.status(200).json({
       message: 'Google profile synced successfully.',
       profile,
-      google_tokens_saved: Boolean(provider_token),
+      google_tokens_saved: tokensSaved,
     });
   } catch (error) {
     console.error('syncGoogleProfile error:', error);
     return res.status(500).json({
       error: 'Internal server error while syncing Google profile.',
+      details: error.message,
     });
   }
 };
@@ -615,16 +1250,6 @@ const getGmailOAuthUrl = async (req, res) => {
     console.error('getGmailOAuthUrl error:', err);
     return res.status(500).json({ error: err.message });
   }
-};
-
-const escapeHtml = (str) => {
-  if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 };
 
 /**
@@ -1015,12 +1640,177 @@ const disconnectDriveAccount = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/auth/scanner/admin-email-login
+ * Mobile Scanner App: Sign in using GDG admin email address.
+ * Seamlessly authenticates administrators registered directly or via Google OAuth.
+ */
+const scannerAdminEmailLogin = async (req, res) => {
+  try {
+    const { email, admin_code, admin_id } = req.body;
+
+    // 1. Strictly validate the admin secret code first
+    if (!admin_code || typeof admin_code !== 'string' || !admin_code.trim()) {
+      return res.status(400).json({
+        error: 'Admin secret verification code is required to access the scanner.',
+      });
+    }
+
+    if (!validateAdminSignupCode(admin_code.trim())) {
+      await logActivity(req, {
+        user_id: null,
+        action: 'scanner_login_rejected_invalid_secret_code',
+        details: { email: email ? String(email).trim().toLowerCase() : null, admin_id: admin_id || null },
+      });
+      return res.status(401).json({
+        error: 'Incorrect admin secret code. Access denied.',
+      });
+    }
+
+    if ((!email || typeof email !== 'string' || !email.trim()) && !admin_id) {
+      return res.status(400).json({ error: 'Admin email or admin ID is required.' });
+    }
+
+    const normalizedEmail = email ? email.trim().toLowerCase() : null;
+
+    // 2. Check if an admin profile exists with this email or admin_id
+    let profileQuery = supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at');
+
+    if (admin_id) {
+      profileQuery = profileQuery.eq('id', admin_id);
+    } else {
+      profileQuery = profileQuery.eq('email', normalizedEmail);
+    }
+
+    const { data: profile, error: profileErr } = await profileQuery.maybeSingle();
+
+    if (profileErr) {
+      console.error('scannerAdminEmailLogin error querying profile:', profileErr);
+      return res.status(500).json({ error: 'Database error validating admin account.' });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: `No admin account found. Please register on the GDG portal first.`,
+      });
+    }
+
+    if (profile.role !== 'admin') {
+      await logActivity(req, {
+        user_id: profile.id,
+        action: 'scanner_login_rejected_not_admin',
+        details: { email: profile.email, role: profile.role },
+      });
+      return res.status(403).json({
+        error: `Account "${profile.email}" is registered as "${profile.role}", not as an Admin. Only authorized GDG administrators can access the event scanner.`,
+      });
+    }
+
+    // 3. Generate signed scanner token valid for 30 days
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expSec = nowSec + 30 * 24 * 60 * 60; // 30 days
+    const payloadObj = {
+      sub: profile.id,
+      email: profile.email,
+      role: 'admin',
+      iat: nowSec,
+      exp: expSec,
+    };
+    const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+    const secret = getScannerTokenSecret();
+    const signature = crypto.createHmac('sha256', secret).update(b64Payload).digest('hex');
+    const scannerToken = `scanner_v1.${b64Payload}.${signature}`;
+
+    await logActivity(req, {
+      user_id: profile.id,
+      action: 'scanner_admin_login_success',
+      details: { email: profile.email, full_name: profile.full_name },
+    });
+
+    const position = profile.details?.position || profile.details?.role || 'Administrator';
+
+    return res.status(200).json({
+      message: 'Admin authenticated successfully for GDG Scanner.',
+      access_token: scannerToken,
+      user: {
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+        role: 'admin',
+        position,
+      },
+      profile,
+    });
+  } catch (error) {
+    console.error('scannerAdminEmailLogin error:', error);
+    return res.status(500).json({ error: 'Internal server error during scanner admin login.' });
+  }
+};
+
+/**
+ * GET /api/auth/scanner/verified-admins
+ * Returns all active administrators registered in Supabase database.
+ * Strictly restricted to authorized callers (authenticated admin or valid X-Admin-Code header).
+ */
+const getScannerVerifiedAdmins = async (req, res) => {
+  try {
+    const adminCodeHeader = req.headers['x-admin-code'];
+    const isAuthorized = Boolean(
+      (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) ||
+      (adminCodeHeader && validateAdminSignupCode(String(adminCodeHeader).trim()))
+    );
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized: Admin authorization or valid X-Admin-Code header is required to access verified administrators.',
+      });
+    }
+
+    const { data: admins, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at')
+      .eq('role', 'admin')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('getScannerVerifiedAdmins error:', error);
+      return res.status(500).json({ error: 'Failed to retrieve verified administrators from database.' });
+    }
+
+    // Filter out dummy test entries and map cleanly
+    const formatted = (admins || [])
+      .filter((a) => a.email && !a.email.includes('crud_') && !a.email.includes('student_'))
+      .map((admin) => {
+        const details = admin.details || {};
+        return {
+          id: admin.id,
+          ...(isAuthorized ? { email: admin.email } : {}),
+          name: admin.full_name || (admin.email ? admin.email.split('@')[0] : 'Administrator'),
+          position: details.position || details.role || 'Administrator',
+          domain: details.domain || details.department || 'Leadership',
+          role: admin.role,
+        };
+      });
+
+    return res.status(200).json({ admins: formatted });
+  } catch (error) {
+    console.error('getScannerVerifiedAdmins fatal error:', error);
+    return res.status(500).json({ error: 'Internal server error retrieving verified admins.' });
+  }
+};
+
 module.exports = {
   studentSignup,
+  resendStudentVerification,
+  studentForgotPassword,
+  resetPassword,
   adminSignup,
   studentLogin,
   adminLogin,
   logout,
+  refreshToken,
   getGoogleOAuthUrl,
   syncGoogleProfile,
   getGmailOAuthUrl,
@@ -1034,5 +1824,7 @@ module.exports = {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  scannerAdminEmailLogin,
+  getScannerVerifiedAdmins,
 };
 

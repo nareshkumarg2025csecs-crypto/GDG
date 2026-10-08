@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import QRCode from 'qrcode';
+import { generateBrandedQrDataUrl } from '@/lib/qrCodeUtil';
 import { motion } from 'framer-motion';
 import {
   QrCode,
@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   User,
+  Users,
   Mail,
   ShieldCheck,
   Tag,
@@ -56,6 +57,24 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
   const [copied, setCopied] = useState(false);
   const [isDownloadingPass, setIsDownloadingPass] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Keyboard navigation & scroll locking for modal
+  useEffect(() => {
+    if (!isModal || !onClose) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isModal, onClose]);
 
   const details = event.details || {};
   const eventDate = formatEventDate(details.startTime || details.start_time);
@@ -157,16 +176,13 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
     'Google Developer Groups',
   ].join('\n');
 
-  // Generate QR Code data URL
+  // Generate Branded QR Code data URL with GDG logo icon
   useEffect(() => {
-    QRCode.toDataURL(qrTextContent, {
+    generateBrandedQrDataUrl(qrTextContent, {
       width: 512,
       margin: 2,
-      color: {
-        dark: '#111827',
-        light: '#FFFFFF',
-      },
-      errorCorrectionLevel: 'M',
+      darkColor: '#111827',
+      lightColor: '#FFFFFF',
     })
       .then((url) => setQrDataUrl(url))
       .catch((err) => console.error('Error generating ticket QR:', err));
@@ -440,6 +456,25 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               <CheckCircle2 className="w-3 h-3" />
               Confirmed
             </span>
+            {event.details?.participation_type && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase ${
+                event.details.participation_type.toLowerCase() === 'team'
+                  ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                  : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+              }`}>
+                {event.details.participation_type.toLowerCase() === 'team' ? (
+                  <>
+                    <Users className="w-3 h-3" />
+                    <span>Team</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3 h-3" />
+                    <span>Individual</span>
+                  </>
+                )}
+              </span>
+            )}
           </div>
           <h2 className="text-base sm:text-xl font-bold font-sans tracking-tight text-foreground line-clamp-1">
             {event.title}
@@ -531,13 +566,14 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               type="button"
               disabled={isDownloadingPass || !qrDataUrl}
               onClick={handleDownloadTicketPass}
+              aria-label="Download full ticket pass as PNG"
               className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-bold text-xs text-white shadow-sm hover:shadow transition-all disabled:opacity-50"
               style={{
                 background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
                 boxShadow: '0 2px 8px rgba(66, 133, 244, 0.25)',
               }}
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{isDownloadingPass ? 'Generating...' : 'Download Pass (PNG)'}</span>
             </button>
 
@@ -546,10 +582,11 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               type="button"
               disabled={!qrDataUrl}
               onClick={handleDownloadQR}
+              aria-label="Download QR code only"
               className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-border bg-background hover:bg-muted font-semibold text-xs text-foreground transition-all shadow-sm disabled:opacity-50"
               title="Download QR code only"
             >
-              <QrCode className="w-3.5 h-3.5 text-google-green" />
+              <QrCode className="w-3.5 h-3.5 text-google-green" aria-hidden="true" />
               <span className="hidden sm:inline">QR Only</span>
               <span className="sm:hidden">QR</span>
             </button>
@@ -558,17 +595,18 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
           {/* Copy Details */}
           <button
             type="button"
+            aria-label="Copy ticket details to clipboard"
             onClick={handleCopyDetails}
             className="self-end sm:self-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-muted/50 shrink-0"
           >
             {copied ? (
               <>
-                <Check className="w-3 h-3 text-google-green" />
+                <Check className="w-3 h-3 text-google-green" aria-hidden="true" />
                 <span className="text-google-green font-semibold">Copied!</span>
               </>
             ) : (
               <>
-                <Copy className="w-3 h-3" />
+                <Copy className="w-3 h-3" aria-hidden="true" />
                 <span>Copy Text</span>
               </>
             )}
@@ -581,6 +619,9 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
   if (isModal) {
     return (
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Event Ticket Pass"
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
         onClick={onClose}
       >

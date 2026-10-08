@@ -4,6 +4,7 @@ const userRoutes = require('./userRoutes');
 const eventRoutes = require('./eventRoutes');
 const formRoutes = require('./formRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
+const certificateRoutes = require('./certificateRoutes');
 
 const router = express.Router();
 
@@ -21,6 +22,8 @@ router.use('/auth', authRoutes);
 router.use('/events', eventRoutes);
 router.use('/forms', formRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/certificates', certificateRoutes);
+
 router.use('/', userRoutes); // Legacy /me, /student/dashboard, /admin/members
 
 module.exports = router;

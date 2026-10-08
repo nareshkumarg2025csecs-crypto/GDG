@@ -24,6 +24,8 @@ export interface EventDetails {
   status?: 'draft' | 'published';
   published?: boolean;
   category?: string;
+  participation_type?: 'individual' | 'team' | null;
+  enable_participation_type?: boolean;
   capacity?: number | string;
   coverImage?: string;
   cover_image?: string;
@@ -47,16 +49,20 @@ export interface FormField {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'checkbox' | 'file';
+  type: 'text' | 'textarea' | 'number' | 'email' | 'select' | 'hackathon_track' | 'checkbox' | 'file';
   required?: boolean;
   placeholder?: string;
   options?: string[];
+  allow_other?: boolean;
   minLength?: number;
   maxLength?: number;
   min?: number;
   max?: number;
   max_file_size_mb?: number;
   allowed_file_types?: string;
+  enable_option_limits?: boolean;
+  option_limits?: Record<string, number | null>;
+  option_stats?: Record<string, { count: number; limit: number | null; remaining: number | null; is_full: boolean }>;
 }
 
 export const DEFAULT_FORM_FIELDS: FormField[] = [
@@ -146,6 +152,9 @@ export interface FormSubmission {
   attended?: boolean;
   ticket_id?: string;
   email_sent?: boolean;
+  certificate_sent?: boolean;
+  certificate_sent_at?: string | null;
+  certificate_id?: string | null;
   submitted_at: string;
 }
 
@@ -432,19 +441,27 @@ export function formatEventTimeRange(startIso?: string | null, endIso?: string |
 }
 
 /**
- * Strips raw Markdown syntax (headers, bold, italics, links, lists) into clean readable text for card teasers.
+ * Strips raw Markdown syntax (headers, bold, italics, links, images, lists) into clean readable text for card teasers and notifications.
  */
 export function stripMarkdown(markdown?: string | null): string {
   if (!markdown) return '';
   return markdown
-    .replace(/#{1,6}\s+/g, '') // remove headings
+    .replace(/!\[.*?\]\(.*?\)/g, '') // remove images
+    .replace(/<[^>]*>/g, '') // remove raw HTML tags
+    .replace(/```[\s\S]*?```/g, '') // remove fenced code blocks
+    .replace(/(?:^|\s)#{1,6}\s+/g, ' ') // remove headings (#, ##, ###, etc.)
     .replace(/\*\*(.*?)\*\*/g, '$1') // remove bold
     .replace(/\*(.*?)\*/g, '$1') // remove italics
-    .replace(/`{1,3}(.*?)`{1,3}/gs, '$1') // remove inline/fenced code
-    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // remove markdown links
-    .replace(/^\s*[-*+]\s+/gm, '• ') // replace list dashes with bullet dots
+    .replace(/__(.*?)__/g, '$1') // remove underline/bold
+    .replace(/_(.*?)_/g, '$1') // remove italics
+    .replace(/~~(.*?)~~/g, '$1') // remove strikethrough
+    .replace(/`{1,3}(.*?)`{1,3}/gs, '$1') // remove inline code
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1') // remove markdown links, keep text
+    .replace(/[-*_]{3,}/g, '') // remove horizontal rules
+    .replace(/^\s*[-*+]\s+/gm, '') // remove list dashes
+    .replace(/^\s*\d+\.\s+/gm, '') // remove numbered list markers
     .replace(/^\s*>\s+/gm, '') // remove blockquotes
     .replace(/\n+/g, ' ') // collapse multi-lines
-    .replace(/\s{2,}/g, ' ')
+    .replace(/\s{2,}/g, ' ') // collapse multiple spaces
     .trim();
 }

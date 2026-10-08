@@ -9,6 +9,7 @@ import {
   Eye,
   Edit,
   Trash2,
+  User,
   Users,
   CheckCircle2,
   Clock,
@@ -21,7 +22,9 @@ import {
   Sparkles,
   Home,
   Loader2,
+  Award,
 } from 'lucide-react';
+import Header from '@/components/Header';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
@@ -37,6 +40,7 @@ import {
 } from '@/lib/formUtils';
 import { GmailAuthCard } from '@/components/admin/GmailAuthCard';
 import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 
 
 export const AdminEventsPage: React.FC = () => {
@@ -210,8 +214,10 @@ export const AdminEventsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <Header />
+
+      <main className="flex-1 max-w-7xl mx-auto w-full pt-24 sm:pt-28 pb-16 px-3 sm:px-6 lg:px-8 space-y-8">
         {/* Top Header Banner */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-border pb-6">
           <div>
@@ -221,26 +227,38 @@ export const AdminEventsPage: React.FC = () => {
                 Admin Portal
               </span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight font-sans">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight font-sans">
               Events & Forms Management
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-xs sm:text-sm text-muted-foreground mt-1 max-w-2xl">
               Create and manage club events, dynamic registration forms, deadlines, and view student submissions.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Link
-              to="/"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-sm font-semibold transition-all shadow-sm"
-              title="Go to Homepage"
-            >
-              <Home className="w-4 h-4 text-google-blue" />
-              <span>Home</span>
-            </Link>
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+            {ENABLE_CERTIFICATES ? (
+              <Link
+                to="/admin/certificates"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                title="Certificates Studio"
+              >
+                <Award className="w-4 h-4 text-google-yellow" />
+                <span>Certificates</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed select-none text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                title="Certificates module is currently disabled"
+              >
+                <Award className="w-4 h-4 text-muted-foreground" />
+                <span>Certificates (Disabled)</span>
+              </button>
+            )}
             <Link
               to="/admin/events/new"
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm text-white shadow-md hover:shadow-lg transition-all"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white shadow-md hover:shadow-lg transition-all"
               style={{
                 background: 'linear-gradient(135deg, #4285F4, #1A73E8)',
                 boxShadow: '0 4px 14px rgba(66, 133, 244, 0.3)',
@@ -411,11 +429,32 @@ export const AdminEventsPage: React.FC = () => {
                         )}
                       </span>
 
-                      {details.category && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
-                          {details.category}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {details.participation_type && (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase ${
+                            details.participation_type.toLowerCase() === 'team'
+                              ? 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                              : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                          }`}>
+                            {details.participation_type.toLowerCase() === 'team' ? (
+                              <>
+                                <Users className="w-3 h-3 text-purple-500" />
+                                <span>Team</span>
+                              </>
+                            ) : (
+                              <>
+                                <User className="w-3 h-3 text-blue-500" />
+                                <span>Individual</span>
+                              </>
+                            )}
+                          </span>
+                        )}
+                        {details.category && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                            {details.category}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Title & Description */}
@@ -580,7 +619,7 @@ export const AdminEventsPage: React.FC = () => {
             })}
           </div>
         )}
-      </div>
+      </main>
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>

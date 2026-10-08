@@ -24,7 +24,32 @@ export interface SubmissionsListResponse {
   submissions: FormSubmission[];
 }
 
+let cachedFormsSummary: { data: { message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }; expiresAt: number } | null = null;
+
+export function clearFormsSummaryCache() {
+  cachedFormsSummary = null;
+}
+
 export const formService = {
+  clearFormsSummaryCache,
+
+  async getFormsSummary(forceRefresh = false): Promise<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }> {
+    if (!forceRefresh && cachedFormsSummary && cachedFormsSummary.expiresAt > Date.now()) {
+      return cachedFormsSummary.data;
+    }
+
+    const data = await apiRequest<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }>('/api/forms/summary', {
+      method: 'GET',
+    });
+
+    cachedFormsSummary = {
+      data,
+      expiresAt: Date.now() + 60 * 1000,
+    };
+
+    return data;
+  },
+
   async getFormsByEvent(eventId: string): Promise<FormsListResponse> {
     return apiRequest<FormsListResponse>(`/api/events/${eventId}/forms`, {
       method: 'GET',
@@ -46,10 +71,12 @@ export const formService = {
     submission_limit?: number | null;
     show_submission_count?: boolean;
   }): Promise<SingleFormResponse> {
-    return apiRequest<SingleFormResponse>('/api/forms', {
+    const res = await apiRequest<SingleFormResponse>('/api/forms', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    cachedFormsSummary = null;
+    return res;
   },
 
   async updateForm(
@@ -63,23 +90,29 @@ export const formService = {
       show_submission_count?: boolean;
     }
   ): Promise<SingleFormResponse> {
-    return apiRequest<SingleFormResponse>(`/api/forms/${id}`, {
+    const res = await apiRequest<SingleFormResponse>(`/api/forms/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+    cachedFormsSummary = null;
+    return res;
   },
 
   async deleteForm(id: string): Promise<{ message: string; deleted_form: EventForm }> {
-    return apiRequest<{ message: string; deleted_form: EventForm }>(`/api/forms/${id}`, {
+    const res = await apiRequest<{ message: string; deleted_form: EventForm }>(`/api/forms/${id}`, {
       method: 'DELETE',
     });
+    cachedFormsSummary = null;
+    return res;
   },
 
   async submitForm(formId: string, answers: Record<string, any>): Promise<SubmitFormResponse> {
-    return apiRequest<SubmitFormResponse>(`/api/forms/${formId}/submissions`, {
+    const res = await apiRequest<SubmitFormResponse>(`/api/forms/${formId}/submissions`, {
       method: 'POST',
       body: JSON.stringify({ answers }),
     });
+    cachedFormsSummary = null;
+    return res;
   },
 
   async getMySubmissions(): Promise<SubmissionsListResponse> {
@@ -120,7 +153,7 @@ export const formService = {
   },
 
   getTicketQrDownloadUrl(ticketId: string): string {
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
     return `${baseUrl}/api/forms/ticket/${encodeURIComponent(ticketId)}/qr-download`;
   },
 

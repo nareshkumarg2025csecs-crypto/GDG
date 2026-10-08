@@ -165,9 +165,8 @@ describe('Form File Upload & Google Drive Integration Tests', () => {
 
       // Crucial: Student scopes MUST NOT include spreadsheets, drive.file, or full calendar deletion
       expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/spreadsheets');
-      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/drive.file');
-      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/calendar');
-      expect(responseData.scopes).toContain('https://www.googleapis.com/auth/calendar.events');
+      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/calendar.events');
+      expect(responseData.scopes).toContain('email');
     });
 
     test('Calendar link URL requests only calendar.events and not invasive drive or spreadsheets scopes', async () => {
@@ -196,7 +195,7 @@ describe('Form File Upload & Google Drive Integration Tests', () => {
       expect(responseData.scopes).toContain('https://www.googleapis.com/auth/calendar.events');
     });
 
-    test('Admin OAuth URL requests all scopes (spreadsheets, calendar, drive)', async () => {
+    test('Admin OAuth URL requests clean identity scopes without consent screen prompt', async () => {
       const req = {
         query: {
           role: 'admin',
@@ -221,16 +220,24 @@ describe('Form File Upload & Google Drive Integration Tests', () => {
 
       expect(statusCode).toBe(200);
       expect(responseData.role_requested).toBe('admin');
-      expect(responseData.scopes).toContain('https://www.googleapis.com/auth/spreadsheets');
-      expect(responseData.scopes).toContain('https://www.googleapis.com/auth/calendar.events');
-      expect(responseData.scopes).toContain('https://www.googleapis.com/auth/drive');
+      expect(responseData.scopes).toContain('email');
+      expect(responseData.scopes).toContain('profile');
+      expect(responseData.scopes).not.toContain('https://www.googleapis.com/auth/calendar.events');
     });
 
     test('disconnectStorageAccount resets in-memory cache and environment', async () => {
       expect(typeof GoogleDriveService.disconnectStorageAccount).toBe('function');
-      const result = await GoogleDriveService.disconnectStorageAccount();
-      expect(result).toEqual({ success: true });
-      expect(process.env.GDRIVE_REFRESH_TOKEN).toBeUndefined();
+      const fs = require('fs');
+      const writeFileSyncSpy = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+      const existsSyncSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+      try {
+        const result = await GoogleDriveService.disconnectStorageAccount();
+        expect(result).toEqual({ success: true });
+        expect(process.env.GDRIVE_REFRESH_TOKEN).toBeUndefined();
+      } finally {
+        writeFileSyncSpy.mockRestore();
+        existsSyncSpy.mockRestore();
+      }
     });
 
     test('Designated folder configuration retains top priority', async () => {

@@ -1,9 +1,10 @@
 const express = require('express');
 const multer = require('multer');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
 const {
   createForm,
   getFormById,
+  getFormsSummary,
   updateForm,
   deleteForm,
   submitForm,
@@ -14,6 +15,10 @@ const {
   getTicketPass,
   downloadTicketQr,
   uploadFormFile,
+  scannerCheckIn,
+  scannerGetAttendees,
+  scannerGetEvents,
+  scannerVerifyTicket,
 } = require('../controllers/formController');
 const {
   validateCreateForm,
@@ -28,11 +33,17 @@ const upload = multer({
 
 const router = express.Router();
 
+// Batch Forms Summary (Public — lightweight metadata + status keyed by event_id)
+router.get('/summary', getFormsSummary);
+
+// Mobile Scanner App Fast Event List (In-memory RAM cache for 5 minutes, 0 egress)
+router.get('/scanner-events', requireAuth, requireRole('admin'), scannerGetEvents);
+
 // User Submissions
 router.get('/submissions/my', requireAuth, getMySubmissions);
 
-// Public Ticket Pass Lookup & Direct QR Download
-router.get('/ticket/:ticketId', getTicketPass);
+// Public Ticket Pass Lookup & Direct QR Download (optionalAuth for PII protection)
+router.get('/ticket/:ticketId', optionalAuth, getTicketPass);
 router.get('/ticket/:ticketId/qr-download', downloadTicketQr);
 
 // Single Form View (public — anyone can see form structure)
@@ -67,6 +78,31 @@ router.put(
   requireAuth,
   requireRole('admin'),
   updateSubmissionAttendance
+);
+
+// Mobile Scanner App Fast Check-In with duplicate scanning prevention
+router.post(
+  '/submissions/:submissionId/check-in',
+  requireAuth,
+  requireRole('admin'),
+  scannerCheckIn
+);
+
+// Mobile Scanner App Ticket Verification & Event Match Check (Low egress, non-mutating)
+router.get(
+  '/ticket/:ticketId/verify',
+  requireAuth,
+  requireRole('admin'),
+  scannerVerifyTicket
+);
+
+
+// Mobile Scanner App Lightweight Attendees Delta-Sync (Low egress for multiple admins)
+router.get(
+  '/:formId/scanner-attendees',
+  requireAuth,
+  requireRole('admin'),
+  scannerGetAttendees
 );
 
 // Admin-only Sheets On-Demand Sync

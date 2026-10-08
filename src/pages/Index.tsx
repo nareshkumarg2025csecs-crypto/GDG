@@ -4,8 +4,10 @@ import MessageSection from '@/components/MessageSection';
 import EventsHorizontal from '@/components/EventsHorizontal';
 import TeamSection from '@/components/TeamSection';
 import ResourcesSection from '@/components/ResourcesSection';
+import ToolsSection from '@/components/ToolsSection';
 import Footer from '@/components/Footer';
 import Preloader from '@/components/Preloader';
+import { EventLaunchSpotlight } from '@/components/events/EventLaunchSpotlight';
 import { useTheme } from '@/contexts/ThemeContext';
 
 /**
@@ -57,26 +59,32 @@ const GradientBand = ({
 
 const Index = () => {
   return (
-    <main className="min-h-screen bg-background text-foreground overflow-x-hidden selection:bg-google-blue/30">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden selection:bg-google-blue/30">
       <Preloader />
+      <EventLaunchSpotlight />
       <Header />
-      <HeroSection />
+      <main id="main-content">
+        <HeroSection />
 
-      <GradientBand from="#4285F4" to="#EA4335" />
-      <MessageSection />
+        <GradientBand from="#4285F4" to="#EA4335" />
+        <MessageSection />
 
-      <GradientBand from="#EA4335" to="#FBBC04" flip />
-      <EventsHorizontal />
+        <GradientBand from="#EA4335" to="#FBBC04" flip />
+        <EventsHorizontal />
 
-      <GradientBand from="#FBBC04" to="#34A853" />
-      <TeamSection />
+        <GradientBand from="#FBBC04" to="#34A853" />
+        <TeamSection />
 
-      <GradientBand from="#34A853" to="#EA4335" flip />
-      <ResourcesSection />
+        <GradientBand from="#34A853" to="#EA4335" flip />
+        <ResourcesSection />
 
-      <GradientBand from="#34A853" to="#FBBC04" flip />
+        <GradientBand from="#EA4335" to="#4285F4" />
+        <ToolsSection />
+
+        <GradientBand from="#4285F4" to="#FBBC04" flip />
+      </main>
       <Footer />
-    </main>
+    </div>
   );
 };
 

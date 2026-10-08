@@ -52,7 +52,7 @@ const events: EventItem[] = [
 function EventCard({ event, index, isDark }: { event: EventItem; index: number; isDark: boolean }) {
   const cardContent = (
     <div
-      className="event-card flex-shrink-0 w-[300px] md:w-[380px] h-[440px] md:h-[520px] mx-3 md:mx-6 rounded-3xl relative overflow-hidden group transition-all duration-500 hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 will-change-transform cursor-pointer"
+      className="event-card flex-shrink-0 w-[280px] sm:w-[320px] md:w-[380px] h-[400px] sm:h-[460px] md:h-[520px] mx-2 sm:mx-3 md:mx-6 rounded-3xl relative overflow-hidden group transition-transform duration-300 md:hover:-translate-y-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 will-change-transform cursor-pointer"
       data-physics
       data-cursor="media"
       role="article"
@@ -71,6 +71,8 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
           <img
             src={event.bannerUrl}
             alt={event.title}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-65"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';
@@ -120,7 +122,7 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
         </div>
 
         {/* Bottom content block with backdrop protection */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-black/85 backdrop-blur-md border border-white/15 shadow-2xl space-y-2">
+        <div className="p-4 sm:p-5 rounded-2xl bg-black/90 backdrop-blur-sm md:backdrop-blur-md border border-white/15 shadow-2xl space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: event.color }}>
             {event.date}
           </p>
@@ -139,7 +141,7 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
           {/* Expanding accent line on hover */}
           <div className="mt-3 h-[1.5px] bg-white/15 relative overflow-hidden rounded">
             <div
-              className="absolute inset-y-0 left-0 w-0 group-hover:w-full transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
+              className="absolute inset-y-0 left-0 w-0 group-hover:w-full transition-all duration-500 ease-premium"
               style={{ backgroundColor: event.color }}
             />
           </div>
@@ -218,22 +220,31 @@ export function EventsHorizontal() {
 
   // CRITICAL: scoped gsap.context() — never touches foreign ScrollTriggers
   useEffect(() => {
+    // Only engage pinning on desktop/tablet displays where horizontal track is visible
+    if (window.innerWidth < 768) return;
+
     const ctx = gsap.context(() => {
       const track = trackRef.current;
       const progress = progressRef.current;
       if (!track || !progress) return;
 
-      const getDistance = () => -(track.scrollWidth - window.innerWidth);
+      // Distance to slide the track horizontally so all event cards are revealed
+      const getDistance = () => -(track.scrollWidth - window.innerWidth + 80);
+
+      // Scroll distance required: generous distance so user can view all slides comfortably
+      const getScrollEnd = () => `+=${Math.max(track.scrollWidth - window.innerWidth + 400, 1800)}`;
 
       gsap.to(track, {
         x: getDistance,
         ease: 'none',
         scrollTrigger: {
           trigger: sectionRef.current,
+          start: 'top top',
           pin: true,
           scrub: true,
-          end: '+=3200',
+          end: getScrollEnd,
           invalidateOnRefresh: true,
+          anticipatePin: 1,
         },
       });
 
@@ -243,13 +254,27 @@ export function EventsHorizontal() {
         scrollTrigger: {
           trigger: sectionRef.current,
           start: 'top top',
-          end: '+=3200',
+          end: getScrollEnd,
           scrub: true,
         },
       });
     }, sectionRef); // <-- scope to this component only
 
-    return () => ctx.revert(); // cleans ONLY this component's triggers
+    // Refresh ScrollTrigger after DOM has fully rendered
+    const timer = setTimeout(() => {
+      ScrollTrigger.refresh();
+    }, 150);
+
+    const handleResize = () => {
+      ScrollTrigger.refresh();
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+      ctx.revert(); // cleans ONLY this component's triggers
+    };
   }, [liveEvents]);
 
   return (
@@ -263,22 +288,22 @@ export function EventsHorizontal() {
         className="absolute inset-0"
         style={{
           backgroundImage: `
-            linear-gradient(rgb(var(--foreground)) 1px, transparent 1px),
-            linear-gradient(90deg, rgb(var(--foreground)) 1px, transparent 1px)
+            linear-gradient(hsl(var(--foreground)) 1px, transparent 1px),
+            linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)
           `,
           backgroundSize: '60px 60px',
           opacity: isDark ? 0.025 : 0.035,
         }}
       />
 
-      {/* Ambient glows — dark only */}
+      {/* Ambient glows — dark only (desktop only for mobile 120Hz smoothness) */}
       {isDark && (
-        <>
+        <div className="hidden md:block">
           <div className="absolute top-1/2 left-1/4 w-[500px] h-[500px] rounded-full blur-[160px] opacity-[0.15] pointer-events-none"
             style={{ background: 'radial-gradient(circle, #4285F4, transparent)' }} />
           <div className="absolute top-1/2 right-1/4 w-[400px] h-[400px] rounded-full blur-[130px] opacity-[0.12] pointer-events-none"
             style={{ background: 'radial-gradient(circle, #EA4335, transparent)' }} />
-        </>
+        </div>
       )}
 
       {/* Desktop layout */}
@@ -288,17 +313,16 @@ export function EventsHorizontal() {
           <p
             className="section-eyebrow mb-2"
             style={{
-              color: isDark ? '#EA4335' : 'rgb(var(--text-secondary-raw))',
+              color: isDark ? '#EA4335' : 'hsl(var(--muted-foreground))',
               textShadow: isDark ? '0 0 20px rgba(234,67,53,0.5)' : 'none',
             }}
           >
             What's Happening
           </p>
           <h2
-            className="font-display"
+            className="font-display text-foreground"
             style={{
               fontSize: 'clamp(3rem, 7vw, 6rem)',
-              color: 'rgb(var(--foreground))',
               lineHeight: 1,
             }}
           >
@@ -307,15 +331,14 @@ export function EventsHorizontal() {
         </div>
 
         {/* Horizontal track */}
-        <div ref={trackRef} className="flex items-center pl-8 md:pl-16 pt-28">
+        <div ref={trackRef} className="flex items-center pl-8 md:pl-16 pr-12 md:pr-24 pt-28 w-max">
           {/* Intro text block */}
           <div className="flex-shrink-0 w-[260px] md:w-[360px] mr-8 md:mr-14">
             <p
-              className="text-base md:text-lg leading-relaxed"
-              style={{ color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(31,31,31,0.55)' }}
+              className="text-base md:text-lg leading-relaxed text-muted-foreground"
             >
               Journey through our semester's{' '}
-              <span style={{ color: 'rgb(var(--foreground))', fontWeight: 600 }}>upcoming events</span>.
+              <span className="text-foreground font-semibold">upcoming events</span>.
               Workshops, hackathons, and tech talks await.
             </p>
             <div
@@ -364,8 +387,8 @@ export function EventsHorizontal() {
             className="flex justify-between text-[10px] uppercase tracking-widest mt-1.5"
             style={{ color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(31,31,31,0.35)' }}
           >
-            <span>January</span>
-            <span>May</span>
+            <span>August</span>
+            <span>December</span>
           </div>
         </div>
       </div>
@@ -374,7 +397,7 @@ export function EventsHorizontal() {
       <div className="md:hidden py-20 px-4">
         <div className="mb-10 px-2">
           <p className="section-eyebrow mb-2" style={{ color: '#EA4335' }}>What's Happening</p>
-          <h2 className="font-display text-5xl" style={{ color: 'rgb(var(--foreground))' }}>EVENTS</h2>
+          <h2 className="font-display text-5xl text-foreground">EVENTS</h2>
         </div>
         <div className="flex overflow-x-auto gap-4 pb-6 snap-x snap-mandatory custom-scrollbar" style={{ scrollbarWidth: 'none' }}>
           {themeEvents.map((event, i) => (

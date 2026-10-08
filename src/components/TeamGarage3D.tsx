@@ -1,891 +1,873 @@
 /**
- * TeamGarage3D.tsx
+ * TeamGarage3D.tsx - REDESIGNED CYBER COMMAND GARAGE
  * 
- * PART 1: Holographic "Select Player" Garage - 3D Scene
- * 
- * A 3D environment with themed team bays:
- * - TechOps: Server racks, Matrix-style code, cyan lighting
- * - Design: Geometric primitives, soft neon gradients  
- * - Media: Cameras, microphones, waveforms
- * - Logistics: Command center, holographic maps
- * - Leads (optional): Leadership spotlight
- * 
- * Camera transitions smoothly between bays on selection.
+ * Futuristic 3D Command Environment with 5 Themed Department Podiums:
+ * - Real data synced from src/data/team.ts
+ * - Full Dark & Light Theme synchronization
+ * - Podiums labeled with crisp 3D names (automatically hidden when inspecting)
+ * - Individual Holographic Cards (matching Team Page style, 3D tilt, holographic foil & scanlines)
+ * - Centered presentation with zero bulky outer framing
+ * - Minimalist right-arrow action button for opening full dossier modal
+ * - Smooth pagination for multi-lead departments (e.g. Tech-Ops with 5 leads)
+ * - Razor-sharp, crystal-clear rendering (zero blur, zero overlapping)
+ * - Professional Lucide tech icons (strictly NO emojis)
  */
 
-import { Suspense, useState, useRef, useMemo } from 'react'
+import React, { Suspense, useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Html, Float, MeshTransmissionMaterial } from '@react-three/drei'
+import { Float, Html } from '@react-three/drei'
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import * as THREE from 'three'
 import { useTheme } from '@/contexts/ThemeContext'
+import {
+    TeamMember,
+    TeamId,
+    TEAM_MEMBERS,
+    getGarageMembersByBay,
+} from '@/data/team'
+import { useTeamStore } from '@/store/teamStore'
+import { Link } from 'react-router-dom'
+import {
+    Shield,
+    Terminal,
+    Palette,
+    Video,
+    Layers,
+    ChevronLeft,
+    ChevronRight,
+    X,
+    RotateCcw,
+    ArrowRight,
+    Linkedin,
+    Mail,
+} from 'lucide-react'
 
-// ================================
-// TYPES
-// ================================
-
-export type BayId = 'leads' | 'techops' | 'design' | 'media' | 'logistics'
-
+// Backward-compatible type exports
+export type BayId = TeamId
 export interface TeamGarageMember {
     id: string | number
     name: string
     role: string
     codename?: string
+    image?: string
 }
-
 export type TeamGarageMembersByBay = Partial<Record<BayId, TeamGarageMember[]>>
-
-interface BayData {
+export interface TeamGarageBayMeta {
     id: BayId
     name: string
     color: string
     position: [number, number, number]
-    members: TeamGarageMember[]
-}
-
-export type TeamGarageBayMeta = Omit<BayData, 'members'>
-
-export interface TeamGarageCameraConfig {
-    overviewZ?: number
-    overviewY?: number
-    focusZ?: number
-    fov?: number
 }
 
 // ================================
-// DATA
+// BAY CONFIGURATION (NO EMOJIS)
 // ================================
 
-const DEFAULT_BAY_META: TeamGarageBayMeta[] = [
+interface BayConfig {
+    id: TeamId
+    name: string
+    code: string
+    color: string
+    description: string
+    position: [number, number, number]
+    iconType: 'shield' | 'terminal' | 'palette' | 'video' | 'layers'
+}
+
+const GARAGE_BAYS: BayConfig[] = [
     {
         id: 'leads',
-        name: 'LEADS',
-        color: '#9E9E9E',
-        position: [-5, 0, 0],
+        name: 'LEADERSHIP',
+        code: '// COMMAND',
+        color: '#FFFFFF',
+        description: 'GDG on Campus core leadership & strategic direction',
+        position: [0, 0, 0],
+        iconType: 'shield',
     },
     {
         id: 'techops',
-        name: 'TECH_OPS',
+        name: 'TECH-OPS',
+        code: '// ARCHITECTS',
         color: '#4285F4',
-        position: [-2.5, 0, 0],
+        description: 'Web, App, AI/ML, Cloud & Technical Operations',
+        position: [-4.6, 0, -1.2],
+        iconType: 'terminal',
     },
     {
         id: 'design',
         name: 'DESIGN',
+        code: '// VISUALS',
         color: '#EA4335',
-        position: [0, 0, 0],
+        description: 'UI/UX systems, brand identity & motion aesthetics',
+        position: [-2.4, 0, 1.4],
+        iconType: 'palette',
     },
     {
         id: 'media',
         name: 'MEDIA',
+        code: '// BROADCAST',
         color: '#FBBC04',
-        position: [2.5, 0, 0],
+        description: 'Audio/Visual production, content ops & social resonance',
+        position: [2.4, 0, 1.4],
+        iconType: 'video',
     },
     {
         id: 'logistics',
-        name: 'LOGISTICS',
+        name: 'OPERATIONS',
+        code: '// OPERATIONS',
         color: '#34A853',
-        position: [5, 0, 0],
+        description: 'Event planning, outreach & campus infrastructure',
+        position: [4.6, 0, -1.2],
+        iconType: 'layers',
     },
 ]
 
-const DEFAULT_MEMBERS_BY_BAY: Record<BayId, TeamGarageMember[]> = {
-    leads: [
-        { id: 0, name: 'Rakesh', role: 'Lead', codename: 'ORBIT' },
-        { id: 9, name: 'Kishore', role: 'Co-lead', codename: 'PULSE' },
-    ],
-    techops: [
-        { id: 1, name: 'Lokesh JR', role: 'Tech-Ops Lead', codename: 'CIPHER' },
-        { id: 2, name: 'Prasanna', role: 'Tech-Ops Co-Lead', codename: 'VECTOR' },
-    ],
-    design: [
-        { id: 3, name: 'Aishwarya', role: 'Design Lead', codename: 'PRISM' },
-        { id: 4, name: 'Akshithaa', role: 'Design Co-Lead', codename: 'PIXEL' },
-    ],
-    media: [
-        { id: 5, name: 'Benin', role: 'Media Lead', codename: 'LENS' },
-        { id: 6, name: 'Madhusha Harini', role: 'Media Co-Lead', codename: 'SIGNAL' },
-    ],
-    logistics: [
-        { id: 7, name: 'Venkat', role: 'Logistics Lead', codename: 'NEXUS' },
-        { id: 8, name: 'Aboorvan', role: 'Logistics Co-Lead', codename: 'RELAY' },
-    ],
-}
-
-function resolveBaysData(bayMeta: TeamGarageBayMeta[], membersByBay?: TeamGarageMembersByBay): BayData[] {
-    return bayMeta.map((bay) => ({
-        ...bay,
-        members: membersByBay?.[bay.id] ?? DEFAULT_MEMBERS_BY_BAY[bay.id],
-    }))
-}
-
-interface CardMetrics {
-    width: number
-    height: number
-    gapX: number
-    gapY: number
-    glowPadding: number
-    infoOffsetY: number
-    infoWidth: number
-    textScale: number
-}
-
-const CARD_METRICS: Record<'classic' | 'grid', CardMetrics> = {
-    classic: {
-        width: 0.8,
-        height: 1.1,
-        gapX: 0.35,
-        gapY: 0.35,
-        glowPadding: 0.2,
-        infoOffsetY: 0.4,
-        infoWidth: 90,
-        textScale: 1,
-    },
-    grid: {
-        width: 0.55,
-        height: 0.78,
-        gapX: 0.32,
-        gapY: 0.32,
-        glowPadding: 0.14,
-        infoOffsetY: 0.28,
-        infoWidth: 80,
-        textScale: 0.85,
-    },
-}
-
-function getCardMetrics(layoutMode: 'classic' | 'grid'): CardMetrics {
-    return CARD_METRICS[layoutMode]
-}
-
-function getCodename(member: TeamGarageMember): string {
-    if (member.codename) return member.codename
-    const trimmed = member.name.trim()
-    if (!trimmed) return 'OPERATIVE'
-    const initials = trimmed
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((part) => part[0].toUpperCase())
-        .join('')
-    return initials || trimmed.toUpperCase()
-}
-
-function getLayoutScale(count: number): number {
-    if (count > 24) return 0.6
-    if (count > 18) return 0.7
-    if (count > 12) return 0.8
-    if (count > 8) return 0.9
-    return 1
-}
-
-function calculateCardPositions(count: number, metrics: CardMetrics): [number, number, number][] {
-    if (count <= 0) return []
-    const columns = Math.min(6, Math.max(3, Math.ceil(Math.sqrt(count))))
-    const rows = Math.ceil(count / columns)
-    const totalWidth = columns * metrics.width + (columns - 1) * metrics.gapX
-    const totalHeight = rows * metrics.height + (rows - 1) * metrics.gapY
-    const startX = -totalWidth / 2 + metrics.width / 2
-    const startY = totalHeight / 2 - metrics.height / 2
-    const positions: [number, number, number][] = []
-
-    for (let i = 0; i < count; i += 1) {
-        const row = Math.floor(i / columns)
-        const col = i % columns
-        const x = startX + col * (metrics.width + metrics.gapX)
-        const y = startY - row * (metrics.height + metrics.gapY)
-        const z = row * -0.12
-        positions.push([x, y, z])
+function getBayThemeColor(bayId: TeamId, isDark: boolean): string {
+    switch (bayId) {
+        case 'leads':
+            return isDark ? '#FFFFFF' : '#0F172A'
+        case 'techops':
+            return isDark ? '#4285F4' : '#2563EB'
+        case 'design':
+            return isDark ? '#EA4335' : '#DC2626'
+        case 'media':
+            return isDark ? '#FBBC04' : '#D97706'
+        case 'logistics':
+            return isDark ? '#34A853' : '#16A34A'
+        default:
+            return isDark ? '#FFFFFF' : '#0F172A'
     }
+}
 
-    return positions
+function renderBayIcon(iconType: string, className = 'w-4 h-4') {
+    switch (iconType) {
+        case 'shield':
+            return <Shield className={className} />
+        case 'terminal':
+            return <Terminal className={className} />
+        case 'palette':
+            return <Palette className={className} />
+        case 'video':
+            return <Video className={className} />
+        case 'layers':
+            return <Layers className={className} />
+        default:
+            return <Shield className={className} />
+    }
 }
 
 // ================================
-// HOLOGRAPHIC CARD SHADER (PREMIUM)
+// 3D CYBER PODIUM MESH WITH NAME LABEL
 // ================================
 
-const HolographicCardMaterial = {
-    uniforms: {
-        uTime: { value: 0 },
-        uColor: { value: new THREE.Color('#4285F4') },
-        uHover: { value: 0 },
-    },
-    vertexShader: `
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    varying vec3 vViewPosition;
-    varying vec3 vWorldPosition;
-    
-    void main() {
-      vUv = uv;
-      vNormal = normalize(normalMatrix * normal);
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      vViewPosition = -mvPosition.xyz;
-      vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-      gl_Position = projectionMatrix * mvPosition;
-    }
-  `,
-    fragmentShader: `
-    uniform float uTime;
-    uniform vec3 uColor;
-    uniform float uHover;
-    
-    varying vec2 vUv;
-    varying vec3 vNormal;
-    varying vec3 vViewPosition;
-    varying vec3 vWorldPosition;
-    
-    // Noise function for distortion
-    float hash(vec2 p) {
-      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-    }
-    
-    float noise(vec2 p) {
-      vec2 i = floor(p);
-      vec2 f = fract(p);
-      f = f * f * (3.0 - 2.0 * f);
-      return mix(
-        mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-        f.y
-      );
-    }
-    
-    // Rainbow/iridescent color
-    vec3 rainbow(float t) {
-      vec3 c = vec3(
-        0.5 + 0.5 * cos(6.28318 * (t + 0.0)),
-        0.5 + 0.5 * cos(6.28318 * (t + 0.33)),
-        0.5 + 0.5 * cos(6.28318 * (t + 0.67))
-      );
-      return c;
-    }
-    
-    void main() {
-      vec2 uv = vUv;
-      
-      // === NOISE DISTORTION ===
-      float noiseVal = noise(uv * 8.0 + uTime * 0.5) * 0.02;
-      uv += noiseVal * uHover;
-      
-      // === FRESNEL / RIM LIGHTING ===
-      vec3 viewDir = normalize(vViewPosition);
-      float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), 4.0);
-      
-      // === RAINBOW IRIDESCENT FRESNEL ===
-      float iridescence = fresnel * 0.5 + uv.y * 0.3 + uTime * 0.1;
-      vec3 rainbowColor = rainbow(iridescence) * fresnel * 0.6;
-      
-      // === ANIMATED SCANLINES ===
-      float scanline1 = sin(uv.y * 150.0 - uTime * 3.0) * 0.5 + 0.5;
-      float scanline2 = sin(uv.y * 50.0 + uTime * 1.5) * 0.5 + 0.5;
-      float scanlines = smoothstep(0.3, 0.7, scanline1) * 0.1 + smoothstep(0.4, 0.6, scanline2) * 0.05;
-      
-      // === CHROMATIC ABERRATION ===
-      float aberrationStrength = 0.01 + uHover * 0.02;
-      vec2 redOffset = vec2(aberrationStrength, 0.0);
-      vec2 blueOffset = vec2(-aberrationStrength, 0.0);
-      
-      // === PULSE WAVE ===
-      float pulse = sin(uTime * 2.0 + uv.y * 10.0) * 0.5 + 0.5;
-      float pulseWave = smoothstep(0.0, 0.1, abs(fract(uv.y - uTime * 0.2) - 0.5) - 0.45) * 0.3;
-      
-      // === GLITCH EFFECT ===
-      float glitch = 0.0;
-      if (uHover > 0.3) {
-        float glitchTime = uTime * 60.0;
-        float glitchLine = step(0.96, sin(glitchTime + uv.y * 25.0));
-        float glitchBlock = step(0.98, hash(vec2(floor(uTime * 10.0), floor(uv.y * 8.0))));
-        glitch = (glitchLine + glitchBlock * 2.0) * 0.15 * uHover;
-      }
-      
-      // === EDGE GLOW ===
-      float edgeX = smoothstep(0.0, 0.15, uv.x) * smoothstep(1.0, 0.85, uv.x);
-      float edgeY = smoothstep(0.0, 0.1, uv.y) * smoothstep(1.0, 0.9, uv.y);
-      float edgeGlow = (1.0 - edgeX * edgeY) * 0.5;
-      
-      // === HOLOGRAPHIC GRID ===
-      float gridX = smoothstep(0.48, 0.5, abs(fract(uv.x * 20.0) - 0.5));
-      float gridY = smoothstep(0.48, 0.5, abs(fract(uv.y * 28.0) - 0.5));
-      float grid = (gridX + gridY) * 0.03 * (1.0 - fresnel);
-      
-      // === COMPOSE FINAL COLOR ===
-      vec3 baseColor = uColor * 0.25;
-      vec3 rimColor = uColor * fresnel * 2.5;
-      vec3 pulseColor = uColor * pulseWave;
-      vec3 glowColor = uColor * edgeGlow * 1.5;
-      
-      vec3 finalColor = baseColor + rimColor + rainbowColor + scanlines + pulseColor + glowColor + grid + glitch;
-      
-      // === ALPHA ===
-      float alpha = 0.5 + fresnel * 0.5 + edgeGlow * 0.3;
-      alpha = clamp(alpha, 0.0, 1.0);
-      
-      gl_FragColor = vec4(finalColor, alpha);
-    }
-  `,
+interface CyberPodiumProps {
+    bay: BayConfig
+    isActive: boolean
+    hasActiveBay: boolean
+    isDark: boolean
+    onClick: () => void
 }
 
-// ================================
-// HOLOGRAPHIC CARD COMPONENT
-// ================================
-
-interface HolographicCard3DProps {
-    member: TeamGarageMember
-    color: string
-    position: [number, number, number]
-    index: number
-    metrics: CardMetrics
-}
-
-function HolographicCard3D({ member, color, position, index, metrics }: HolographicCard3DProps) {
-    const meshRef = useRef<THREE.Mesh>(null)
-    const materialRef = useRef<THREE.ShaderMaterial>(null)
-    const [hovered, setHovered] = useState(false)
-    const codename = getCodename(member)
-    const { width, height, glowPadding, infoOffsetY, infoWidth, textScale } = metrics
-    const nameClassName = width < 0.7 ? 'text-[10px]' : 'text-xs'
-
-    // Clone uniforms for each card
-    const uniforms = useMemo(() => ({
-        uTime: { value: 0 },
-        uColor: { value: new THREE.Color(color) },
-        uHover: { value: 0 },
-    }), [color])
+function CyberPodium({ bay, isActive, hasActiveBay, isDark, onClick }: CyberPodiumProps) {
+    const ringRef = useRef<THREE.Mesh>(null)
+    const innerRingRef = useRef<THREE.Mesh>(null)
+    const floatMeshRef = useRef<THREE.Mesh>(null)
+    const color = getBayThemeColor(bay.id, isDark)
 
     useFrame(({ clock }) => {
-        if (materialRef.current) {
-            materialRef.current.uniforms.uTime.value = clock.elapsedTime
-            // Smooth hover transition
-            const targetHover = hovered ? 1 : 0
-            materialRef.current.uniforms.uHover.value += (targetHover - materialRef.current.uniforms.uHover.value) * 0.1
+        const t = clock.elapsedTime
+        if (ringRef.current) {
+            ringRef.current.rotation.z = t * (isActive ? 0.7 : 0.25)
+        }
+        if (innerRingRef.current) {
+            innerRingRef.current.rotation.z = -t * (isActive ? 0.9 : 0.35)
+        }
+        if (floatMeshRef.current) {
+            floatMeshRef.current.rotation.y = t * 0.6
+            floatMeshRef.current.rotation.x = Math.sin(t * 0.8) * 0.2
         }
     })
 
     return (
-        <Float
-            speed={2}
-            rotationIntensity={0.2}
-            floatIntensity={0.3}
-            position={position}
-        >
-            <group>
-                {/* Card mesh */}
-                <mesh
-                    ref={meshRef}
-                    onPointerEnter={() => setHovered(true)}
-                    onPointerLeave={() => setHovered(false)}
-                >
-                    <planeGeometry args={[width, height]} />
-                    <shaderMaterial
-                        ref={materialRef}
-                        transparent
-                        side={THREE.DoubleSide}
-                        uniforms={uniforms}
-                        vertexShader={HolographicCardMaterial.vertexShader}
-                        fragmentShader={HolographicCardMaterial.fragmentShader}
+        <group position={bay.position}>
+            {/* Base Tier 1: Main Platform */}
+            <mesh position={[0, -1.2, 0]} onClick={onClick}>
+                <cylinderGeometry args={[1.3, 1.5, 0.25, 32]} />
+                <meshStandardMaterial
+                    color={isActive ? color : isDark ? '#0f172a' : '#e2e8f0'}
+                    emissive={color}
+                    emissiveIntensity={isActive ? (isDark ? 0.45 : 0.2) : isDark ? 0.08 : 0.02}
+                    roughness={0.25}
+                    metalness={isDark ? 0.8 : 0.2}
+                />
+            </mesh>
+
+            {/* Base Tier 2: Elevated Step */}
+            <mesh position={[0, -1.05, 0]} onClick={onClick}>
+                <cylinderGeometry args={[1.05, 1.15, 0.1, 32]} />
+                <meshStandardMaterial
+                    color={isDark ? '#020617' : '#ffffff'}
+                    emissive={color}
+                    emissiveIntensity={isActive ? (isDark ? 0.3 : 0.15) : 0.02}
+                    roughness={0.3}
+                    metalness={isDark ? 0.9 : 0.1}
+                />
+            </mesh>
+
+            {/* Outer Glowing Neon Ring */}
+            <mesh ref={ringRef} position={[0, -0.99, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClick}>
+                <ringGeometry args={[1.08, 1.22, 32]} />
+                <meshBasicMaterial color={color} transparent opacity={isActive ? 0.95 : isDark ? 0.4 : 0.6} />
+            </mesh>
+
+            {/* Inner Cyber Ring */}
+            <mesh ref={innerRingRef} position={[0, -0.98, 0]} rotation={[-Math.PI / 2, 0, 0]} onClick={onClick}>
+                <ringGeometry args={[0.7, 0.8, 24]} />
+                <meshBasicMaterial color={color} transparent opacity={isActive ? 0.75 : isDark ? 0.25 : 0.45} />
+            </mesh>
+
+            {/* Floating 3D Geometric Emblem */}
+            <Float speed={isActive ? 2.5 : 1.5} rotationIntensity={0.3} floatIntensity={0.4}>
+                <mesh ref={floatMeshRef} position={[0, -0.2, 0]} onClick={onClick}>
+                    <octahedronGeometry args={[isActive ? 0.4 : 0.3, 0]} />
+                    <meshStandardMaterial
+                        color={color}
+                        emissive={color}
+                        emissiveIntensity={isActive ? (isDark ? 0.8 : 0.45) : isDark ? 0.3 : 0.1}
+                        wireframe
                     />
                 </mesh>
+            </Float>
 
-                {/* Member info overlay */}
+            {/* Department Name Label (Only visible in overview mode, hidden when inspecting any podium) */}
+            {!hasActiveBay && (
                 <Html
-                    position={[0, -infoOffsetY, 0.01]}
                     center
-                    style={{ pointerEvents: 'none', width: infoWidth, transform: `scale(${textScale})`, transformOrigin: 'center' }}
+                    position={[0, -0.65, 1.45]}
+                    distanceFactor={13}
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
-                    <div className="text-center" style={{ maxWidth: '100%' }}>
-                        <p
-                            className="text-[8px] font-mono tracking-widest mb-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
-                            style={{ color, textShadow: `0 0 10px ${color}` }}
-                        >
-              // {codename}
-                        </p>
-                        <p className={`text-white font-display leading-tight text-center break-words ${nameClassName}`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word', hyphens: 'auto' }}>
-                            {member.name}
-                        </p>
-                        <p className="text-white/50 text-[8px] text-center leading-tight break-words" style={{ wordBreak: 'break-word', overflowWrap: 'break-word', hyphens: 'auto' }}>
-                            {member.role}
-                        </p>
+                    <div
+                        className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase border whitespace-nowrap shadow-md transition-all ${
+                            isActive ? 'scale-110 shadow-lg' : 'opacity-95'
+                        }`}
+                        style={{
+                            backgroundColor: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.94)',
+                            borderColor: `${color}80`,
+                            color: color,
+                            boxShadow: `0 0 15px ${color}33`,
+                        }}
+                    >
+                        {bay.name}
                     </div>
                 </Html>
-
-                {/* Glow plane behind card */}
-                <mesh position={[0, 0, -0.1]}>
-                    <planeGeometry args={[width + glowPadding, height + glowPadding]} />
-                    <meshBasicMaterial
-                        color={color}
-                        transparent
-                        opacity={hovered ? 0.15 : 0.05}
-                    />
-                </mesh>
-            </group>
-        </Float>
-    )
-}
-
-// ================================
-// BAY DECORATIONS
-// ================================
-
-function LeadsBayDecor({ color }: { color: string }) {
-    const groupRef = useRef<THREE.Group>(null)
-    const glowColor = color === '#FFFFFF' ? '#E6E6E6' : color
-
-    useFrame(({ clock }) => {
-        if (groupRef.current) {
-            groupRef.current.rotation.y = clock.elapsedTime * 0.08
-        }
-    })
-
-    return (
-        <group ref={groupRef}>
-            <mesh position={[0, 0.55, -0.4]}>
-                <cylinderGeometry args={[0.35, 0.45, 0.2, 32]} />
-                <meshStandardMaterial
-                    color={glowColor}
-                    emissive={glowColor}
-                    emissiveIntensity={0.35}
-                    transparent
-                    opacity={0.7}
-                />
-            </mesh>
-            <mesh position={[0, 0.85, -0.4]} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[0.5, 0.03, 12, 48]} />
-                <meshStandardMaterial
-                    color={glowColor}
-                    emissive={glowColor}
-                    emissiveIntensity={0.6}
-                    transparent
-                    opacity={0.7}
-                />
-            </mesh>
-            <Float speed={1.2} floatIntensity={0.2}>
-                <mesh position={[0, 1.2, -0.4]}>
-                    <octahedronGeometry args={[0.12, 0]} />
-                    <meshStandardMaterial
-                        color={glowColor}
-                        emissive={glowColor}
-                        emissiveIntensity={0.8}
-                        wireframe
-                    />
-                </mesh>
-            </Float>
-        </group>
-    )
-}
-
-function TechOpsBayDecor({ color }: { color: string }) {
-    const groupRef = useRef<THREE.Group>(null)
-
-    useFrame(({ clock }) => {
-        if (groupRef.current) {
-            groupRef.current.rotation.y = clock.elapsedTime * 0.1
-        }
-    })
-
-    return (
-        <group ref={groupRef}>
-            {/* Floating server racks */}
-            {[...Array(3)].map((_, i) => (
-                <Float key={i} speed={1.5} floatIntensity={0.2}>
-                    <mesh position={[(i - 1) * 0.6, 0.8 + i * 0.2, -0.5]}>
-                        <boxGeometry args={[0.3, 0.5, 0.1]} />
-                        <meshStandardMaterial
-                            color={color}
-                            emissive={color}
-                            emissiveIntensity={0.3}
-                            transparent
-                            opacity={0.6}
-                        />
-                    </mesh>
-                </Float>
-            ))}
-            {/* Grid lines */}
-            <gridHelper args={[2, 10, color, color]} position={[0, -1, 0]} />
-        </group>
-    )
-}
-
-function DesignBayDecor({ color }: { color: string }) {
-    const groupRef = useRef<THREE.Group>(null)
-
-    useFrame(({ clock }) => {
-        if (groupRef.current) {
-            groupRef.current.rotation.y = -clock.elapsedTime * 0.08
-        }
-    })
-
-    return (
-        <group ref={groupRef}>
-            {/* Floating geometric primitives */}
-            <Float speed={2} floatIntensity={0.3}>
-                <mesh position={[0.5, 0.7, -0.3]} rotation={[0.5, 0.5, 0]}>
-                    <icosahedronGeometry args={[0.2, 0]} />
-                    <meshStandardMaterial
-                        color={color}
-                        emissive={color}
-                        emissiveIntensity={0.5}
-                        wireframe
-                    />
-                </mesh>
-            </Float>
-            <Float speed={1.8} floatIntensity={0.25}>
-                <mesh position={[-0.4, 0.9, -0.2]} rotation={[0.3, 0.7, 0]}>
-                    <octahedronGeometry args={[0.15, 0]} />
-                    <meshStandardMaterial
-                        color={color}
-                        emissive={color}
-                        emissiveIntensity={0.5}
-                        wireframe
-                    />
-                </mesh>
-            </Float>
-        </group>
-    )
-}
-
-function MediaBayDecor({ color }: { color: string }) {
-    return (
-        <group>
-            {/* Waveform visualization */}
-            {[...Array(8)].map((_, i) => (
-                <Float key={i} speed={3} floatIntensity={0.5}>
-                    <mesh position={[(i - 4) * 0.15, 0.8, -0.4]}>
-                        <boxGeometry args={[0.05, 0.1 + Math.sin(i * 0.8) * 0.15, 0.02]} />
-                        <meshStandardMaterial
-                            color={color}
-                            emissive={color}
-                            emissiveIntensity={0.8}
-                        />
-                    </mesh>
-                </Float>
-            ))}
-        </group>
-    )
-}
-
-function LogisticsBayDecor({ color }: { color: string }) {
-    return (
-        <group>
-            {/* Tactical grid */}
-            <gridHelper args={[2, 8, color, color]} position={[0, -1, 0]} />
-            {/* Supply crates */}
-            <Float speed={1.2} floatIntensity={0.15}>
-                <mesh position={[0.6, 0.6, -0.5]}>
-                    <boxGeometry args={[0.25, 0.25, 0.25]} />
-                    <meshStandardMaterial
-                        color={color}
-                        emissive={color}
-                        emissiveIntensity={0.3}
-                    />
-                </mesh>
-            </Float>
-        </group>
-    )
-}
-
-// ================================
-// TEAM BAY
-// ================================
-
-interface TeamBayProps {
-    bay: BayData
-    isActive: boolean
-    onClick: () => void
-    layoutMode: 'classic' | 'grid'
-}
-
-function TeamBay({ bay, isActive, onClick, layoutMode }: TeamBayProps) {
-    const groupRef = useRef<THREE.Group>(null)
-    const useClassicLayout = layoutMode === 'classic' && bay.members.length <= 2
-    const cardMetrics = useMemo(() => getCardMetrics(layoutMode), [layoutMode])
-    const cardPositions = useMemo(() => {
-        if (useClassicLayout) {
-            return bay.members.map((_, i) => ([(i - 0.5) * 1, 0, 0.5] as [number, number, number]))
-        }
-        return calculateCardPositions(bay.members.length, cardMetrics)
-    }, [bay.members.length, bay.members, cardMetrics, useClassicLayout])
-    const layoutScale = useMemo(() => (useClassicLayout ? 1 : getLayoutScale(bay.members.length)), [bay.members.length, useClassicLayout])
-    const layoutPosition: [number, number, number] = useClassicLayout ? [0, 0, 0] : [0, -0.25, 0.6]
-    const platformRadius = layoutMode === 'grid' ? 0.9 : 1.1
-
-    // Render bay-specific decorations
-    const renderDecor = () => {
-        switch (bay.id) {
-            case 'leads': return <LeadsBayDecor color={bay.color} />
-            case 'techops': return <TechOpsBayDecor color={bay.color} />
-            case 'design': return <DesignBayDecor color={bay.color} />
-            case 'media': return <MediaBayDecor color={bay.color} />
-            case 'logistics': return <LogisticsBayDecor color={bay.color} />
-        }
-    }
-
-    return (
-        <group ref={groupRef} position={bay.position}>
-            {/* Bay platform */}
-            <mesh
-                position={[0, -1.2, 0]}
-                rotation={[-Math.PI / 2, 0, 0]}
-                onClick={onClick}
-            >
-                <circleGeometry args={[platformRadius, 32]} />
-                <meshStandardMaterial
-                    color={bay.color}
-                    emissive={bay.color}
-                    emissiveIntensity={isActive ? 0.5 : 0.1}
-                    transparent
-                    opacity={0.3}
-                />
-            </mesh>
-
-            {/* Bay decorations */}
-            {renderDecor()}
-
-            {/* Team member cards (only show when active) */}
-            {isActive && bay.members.length > 0 && (
-                <group scale={layoutScale} position={layoutPosition}>
-                    {bay.members.map((member, i) => (
-                        <HolographicCard3D
-                            key={member.id}
-                            member={member}
-                            color={bay.color}
-                            position={cardPositions[i]}
-                            index={i}
-                            metrics={cardMetrics}
-                        />
-                    ))}
-                </group>
             )}
-
-            {/* Bay label */}
-            <Html position={[0, -1.5, 0]} center>
-                <button
-                    onClick={onClick}
-                    className="px-4 py-1 font-mono text-xs tracking-widest transition-all"
-                    style={{
-                        color: bay.color,
-                        textShadow: isActive ? `0 0 20px ${bay.color}` : 'none',
-                        background: isActive ? `${bay.color}20` : 'transparent',
-                        border: `1px solid ${isActive ? bay.color : 'transparent'}`,
-                        borderRadius: 4,
-                    }}
-                >
-                    {bay.name}
-                </button>
-            </Html>
         </group>
     )
 }
 
 // ================================
-// CAMERA CONTROLLER
+// CAMERA INTERPOLATION CONTROLLER
 // ================================
 
-interface CameraControllerProps {
-    activeBay: BayId | null
-    baysData: BayData[]
-    overviewZ: number
-    focusZ: number
-}
-
-function CameraController({ activeBay, baysData, overviewZ, focusZ }: CameraControllerProps) {
+function CameraController({ activeBay }: { activeBay: BayId | null }) {
     const { camera } = useThree()
 
     useFrame(() => {
-        const activeBayData = baysData.find(b => b.id === activeBay)
-
         let targetX = 0
-        let targetZ = overviewZ
+        let targetY = 1.8
+        let targetZ = 8.5
+        let lookAtX = 0
+        let lookAtY = 0
+        let lookAtZ = 0
 
-        if (activeBayData) {
-            targetX = activeBayData.position[0]
-            targetZ = focusZ
+        if (activeBay) {
+            const bay = GARAGE_BAYS.find((b) => b.id === activeBay)
+            if (bay) {
+                targetX = bay.position[0] * 0.7
+                targetY = 1.3
+                targetZ = bay.position[2] + 4.8
+                lookAtX = bay.position[0]
+                lookAtY = 0.5
+                lookAtZ = bay.position[2]
+            }
         }
 
-        // Smooth camera movement
+        // Smooth camera lerp
         camera.position.x += (targetX - camera.position.x) * 0.05
+        camera.position.y += (targetY - camera.position.y) * 0.05
         camera.position.z += (targetZ - camera.position.z) * 0.05
-        camera.lookAt(targetX, 0, 0)
+        camera.lookAt(lookAtX, lookAtY, lookAtZ)
     })
 
     return null
 }
 
 // ================================
-// SCENE
+// CYBER ENVIRONMENT (FLOOR & PARTICLES)
 // ================================
 
-interface SceneProps {
-    activeBay: BayId | null
-    onSelectBay: (id: BayId) => void
-    isDark: boolean
-    baysData: BayData[]
-    layoutMode: 'classic' | 'grid'
-    overviewZ: number
-    focusZ: number
-}
+function CyberEnvironment({ isDark }: { isDark: boolean }) {
+    const gridColor = isDark ? '#1e293b' : '#cbd5e1'
+    const centerColor = isDark ? '#3b82f6' : '#2563eb'
 
-function Scene({ activeBay, onSelectBay, isDark, baysData, layoutMode, overviewZ, focusZ }: SceneProps) {
-    const bgColor = isDark ? '#050505' : '#FAFAFA'
     return (
         <>
-            {/* Background */}
-            <color attach="background" args={[bgColor]} />
-            <fog attach="fog" args={[bgColor, 5, 15]} />
+            <color attach="background" args={[isDark ? '#030712' : '#f8fafc']} />
+            <fog attach="fog" args={[isDark ? '#030712' : '#f1f5f9', 8, 28]} />
 
-            {/* Camera controller */}
-            <CameraController activeBay={activeBay} baysData={baysData} overviewZ={overviewZ} focusZ={focusZ} />
+            <gridHelper args={[28, 28, centerColor, gridColor]} position={[0, -1.25, 0]} />
 
-            {/* Team bays */}
-            {baysData.map(bay => (
-                <TeamBay
-                    key={bay.id}
-                    bay={bay}
-                    isActive={activeBay === bay.id}
-                    onClick={() => onSelectBay(bay.id)}
-                    layoutMode={layoutMode}
+            <mesh position={[0, -1.26, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <planeGeometry args={[36, 36]} />
+                <meshStandardMaterial
+                    color={isDark ? '#060a17' : '#ffffff'}
+                    roughness={isDark ? 0.35 : 0.75}
+                    metalness={isDark ? 0.65 : 0.05}
                 />
-            ))}
+            </mesh>
 
-            {/* Ambient lighting */}
-            <ambientLight intensity={0.2} />
-            <pointLight position={[0, 5, 5]} intensity={1} />
-
-            {/* Colored spotlights per bay */}
-            {baysData.map(bay => (
-                <spotLight
-                    key={bay.id}
-                    position={[bay.position[0], 3, 2]}
-                    color={bay.color}
-                    intensity={activeBay === bay.id ? 2 : 0.3}
-                    angle={0.5}
-                    penumbra={1}
-                />
-            ))}
+            <ambientLight intensity={isDark ? 0.45 : 0.85} />
+            <pointLight position={[0, 6, 2]} intensity={isDark ? 1.6 : 1.1} color="#ffffff" />
+            <directionalLight position={[6, 9, 6]} intensity={isDark ? 1.3 : 1.5} />
         </>
     )
 }
 
 // ================================
-// UI OVERLAY
+// INDIVIDUAL HOLOGRAPHIC CARD (IDENTICAL TO TEAM PAGE)
 // ================================
 
-interface UIOverlayProps {
-    activeBay: BayId | null
-    baysData: BayData[]
+interface HolographicGarageCardProps {
+    member: TeamMember
+    index: number
+    isDark: boolean
+    onOpenModal: (member: TeamMember) => void
 }
 
-function UIOverlay({ activeBay, baysData }: UIOverlayProps) {
-    const bayData = baysData.find(b => b.id === activeBay)
+function HolographicGarageCard({ member, index, isDark, onOpenModal }: HolographicGarageCardProps) {
+    const cardRef = useRef<HTMLDivElement>(null)
+    const [isHovered, setIsHovered] = useState(false)
+    const [imgError, setImgError] = useState(false)
+    const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 768)
+
+    const mouseX = useMotionValue(0)
+    const mouseY = useMotionValue(0)
+
+    const springConfig = { stiffness: 150, damping: 15, mass: 0.5 }
+    const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [12, -12]), springConfig)
+    const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-12, 12]), springConfig)
+    const foilX = useSpring(useTransform(mouseX, [-0.5, 0.5], [100, -100]), springConfig)
+    const foilY = useSpring(useTransform(mouseY, [-0.5, 0.5], [100, -100]), springConfig)
+
+    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (isTouch || !cardRef.current) return
+        const rect = cardRef.current.getBoundingClientRect()
+        const x = (e.clientX - rect.left) / rect.width - 0.5
+        const y = (e.clientY - rect.top) / rect.height - 0.5
+        mouseX.set(x)
+        mouseY.set(y)
+    }, [isTouch, mouseX, mouseY])
+
+    const handleMouseLeave = useCallback(() => {
+        if (isTouch) return
+        setIsHovered(false)
+        mouseX.set(0)
+        mouseY.set(0)
+    }, [isTouch, mouseX, mouseY])
 
     return (
-        <div className="absolute inset-0 pointer-events-none z-10">
-            {/* Top header */}
-            <div className="absolute top-6 left-6 right-6">
-                <div className="flex items-center gap-3 mb-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                    <p className="text-[10px] font-mono tracking-[0.3em] text-red-500/70">
-                        RESTRICTED ACCESS // CLEARANCE LEVEL: CORE
+        <motion.div
+            initial={{ opacity: 0, y: 35, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ delay: index * 0.08, duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+            className="perspective-1000 flex-shrink-0 w-[240px] sm:w-[260px] md:w-[280px]"
+        >
+            <motion.div
+                ref={cardRef}
+                style={isTouch ? undefined : { rotateX, rotateY, transformStyle: 'preserve-3d' }}
+                onMouseMove={handleMouseMove}
+                onMouseEnter={() => !isTouch && setIsHovered(true)}
+                onMouseLeave={handleMouseLeave}
+                onClick={() => onOpenModal(member)}
+                className="relative cursor-pointer group"
+            >
+                <div
+                    className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden transition-all duration-300"
+                    style={{
+                        background: isDark
+                            ? `linear-gradient(145deg, ${member.color}20, ${member.color}08, #0a0f1d)`
+                            : `linear-gradient(145deg, ${member.color}15, ${member.color}05, #ffffff)`,
+                        border: `1.5px solid ${member.color}${isHovered ? '99' : '40'}`,
+                        boxShadow: isHovered
+                            ? `0 25px 50px -12px ${member.color}45, 0 0 35px ${member.color}25, inset 0 1px 0 ${member.color}40`
+                            : isDark
+                            ? `0 10px 30px -10px rgba(0,0,0,0.5)`
+                            : `0 10px 25px -8px rgba(0,0,0,0.12)`,
+                    }}
+                >
+                    {/* Holographic Foil Overlay */}
+                    <motion.div
+                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10"
+                        style={{
+                            background: `linear-gradient(115deg, transparent 20%, ${member.color}20 40%, ${member.color}40 50%, ${member.color}20 60%, transparent 80%)`,
+                            backgroundSize: '200% 200%',
+                            backgroundPosition: `${foilX}% ${foilY}%`,
+                            mixBlendMode: 'overlay',
+                        }}
+                    />
+
+                    {/* Scanlines */}
+                    <div
+                        className="absolute inset-0 pointer-events-none opacity-20 z-10"
+                        style={{
+                            backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 2px, ${
+                                isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'
+                            } 2px, ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'} 4px)`,
+                            animation: isHovered ? 'scanlines 8s linear infinite' : 'none',
+                        }}
+                    />
+
+                    {/* Status Badge */}
+                    <div className="absolute top-3 right-3 z-20">
+                        <div
+                            className="px-2 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider"
+                            style={{
+                                background: member.status === 'ACTIVE' ? '#34A85330' : '#FBBC0430',
+                                color: member.status === 'ACTIVE' ? '#34A853' : '#FBBC04',
+                                border: `1px solid ${member.status === 'ACTIVE' ? '#34A853' : '#FBBC04'}50`,
+                            }}
+                        >
+                            {member.status}
+                        </div>
+                    </div>
+
+                    {/* Avatar / Photo with Monogram Fallback */}
+                    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                        {member.image && !imgError ? (
+                            <img
+                                src={member.image}
+                                alt={member.name}
+                                onError={() => setImgError(true)}
+                                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                            />
+                        ) : (
+                            <motion.div
+                                animate={isHovered ? { scale: 1.1, rotate: 4 } : { scale: 1, rotate: 0 }}
+                                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                                className="w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-display font-bold"
+                                style={{
+                                    backgroundColor: `${member.color}20`,
+                                    color: member.color,
+                                    border: `2px solid ${member.color}50`,
+                                    boxShadow: `0 0 30px ${member.color}35`,
+                                }}
+                            >
+                                {member.initial}
+                            </motion.div>
+                        )}
+                    </div>
+
+                    {/* Bottom Info Gradient */}
+                    <div
+                        className="absolute bottom-0 left-0 right-0 p-4 z-20"
+                        style={{
+                            background: `linear-gradient(to top, rgba(15, 23, 42, 0.96) 0%, rgba(15, 23, 42, 0.82) 65%, transparent 100%)`,
+                        }}
+                    >
+                        <div className="flex justify-between items-end">
+                            <div className="flex-1 min-w-0 mr-2">
+                                <p
+                                    className="text-[10px] font-mono tracking-[0.3em] mb-1 truncate"
+                                    style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                                >
+                                    // {member.codename}
+                                </p>
+                                <h4
+                                    className="font-display text-base sm:text-lg leading-tight truncate text-white"
+                                >
+                                    {member.name}
+                                </h4>
+                                <p
+                                    className="text-xs font-mono mt-0.5 truncate font-bold"
+                                    style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                                >
+                                    {member.role}
+                                </p>
+                            </div>
+
+                            {/* Contact icons & Right Arrow Dossier button */}
+                            <div className="flex items-center gap-1.5 relative z-30" onClick={(e) => e.stopPropagation()}>
+                                {member.linkedin && (
+                                    <a
+                                        href={member.linkedin}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`${member.name} on LinkedIn`}
+                                        className="p-1.5 rounded-full bg-white/10 hover:bg-[#0A66C2] transition-colors backdrop-blur-sm"
+                                    >
+                                        <Linkedin className="w-3.5 h-3.5 text-white/80 hover:text-white" />
+                                    </a>
+                                )}
+                                {member.email && (
+                                    <a
+                                        href={`mailto:${member.email}`}
+                                        title={`Email ${member.name}`}
+                                        className="p-1.5 rounded-full bg-white/10 hover:bg-[#EA4335] transition-colors backdrop-blur-sm"
+                                    >
+                                        <Mail className="w-3.5 h-3.5 text-white/80 hover:text-white" />
+                                    </a>
+                                )}
+
+                                {/* Minimal Right Arrow Button (no dossier text) */}
+                                <button
+                                    type="button"
+                                    onClick={() => onOpenModal(member)}
+                                    className="p-1.5 rounded-full bg-white/20 hover:bg-white text-white hover:text-slate-900 transition-all shadow-md hover:scale-110 active:scale-95"
+                                    title={`View ${member.name}'s Dossier`}
+                                    aria-label={`View ${member.name}'s Dossier`}
+                                >
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Corner decorations */}
+                    <div
+                        className="absolute top-0 left-0 w-7 h-7 pointer-events-none z-10"
+                        style={{ borderTop: `2px solid ${member.color}60`, borderLeft: `2px solid ${member.color}60` }}
+                    />
+                    <div
+                        className="absolute bottom-0 right-0 w-7 h-7 pointer-events-none z-10"
+                        style={{ borderBottom: `2px solid ${member.color}60`, borderRight: `2px solid ${member.color}60` }}
+                    />
+                </div>
+            </motion.div>
+        </motion.div>
+    )
+}
+
+// ================================
+// MAIN 3D GARAGE COMPONENT
+// ================================
+
+export function TeamGarage3D() {
+    const [activeBay, setActiveBay] = useState<BayId | null>(null)
+    const [pageIndex, setPageIndex] = useState(0)
+    const { theme } = useTheme()
+    const isDark = theme !== 'light'
+    const { openModal } = useTeamStore()
+
+    // Real dynamic members mapped to bays
+    const garageMembersByBay = useMemo(() => getGarageMembersByBay(), [])
+
+    const activeBayData = useMemo(() => {
+        return GARAGE_BAYS.find((b) => b.id === activeBay) || null
+    }, [activeBay])
+
+    const activeMembers = useMemo(() => {
+        if (!activeBay) return []
+        return garageMembersByBay[activeBay] || []
+    }, [activeBay, garageMembersByBay])
+
+    // Reset pagination when active bay changes
+    useEffect(() => {
+        setPageIndex(0)
+    }, [activeBay])
+
+    // Dynamic color for active bay in current theme
+    const activeColor = activeBayData ? getBayThemeColor(activeBayData.id, isDark) : '#4285F4'
+
+    // Show 2 or 3 cards side-by-side:
+    // If <= 3 members, show all. If > 3 members, paginate by 3.
+    const pageSize = 3
+    const totalPages = Math.ceil(activeMembers.length / pageSize)
+    const displayedMembers = useMemo(() => {
+        if (activeMembers.length <= 3) return activeMembers
+        const start = pageIndex * pageSize
+        return activeMembers.slice(start, start + pageSize)
+    }, [activeMembers, pageIndex, pageSize])
+
+    return (
+        <div
+            className={`relative w-full h-[85vh] md:h-screen overflow-hidden select-none transition-colors duration-300 ${
+                isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
+            }`}
+        >
+            {/* Top Command Header HUD */}
+            <div className="absolute top-6 left-6 z-20 pointer-events-none">
+                <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    <p
+                        className={`text-[10px] font-mono tracking-[0.3em] font-bold ${
+                            isDark ? 'text-blue-400' : 'text-blue-600'
+                        }`}
+                    >
+                        COMMAND DECK // HOLOGRAPHIC GARAGE
                     </p>
                 </div>
-                <h2 className="text-4xl md:text-5xl font-display text-[rgb(var(--foreground))] transition-colors duration-300">
-                    CORE <span style={{ color: bayData?.color ? bayData.color : 'rgb(var(--text-primary-raw))' }}>TEAM</span>
+                <h2
+                    className={`text-2xl sm:text-4xl md:text-5xl font-display font-bold tracking-tight ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                    }`}
+                >
+                    CHAPTER <span className={isDark ? 'text-blue-400' : 'text-blue-600'}>LEADS</span>
                 </h2>
-                {bayData && (
-                    <p className="text-[rgb(var(--foreground))]/40 font-mono text-xs mt-2 transition-colors duration-300">
-                        SELECTED // {bayData.members.length} OPERATIVES IN {bayData.name}
-                    </p>
-                )}
+                <p className={`text-xs font-mono mt-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    {activeBayData ? (
+                        <>
+                            INSPECTING //{' '}
+                            <span style={{ color: activeColor }} className="font-bold">
+                                {activeBayData.name} ({activeMembers.length} LEADS)
+                            </span>
+                        </>
+                    ) : (
+                        'CLICK A COMMAND PODIUM TO INSPECT OPERATIVES'
+                    )}
+                </p>
             </div>
 
-            {/* Bottom status */}
-            <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[10px] font-mono text-[rgb(var(--foreground))]/30 transition-colors duration-300">
-                <span>SYSTEM: <span className="text-green-600">ONLINE</span></span>
-                <span>SELECT BAY TO VIEW OPERATIVES</span>
-            </div>
-        </div>
-    )
-}
-
-// ================================
-// LOADER
-// ================================
-
-function Loader({ colors }: { colors: string[] }) {
-    const palette = colors.length > 0 ? colors : ['#4285F4', '#EA4335', '#FBBC04', '#34A853']
-    return (
-        <Html center>
-            <div className="flex gap-2">
-                {palette.map((color, i) => (
-                    <div
-                        key={color}
-                        className="w-3 h-3 rounded-full animate-pulse"
-                        style={{ backgroundColor: color, animationDelay: `${i * 0.15}s` }}
-                    />
-                ))}
-            </div>
-        </Html>
-    )
-}
-
-// ================================
-// MAIN COMPONENT
-// ================================
-
-interface TeamGarage3DProps {
-    membersByBay?: TeamGarageMembersByBay
-    layoutMode?: 'classic' | 'grid'
-    bayMeta?: TeamGarageBayMeta[]
-    cameraConfig?: TeamGarageCameraConfig
-}
-
-export function TeamGarage3D({ membersByBay, layoutMode, bayMeta, cameraConfig }: TeamGarage3DProps) {
-    const [activeBay, setActiveBay] = useState<BayId | null>(null)
-    const { theme } = useTheme()
-    const resolvedBayMeta = useMemo(() => bayMeta ?? DEFAULT_BAY_META, [bayMeta])
-    const baysData = useMemo(() => resolveBaysData(resolvedBayMeta, membersByBay), [resolvedBayMeta, membersByBay])
-    const loaderColors = useMemo(() => baysData.map((bay) => bay.color), [baysData])
-    const resolvedLayoutMode = layoutMode ?? 'classic'
-    const resolvedCameraConfig = useMemo(() => ({
-        overviewZ: 6,
-        overviewY: 1,
-        focusZ: 3,
-        fov: 50,
-        ...cameraConfig,
-    }), [cameraConfig])
-
-    return (
-        <div className="relative w-full h-screen bg-background transition-colors duration-300">
-            <UIOverlay activeBay={activeBay} baysData={baysData} />
-
+            {/* Three.js Canvas */}
             <Canvas
-                camera={{
-                    position: [0, resolvedCameraConfig.overviewY, resolvedCameraConfig.overviewZ],
-                    fov: resolvedCameraConfig.fov,
-                }}
+                camera={{ position: [0, 1.8, 8.5], fov: 48 }}
                 dpr={[1, 2]}
-                gl={{ antialias: true }}
+                gl={{ antialias: true, alpha: false }}
             >
-                <Suspense fallback={<Loader colors={loaderColors} />}>
-                    <Scene
-                        activeBay={activeBay}
-                        onSelectBay={setActiveBay}
-                        isDark={theme === 'dark'}
-                        baysData={baysData}
-                        layoutMode={resolvedLayoutMode}
-                        overviewZ={resolvedCameraConfig.overviewZ}
-                        focusZ={resolvedCameraConfig.focusZ}
-                    />
+                <Suspense fallback={null}>
+                    <CyberEnvironment isDark={isDark} />
+                    <CameraController activeBay={activeBay} />
+
+                    {/* Render the 5 Bay Podiums in 3D */}
+                    {GARAGE_BAYS.map((bay) => (
+                        <CyberPodium
+                            key={bay.id}
+                            bay={bay}
+                            isActive={activeBay === bay.id}
+                            hasActiveBay={activeBay !== null}
+                            isDark={isDark}
+                            onClick={() => setActiveBay(activeBay === bay.id ? null : bay.id)}
+                        />
+                    ))}
                 </Suspense>
             </Canvas>
 
-            {/* Back button when bay is selected */}
-            {activeBay && (
-                <button
-                    onClick={() => setActiveBay(null)}
-                    className="absolute top-6 right-6 px-4 py-2 font-mono text-xs text-[rgb(var(--foreground))]/50 hover:text-[rgb(var(--foreground))] border border-[rgb(var(--foreground))]/20 hover:border-[rgb(var(--foreground))]/40 rounded transition-all z-20"
+            {/* ======================================================== */}
+            {/* INDIVIDUAL HOLOGRAPHIC CARDS (MATCHING TEAM PAGE STYLE)   */}
+            {/* ======================================================== */}
+            <AnimatePresence>
+                {activeBayData && displayedMembers.length > 0 && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-4 pointer-events-none">
+                        {/* Subtle backdrop overlay for focus */}
+                        <div
+                            className="absolute inset-0 bg-black/40 backdrop-blur-[2px] pointer-events-auto cursor-pointer"
+                            onClick={() => setActiveBay(null)}
+                        />
+
+                        {/* Top Controls Strip */}
+                        <motion.div
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="relative z-10 mb-4 flex items-center justify-between gap-3 px-4 py-2 rounded-2xl backdrop-blur-xl border shadow-xl pointer-events-auto"
+                            style={{
+                                backgroundColor: isDark ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.94)',
+                                borderColor: `${activeColor}60`,
+                                boxShadow: `0 10px 30px -10px ${activeColor}33`,
+                            }}
+                        >
+                            <div className="flex items-center gap-2">
+                                <span
+                                    className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-widest uppercase"
+                                    style={{
+                                        backgroundColor: `${activeColor}20`,
+                                        color: activeColor,
+                                        border: `1px solid ${activeColor}50`,
+                                    }}
+                                >
+                                    {activeBayData.name}
+                                </span>
+                                <span
+                                    className={`text-[11px] font-mono font-bold ${
+                                        isDark ? 'text-slate-300' : 'text-slate-700'
+                                    }`}
+                                >
+                                    {activeMembers.length} LEADS
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {activeMembers.length > 3 && (
+                                    <div className="flex items-center gap-1.5 mr-1">
+                                        <span
+                                            className={`text-[10px] font-mono ${
+                                                isDark ? 'text-slate-400' : 'text-slate-500'
+                                            }`}
+                                        >
+                                            {pageIndex * pageSize + 1}-
+                                            {Math.min((pageIndex + 1) * pageSize, activeMembers.length)} OF{' '}
+                                            {activeMembers.length}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setPageIndex((p) => (p > 0 ? p - 1 : totalPages - 1))
+                                            }}
+                                            className={`p-1 rounded-lg transition-colors ${
+                                                isDark
+                                                    ? 'bg-slate-800 text-slate-300 hover:text-white'
+                                                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                                            }`}
+                                            title="Previous Operatives"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setPageIndex((p) => (p < totalPages - 1 ? p + 1 : 0))
+                                            }}
+                                            className={`p-1 rounded-lg transition-colors ${
+                                                isDark
+                                                    ? 'bg-slate-800 text-slate-300 hover:text-white'
+                                                    : 'bg-slate-100 text-slate-600 hover:text-slate-900'
+                                            }`}
+                                            title="Next Operatives"
+                                        >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveBay(null)}
+                                    className={`p-1.5 rounded-lg transition-colors ${
+                                        isDark
+                                            ? 'bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white'
+                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900'
+                                    }`}
+                                    title="Close Inspector"
+                                    aria-label="Close Inspector"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </motion.div>
+
+                        {/* Individual Holographic Cards with 3D Tilt Physics */}
+                        <div className="relative z-10 flex flex-wrap sm:flex-nowrap items-center justify-center gap-4 md:gap-6 max-w-full overflow-x-auto p-2 pointer-events-auto scrollbar-none">
+                            {displayedMembers.map((member, idx) => (
+                                <HolographicGarageCard
+                                    key={member.id}
+                                    member={member}
+                                    index={idx}
+                                    isDark={isDark}
+                                    onOpenModal={openModal}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* ======================================================== */}
+            {/* FLOATING CYBER HUD DOCK AT BOTTOM (STRICTLY NO EMOJIS)    */}
+            {/* ======================================================== */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-[94%] max-w-3xl">
+                <div
+                    className={`p-2 md:p-2.5 rounded-2xl backdrop-blur-xl border shadow-2xl flex flex-wrap items-center justify-between gap-2 transition-colors duration-300 ${
+                        isDark
+                            ? 'bg-slate-900/90 border-slate-700/60'
+                            : 'bg-white/95 border-slate-200/90'
+                    }`}
                 >
-                    ← BACK TO OVERVIEW
-                </button>
-            )}
+                    {/* Bay Switcher Buttons with clean Lucide SVG icons */}
+                    <div className="flex flex-wrap items-center gap-1 md:gap-1.5 flex-1 min-w-0">
+                        {GARAGE_BAYS.map((bay) => {
+                            const isCurrent = activeBay === bay.id
+                            const count = (garageMembersByBay[bay.id] || []).length
+                            const bayColor = getBayThemeColor(bay.id, isDark)
+                            return (
+                                <button
+                                    key={bay.id}
+                                    type="button"
+                                    onClick={() => setActiveBay(isCurrent ? null : bay.id)}
+                                    className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold transition-all duration-300 flex items-center gap-1.5 ${
+                                        isCurrent
+                                            ? isDark
+                                                ? 'text-white shadow-lg'
+                                                : 'text-slate-900 shadow-md'
+                                            : isDark
+                                            ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                    }`}
+                                    style={
+                                        isCurrent
+                                            ? {
+                                                  backgroundColor: `${bayColor}26`,
+                                                  border: `1px solid ${bayColor}`,
+                                                  boxShadow: `0 0 15px ${bayColor}33`,
+                                              }
+                                            : { border: '1px solid transparent' }
+                                    }
+                                >
+                                    {renderBayIcon(bay.iconType, 'w-3.5 h-3.5')}
+                                    <span className="hidden sm:inline">{bay.name}</span>
+                                    <span
+                                        className="px-1.5 py-0.2 rounded-full text-[9px]"
+                                        style={{ backgroundColor: `${bayColor}33`, color: bayColor }}
+                                    >
+                                        {count}
+                                    </span>
+                                </button>
+                            )
+                        })}
+                    </div>
+
+                    {/* Reset Overview & Full Roster Navigation */}
+                    <div className="flex items-center gap-2">
+                        {activeBay && (
+                            <button
+                                type="button"
+                                onClick={() => setActiveBay(null)}
+                                className={`px-2.5 py-1.5 rounded-xl text-xs font-mono transition-colors flex items-center gap-1 border ${
+                                    isDark
+                                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border-slate-200'
+                                }`}
+                                title="Return to Overview"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span className="hidden md:inline">OVERVIEW</span>
+                            </button>
+                        )}
+
+                        <Link
+                            to="/team"
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-mono font-bold transition-all shadow-md hover:shadow-blue-500/25 flex items-center gap-1 shrink-0"
+                        >
+                            <span>ALL {TEAM_MEMBERS.length} OPERATIVES</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                        </Link>
+                    </div>
+                </div>
+
+                <p
+                    className={`text-[10px] font-mono text-center mt-2 ${
+                        isDark ? 'text-slate-400' : 'text-slate-500'
+                    }`}
+                >
+                    CLICK ANY PODIUM OR DOCK TAB TO INSPECT LEADS // FULL DOSSIER ACCESSIBLE ON DEMAND
+                </p>
+            </div>
+
+            <style>{`
+                @keyframes scanlines { 0% { background-position: 0 0; } 100% { background-position: 0 100px; } }
+                .perspective-1000 { perspective: 1000px; }
+            `}</style>
         </div>
     )
 }

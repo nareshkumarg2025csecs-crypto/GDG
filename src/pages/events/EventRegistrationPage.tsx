@@ -15,6 +15,8 @@ import {
   Loader2,
   Mail,
   MailCheck,
+  QrCode,
+  User,
   Users,
   UploadCloud,
   Paperclip,
@@ -193,6 +195,7 @@ export const EventRegistrationPage: React.FC = () => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [confirmationEmailTo, setConfirmationEmailTo] = useState<string | null>(null);
+  const [isEmailSent, setIsEmailSent] = useState<boolean | null>(null);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
   const [uploadedFilesMeta, setUploadedFilesMeta] = useState<Record<string, { name: string; size: number }>>({});
 
@@ -458,6 +461,26 @@ export const EventRegistrationPage: React.FC = () => {
     return profile?.full_name || 'Attendee';
   }, [answers, fields, profile]);
 
+  // Resolve whether event sends registration QR email or shows on-screen confirmation only
+  const isEmailMode = useMemo(() => {
+    if (details.send_qr_email === false) return false;
+    if (details.email_config && details.email_config.enabled === false) return false;
+    if (form?.schema?.send_qr_email === false) return false;
+    if (form?.schema?.email_config && form?.schema?.email_config.enabled === false) return false;
+    return true;
+  }, [details, form]);
+
+  // Resolve whether QR code ticket pass is enabled for attendees
+  // Must be false if email is OFF. If email is ON, follows include_qr setting.
+  const isQrEnabled = useMemo(() => {
+    if (!isEmailMode) return false;
+    if (details.include_qr === false) return false;
+    if (details.email_config && details.email_config.include_qr === false) return false;
+    if (form?.schema?.include_qr === false) return false;
+    if (form?.schema?.email_config && form?.schema?.email_config.include_qr === false) return false;
+    return true;
+  }, [isEmailMode, details, form]);
+
   // Answer change handler
   const handleAnswerChange = (fieldName: string, value: any) => {
     setAnswers((prev) => ({ ...prev, [fieldName]: value }));
@@ -524,13 +547,17 @@ export const EventRegistrationPage: React.FC = () => {
       if (submitRes?.confirmation_email_sent_to) {
         setConfirmationEmailTo(submitRes.confirmation_email_sent_to);
       }
+      const wasEmailDispatched = submitRes?.email_dispatched === true;
+      setIsEmailSent(wasEmailDispatched);
       setIsRegistered(true);
       setSubmittedAt(submitRes?.submission?.submitted_at || new Date().toISOString());
       setIsSuccess(true);
 
       toast({
         title: 'Registration Confirmed 🎉',
-        description: `You have registered for "${event?.title}". A confirmation email with your QR pass has been sent!`,
+        description: wasEmailDispatched
+          ? `You have registered for "${event?.title}". A confirmation email with your QR pass has been sent!`
+          : `You have registered for "${event?.title}"! Your seat has been reserved.`,
       });
     } catch (err: any) {
       if (err.status === 409) {
@@ -654,33 +681,44 @@ export const EventRegistrationPage: React.FC = () => {
                 </div>
               </motion.div>
 
-              {/* Confirmation Email Alert Notice */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-2xl bg-google-blue/10 border border-google-blue/30 text-foreground flex items-start gap-3.5 shadow-sm overflow-hidden"
-              >
-                <div className="w-8 h-8 rounded-full bg-google-blue/20 text-google-blue flex items-center justify-center shrink-0 mt-0.5">
-                  <MailCheck className="w-4 h-4" />
-                </div>
-                <div className="space-y-1 text-xs min-w-0 flex-1">
-                  <p className="font-bold text-google-blue text-sm">Confirmation Email Sent</p>
-                  <p className="text-muted-foreground leading-relaxed break-words [overflow-wrap:anywhere]">
-                    An automated confirmation email with your official event pass and check-in QR code has been dispatched to{' '}
-                    <strong className="text-foreground font-semibold break-all [word-break:break-all]">
-                      {submittedEmail}
-                    </strong>. Please check your inbox to view and download your pass.
-                  </p>
-                </div>
-              </motion.div>
+              {/* Dynamic Notification Card: When email is enabled, show email dispatched card */}
+              {isEmailMode && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 rounded-2xl bg-google-blue/10 border border-google-blue/30 text-foreground flex items-start gap-3.5 shadow-sm overflow-hidden"
+                >
+                  <div className="w-8 h-8 rounded-full bg-google-blue/20 text-google-blue flex items-center justify-center shrink-0 mt-0.5">
+                    <MailCheck className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 text-xs min-w-0 flex-1">
+                    <p className="font-bold text-google-blue text-sm">Confirmation Email Sent</p>
+                    <p className="text-muted-foreground leading-relaxed break-words [overflow-wrap:anywhere]">
+                      {isQrEnabled ? (
+                        <>
+                          An automated confirmation email with your official event pass and check-in QR code has been dispatched to{' '}
+                          <strong className="text-foreground font-semibold break-all [word-break:break-all]">
+                            {submittedEmail}
+                          </strong>. You can also view, save, or download your ticket pass directly below.
+                        </>
+                      ) : (
+                        <>
+                          An automated confirmation email with your event details and schedule has been dispatched to{' '}
+                          <strong className="text-foreground font-semibold break-all [word-break:break-all]">
+                            {submittedEmail}
+                          </strong>.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </motion.div>
+              )}
             </>
           )}
 
-          {/* QR Code Ticket Pass Card:
-              - Visible when opened through the link in the email (?ticket=...)
-              - Disabled on website registration by default (set SHOW_QR_PASS_DIRECTLY_ON_WEBSITE = true to enable anytime)
-          */}
-          {(isFromEmailTicket || SHOW_QR_PASS_DIRECTLY_ON_WEBSITE) && (
+          {/* Conditional Ticket Pass / Confirmation Card */}
+          {isQrEnabled ? (
+            /* QR Code Ticket Pass Card: Only rendered when QR is explicitly enabled */
             <EventTicketPass
               event={event}
               submissionId={submissionId || undefined}
@@ -690,6 +728,70 @@ export const EventRegistrationPage: React.FC = () => {
               attendeeName={submittedName}
               attendeeEmail={submittedEmail}
             />
+          ) : (
+            /* When email is disabled or QR is excluded: No QR generated or shown! Clean confirmation summary on screen */
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-6 sm:p-8 rounded-3xl border border-border bg-card text-card-foreground shadow-xl space-y-6"
+            >
+              <div className="flex items-center justify-between border-b border-border/60 pb-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-google-green animate-pulse" />
+                  <span className="text-xs font-mono font-bold uppercase text-foreground">
+                    Confirmed Registration
+                  </span>
+                </div>
+                <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-google-green/10 text-google-green border border-google-green/20">
+                  Seat Reserved ✓
+                </span>
+              </div>
+
+              {/* Event Overview */}
+              <div className="space-y-3">
+                <h2 className="text-xl sm:text-2xl font-bold font-sans text-foreground">
+                  {event.title}
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-muted/40 border border-border text-xs">
+                  <div>
+                    <span className="font-mono text-muted-foreground uppercase font-bold text-[10px]">Date</span>
+                    <p className="font-semibold text-sm mt-0.5 text-foreground">
+                      {event.details?.startTime ? formatEventDate(event.details.startTime) : 'Event Date'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-mono text-muted-foreground uppercase font-bold text-[10px]">Time</span>
+                    <p className="font-semibold text-sm mt-0.5 text-foreground">
+                      {event.details?.startTime ? formatEventTimeRange(event.details.startTime, event.details.endTime) : 'Scheduled Time'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-mono text-muted-foreground uppercase font-bold text-[10px]">Venue</span>
+                    <p className="font-semibold text-sm mt-0.5 text-foreground truncate">
+                      {event.details?.location || event.details?.venue || 'Campus Venue'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Attendee Details Summary */}
+              <div className="p-4 rounded-2xl bg-muted/20 border border-border/80 space-y-2 text-xs">
+                <span className="font-mono text-muted-foreground uppercase font-bold text-[10px]">
+                  Registered Attendee
+                </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="font-bold text-foreground text-sm">{submittedName}</span>
+                  <span className="text-muted-foreground font-mono">{submittedEmail}</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/20 text-xs text-foreground flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-google-green shrink-0" />
+                <p className="text-muted-foreground">
+                  No QR ticket pass is required for this event. Your response has been securely saved and you are all set!
+                </p>
+              </div>
+            </motion.div>
           )}
 
           {/* Additional Actions */}
@@ -974,9 +1076,30 @@ export const EventRegistrationPage: React.FC = () => {
 
         {/* Event Header Banner */}
         <div className="p-6 rounded-2xl border bg-card text-card-foreground shadow-sm space-y-3">
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20">
-            {details.category || 'Workshop Registration'}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20">
+              {details.category || 'Workshop Registration'}
+            </span>
+            {details.participation_type && (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase font-mono ${
+                details.participation_type.toLowerCase() === 'team'
+                  ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                  : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+              }`}>
+                {details.participation_type.toLowerCase() === 'team' ? (
+                  <>
+                    <Users className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Team Event</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Individual Event</span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
           <h1 className="text-2xl sm:text-3xl font-bold font-sans">{event.title}</h1>
           <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1">
             <div className="flex items-center gap-1.5">
@@ -1022,20 +1145,25 @@ export const EventRegistrationPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-5">
             {fields.map((field) => {
               const fieldError = formErrors[field.name];
+              const inputId = `reg_field_${field.name || field.id}`;
+              const errorId = `reg_error_${field.name || field.id}`;
 
               return (
                 <div key={field.id} className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-foreground/90">
+                  <label htmlFor={inputId} className="block text-xs font-semibold text-foreground/90">
                     {field.label} {field.required && <span className="text-google-red">*</span>}
                   </label>
 
                   {/* Text Input */}
                   {field.type === 'text' && (
                     <input
+                      id={inputId}
                       type="text"
                       placeholder={field.placeholder || ''}
                       value={answers[field.name] || ''}
                       onChange={(e) => handleAnswerChange(field.name, e.target.value)}
+                      aria-invalid={Boolean(fieldError)}
+                      aria-describedby={fieldError ? errorId : undefined}
                       className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
                         fieldError
                           ? 'border-destructive focus:ring-destructive/30'
@@ -1047,10 +1175,13 @@ export const EventRegistrationPage: React.FC = () => {
                   {/* Textarea Input */}
                   {field.type === 'textarea' && (
                     <textarea
+                      id={inputId}
                       rows={3}
                       placeholder={field.placeholder || ''}
                       value={answers[field.name] || ''}
                       onChange={(e) => handleAnswerChange(field.name, e.target.value)}
+                      aria-invalid={Boolean(fieldError)}
+                      aria-describedby={fieldError ? errorId : undefined}
                       className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
                         fieldError
                           ? 'border-destructive focus:ring-destructive/30'
@@ -1062,10 +1193,13 @@ export const EventRegistrationPage: React.FC = () => {
                   {/* Email Input */}
                   {field.type === 'email' && (
                     <input
+                      id={inputId}
                       type="email"
                       placeholder={field.placeholder || 'your.email@example.com'}
                       value={answers[field.name] || ''}
                       onChange={(e) => handleAnswerChange(field.name, e.target.value)}
+                      aria-invalid={Boolean(fieldError)}
+                      aria-describedby={fieldError ? errorId : undefined}
                       className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
                         fieldError
                           ? 'border-destructive focus:ring-destructive/30'
@@ -1077,10 +1211,13 @@ export const EventRegistrationPage: React.FC = () => {
                   {/* Number Input */}
                   {field.type === 'number' && (
                     <input
+                      id={inputId}
                       type="number"
                       placeholder={field.placeholder || ''}
                       value={answers[field.name] !== undefined ? answers[field.name] : ''}
                       onChange={(e) => handleAnswerChange(field.name, e.target.value)}
+                      aria-invalid={Boolean(fieldError)}
+                      aria-describedby={fieldError ? errorId : undefined}
                       className={`w-full px-3.5 py-2.5 rounded-xl border bg-background text-sm text-foreground focus:outline-none focus:ring-2 transition-all ${
                         fieldError
                           ? 'border-destructive focus:ring-destructive/30'
@@ -1089,24 +1226,50 @@ export const EventRegistrationPage: React.FC = () => {
                     />
                   )}
 
-                  {/* Dropdown Select — uses SearchableSelect for proper mobile scroll behaviour */}
-                  {field.type === 'select' && (() => {
+                  {/* Dropdown Select & Hackathon Track Select — uses SearchableSelect for proper mobile scroll behaviour */}
+                  {(field.type === 'select' || field.type === 'hackathon_track') && (() => {
                     const currentAnswer = String(answers[field.name] || '');
                     const fieldOptions: string[] = field.options || [];
                     const hasOtherOption = fieldOptions.includes('Other');
                     const isExplicitOther = currentAnswer.startsWith('Other: ') || currentAnswer === 'Other';
                     const isKnownOption = fieldOptions.includes(currentAnswer);
-                    const showOtherInput = isExplicitOther || (!isKnownOption && currentAnswer !== '');
+
+                    // Suppress "Other" for hackathon tracks, option-limited fields, or when allow_other is explicitly false
+                    const shouldAllowOther = field.type !== 'hackathon_track' && field.allow_other !== false && !field.enable_option_limits;
+                    const showOtherInput = shouldAllowOther && (isExplicitOther || (!isKnownOption && currentAnswer !== ''));
+
                     // The value fed into SearchableSelect must be one of the option values
                     const selectedValue = isKnownOption ? currentAnswer : (showOtherInput ? 'Other' : '');
                     const otherText = currentAnswer.startsWith('Other: ')
                       ? currentAnswer.replace('Other: ', '')
                       : (currentAnswer === 'Other' ? '' : (isKnownOption ? '' : currentAnswer));
 
-                    // Build option list; append 'Other' if the field has options but no explicit Other
-                    const selectOptions = hasOtherOption
+                    // Build option list: append 'Other' only if explicitly permitted
+                    const baseOptions = hasOtherOption || !shouldAllowOther
                       ? fieldOptions
                       : [...fieldOptions, 'Other'];
+
+                    const hasLimits = Boolean(field.enable_option_limits || field.type === 'hackathon_track');
+                    const selectOptions = hasLimits && field.option_stats
+                      ? baseOptions.map((opt) => {
+                          const stat = field.option_stats?.[opt];
+                          if (stat && stat.limit !== null && stat.limit !== undefined && stat.limit > 0) {
+                            const isFull = Boolean(stat.is_full || (stat.remaining !== null && stat.remaining <= 0));
+                            return {
+                              label: opt,
+                              value: opt,
+                              disabled: isFull,
+                              badge: isFull ? 'SLOTS FULL' : `${stat.remaining} left`,
+                              subtext: `${stat.count} / ${stat.limit} registered`,
+                            };
+                          }
+                          return {
+                            label: opt,
+                            value: opt,
+                            badge: opt === 'Other' ? undefined : 'Open',
+                          };
+                        })
+                      : baseOptions;
 
                     return (
                       <div className="space-y-2">
@@ -1120,10 +1283,17 @@ export const EventRegistrationPage: React.FC = () => {
                             }
                           }}
                           options={selectOptions}
-                          placeholder="-- Select an option --"
+                          placeholder={field.type === 'hackathon_track' ? '-- Select Hackathon Track / Domain --' : '-- Select an option --'}
                           error={Boolean(fieldError)}
                           accentColor="blue"
                         />
+
+                        {hasLimits && (
+                          <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-google-blue shrink-0 animate-pulse" />
+                            <span>Track capacities update live. Options marked <strong>SLOTS FULL</strong> have reached maximum registration limit.</span>
+                          </p>
+                        )}
 
                         {showOtherInput && (
                           <div className="space-y-1 pl-0.5 animate-in fade-in duration-200">
@@ -1259,7 +1429,7 @@ export const EventRegistrationPage: React.FC = () => {
                     );
                   })()}
 
-                  {fieldError && <p className="text-xs text-destructive mt-1">{fieldError}</p>}
+                  {fieldError && <p id={errorId} role="alert" className="text-xs text-destructive mt-1">{fieldError}</p>}
                 </div>
               );
             })}
