@@ -4,7 +4,7 @@ const { BoundedMap } = require('../utils/boundedCache');
 const PosterStorageService = require('../services/posterStorageService');
 
 // In-memory bounded cache for high-traffic event reads (capped to 200 items for Render 512MB RAM)
-const EVENT_CACHE_TTL = 120 * 1000; // 120 seconds (cuts Supabase egress)
+const EVENT_CACHE_TTL = 300 * 1000; // 300 seconds / 5 minutes (cuts Supabase egress)
 let eventsListCache = { data: null, expiresAt: 0 };
 const singleEventCache = new BoundedMap(200); // id -> { data, expiresAt }
 

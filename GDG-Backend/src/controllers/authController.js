@@ -961,6 +961,58 @@ const logout = async (req, res) => {
 };
 
 /**
+ * POST /api/auth/refresh
+ * Exchanges a valid refresh_token for a new access_token and refresh_token pair.
+ * Keeps the user session perpetually alive and prevents unexpected logouts.
+ */
+const refreshToken = async (req, res) => {
+  try {
+    const { refresh_token } = req.body || {};
+    if (!refresh_token || typeof refresh_token !== 'string' || !refresh_token.trim()) {
+      return res.status(400).json({
+        error: 'Validation error: refresh_token is required.',
+      });
+    }
+
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: refresh_token.trim(),
+    });
+
+    if (error || !data?.session) {
+      return res.status(401).json({
+        error: 'Invalid or expired refresh token. Please sign in again.',
+        details: error ? error.message : undefined,
+      });
+    }
+
+    const { session, user } = data;
+
+    // Fetch user profile to return current role
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, email, full_name, role, details, created_at')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    return res.status(200).json({
+      message: 'Token refreshed successfully.',
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+      user: {
+        id: user.id,
+        email: user.email,
+      },
+      profile: profile || null,
+    });
+  } catch (err) {
+    console.error('Refresh token error:', err);
+    return res.status(500).json({
+      error: 'Internal server error while refreshing session token.',
+    });
+  }
+};
+
+/**
  * GET /api/auth/google/url
  */
 const getGoogleOAuthUrl = async (req, res) => {
@@ -1042,11 +1094,20 @@ const getGoogleOAuthUrl = async (req, res) => {
 const syncGoogleProfile = async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token = null;
+
+    if (authHeader && /^bearer\s+/i.test(authHeader)) {
+      token = authHeader.replace(/^bearer\s+/i, '').trim();
+    } else if (req.body?.access_token || req.body?.token) {
+      token = typeof (req.body.access_token || req.body.token) === 'string'
+        ? (req.body.access_token || req.body.token).trim()
+        : null;
+    }
+
+    if (!token) {
       return res.status(401).json({ error: 'Unauthorized: Missing Bearer token.' });
     }
 
-    const token = authHeader.split(' ')[1];
     const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !userData?.user) {
@@ -1749,6 +1810,7 @@ module.exports = {
   studentLogin,
   adminLogin,
   logout,
+  refreshToken,
   getGoogleOAuthUrl,
   syncGoogleProfile,
   getGmailOAuthUrl,

@@ -123,8 +123,24 @@ export async function apiRequest<T = any>(
       return apiRequest<T>(endpoint, { ...options, retries: retries - 1 });
     }
 
-    // If token is expired or unauthorized, clear stale stored auth session
-    if (response.status === 401 && !url.includes('/api/auth/student/login') && !url.includes('/api/auth/admin/login')) {
+    // If token is expired or unauthorized, attempt silent session refresh before logging out
+    const isAuthEndpoint =
+      cleanEndpoint.includes('/api/auth/student/login') ||
+      cleanEndpoint.includes('/api/auth/admin/login') ||
+      cleanEndpoint.includes('/api/auth/refresh');
+
+    if (response.status === 401 && !isAuthEndpoint) {
+      const refreshedToken = await attemptSilentTokenRefresh();
+      if (refreshedToken) {
+        // Retry the original request seamlessly with the newly refreshed access token
+        return apiRequest<T>(endpoint, {
+          ...options,
+          token: refreshedToken,
+          retries: 0,
+        });
+      }
+
+      // If refresh failed completely, safely clear stored session
       try {
         localStorage.removeItem('gdg_auth_storage');
       } catch (_) {}
@@ -142,15 +158,83 @@ export async function apiRequest<T = any>(
   return data as T;
 }
 
-function getStoredToken(): string | null {
+let activeRefreshPromise: Promise<string | null> | null = null;
+
+async function attemptSilentTokenRefresh(): Promise<string | null> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
+
+  activeRefreshPromise = (async () => {
+    try {
+      const { refreshToken } = getStoredAuthData();
+      if (!refreshToken) {
+        return null;
+      }
+
+      const baseUrl = getApiBaseUrl();
+      const refreshUrl = baseUrl ? `${baseUrl}/api/auth/refresh` : '/api/auth/refresh';
+
+      const res = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!res.ok) {
+        return null;
+      }
+
+      const data = await res.json();
+      if (data?.access_token) {
+        updateStoredSession(data.access_token, data.refresh_token);
+        return data.access_token as string;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+function getStoredAuthData(): { accessToken: string | null; refreshToken: string | null } {
   try {
     const storedAuth = localStorage.getItem('gdg_auth_storage');
     if (storedAuth) {
       const parsed = JSON.parse(storedAuth);
-      return parsed?.state?.accessToken || null;
+      return {
+        accessToken: parsed?.state?.accessToken || null,
+        refreshToken: parsed?.state?.refreshToken || null,
+      };
     }
   } catch {
     // Ignore storage parse errors
   }
-  return null;
+  return { accessToken: null, refreshToken: null };
+}
+
+function updateStoredSession(newAccessToken: string, newRefreshToken?: string | null): void {
+  try {
+    const storedAuth = localStorage.getItem('gdg_auth_storage');
+    if (storedAuth) {
+      const parsed = JSON.parse(storedAuth);
+      if (parsed?.state) {
+        parsed.state.accessToken = newAccessToken;
+        if (newRefreshToken) {
+          parsed.state.refreshToken = newRefreshToken;
+        }
+        localStorage.setItem('gdg_auth_storage', JSON.stringify(parsed));
+      }
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getStoredToken(): string | null {
+  return getStoredAuthData().accessToken;
 }

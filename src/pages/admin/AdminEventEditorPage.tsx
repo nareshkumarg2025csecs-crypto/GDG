@@ -1080,12 +1080,14 @@ export const AdminEventEditorPage: React.FC = () => {
                 body: cfg.body || cfg.html || DEFAULT_EMAIL_HTML_DRAFT,
                 custom_message: cfg.custom_message || '',
                 edit_mode: cfg.edit_mode || (cfg.custom_message ? 'simple' : (cfg.body && cfg.body !== DEFAULT_EMAIL_HTML_DRAFT ? 'advanced' : 'simple')),
-                include_qr: cfg.include_qr !== false,
+                include_qr: cfg.include_qr !== undefined ? cfg.include_qr !== false : (details.include_qr !== false),
               });
             } else {
+              const hasExplicitQr = details.include_qr !== undefined ? details.include_qr !== false : (form.schema?.include_qr !== undefined ? form.schema.include_qr !== false : true);
               setEmailConfig((prev) => ({
                 ...prev,
                 enabled: isEmailEnabled,
+                include_qr: hasExplicitQr,
               }));
             }
 
@@ -1358,6 +1360,7 @@ export const AdminEventEditorPage: React.FC = () => {
         end_time: endTime || startTime,
         capacity: capacity ? Number(capacity) : undefined,
         send_qr_email: emailConfig.enabled,
+        include_qr: emailConfig.enabled ? emailConfig.include_qr !== false : false,
         status: (targetPublished ? 'published' : 'draft') as 'draft' | 'published',
         published: targetPublished,
       };
@@ -3091,18 +3094,35 @@ export const AdminEventEditorPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="pt-2 flex flex-wrap items-center gap-3">
+                    <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={emailConfig.include_qr !== false}
+                          onChange={(e) => setEmailConfig((prev) => ({ ...prev, include_qr: e.target.checked }))}
+                          className="rounded border-input text-google-blue focus:ring-google-blue w-4 h-4"
+                        />
+                        <span className="text-xs font-semibold text-foreground select-none">
+                          Include Official Digital Pass QR Card in email
+                        </span>
+                      </label>
                       <button
                         type="button"
                         onClick={() => setShowEmailPreviewModal(true)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-xs"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-xs self-start sm:self-auto"
                       >
                         <Eye className="w-3.5 h-3.5 text-google-blue" />
                         <span>Preview Default Email Structure</span>
                       </button>
-                      <span className="text-[11px] text-muted-foreground">
-                        Zero setup required &bull; 100% responsive layout with QR code
-                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                      <span>•</span>
+                      {emailConfig.include_qr !== false ? (
+                        <span>Email contains student Ticket ID, event schedule, venue, calendar sync links, and the check-in QR code pass.</span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-medium">QR code excluded: Email contains Ticket ID and schedule without generating or sending a QR pass.</span>
+                      )}
                     </div>
                   </div>
                 ) : (

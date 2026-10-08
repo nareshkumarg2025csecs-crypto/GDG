@@ -7,7 +7,7 @@ const EmailService = require('../services/emailService');
 const { BoundedMap } = require('../utils/boundedCache');
 
 // In-memory bounded cache for high-traffic form reads (capped to 200 items for Render 512MB RAM)
-const FORM_CACHE_TTL = 60 * 1000; // 60 seconds (cuts Supabase egress)
+const FORM_CACHE_TTL = 180 * 1000; // 180 seconds / 3 minutes (cuts Supabase egress)
 const eventFormsCache = new BoundedMap(200); // eventId -> { data, expiresAt }
 const singleFormCache = new BoundedMap(200); // formId -> { data, expiresAt }
 let formsSummaryCache = { data: null, expiresAt: 0 };

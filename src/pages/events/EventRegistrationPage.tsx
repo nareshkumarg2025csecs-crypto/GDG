@@ -470,6 +470,17 @@ export const EventRegistrationPage: React.FC = () => {
     return true;
   }, [details, form]);
 
+  // Resolve whether QR code ticket pass is enabled for attendees
+  // Must be false if email is OFF. If email is ON, follows include_qr setting.
+  const isQrEnabled = useMemo(() => {
+    if (!isEmailMode) return false;
+    if (details.include_qr === false) return false;
+    if (details.email_config && details.email_config.include_qr === false) return false;
+    if (form?.schema?.include_qr === false) return false;
+    if (form?.schema?.email_config && form?.schema?.email_config.include_qr === false) return false;
+    return true;
+  }, [isEmailMode, details, form]);
+
   // Answer change handler
   const handleAnswerChange = (fieldName: string, value: any) => {
     setAnswers((prev) => ({ ...prev, [fieldName]: value }));
@@ -683,10 +694,21 @@ export const EventRegistrationPage: React.FC = () => {
                   <div className="space-y-1 text-xs min-w-0 flex-1">
                     <p className="font-bold text-google-blue text-sm">Confirmation Email Sent</p>
                     <p className="text-muted-foreground leading-relaxed break-words [overflow-wrap:anywhere]">
-                      An automated confirmation email with your official event pass and check-in QR code has been dispatched to{' '}
-                      <strong className="text-foreground font-semibold break-all [word-break:break-all]">
-                        {submittedEmail}
-                      </strong>. You can also view, save, or download your ticket pass directly below.
+                      {isQrEnabled ? (
+                        <>
+                          An automated confirmation email with your official event pass and check-in QR code has been dispatched to{' '}
+                          <strong className="text-foreground font-semibold break-all [word-break:break-all]">
+                            {submittedEmail}
+                          </strong>. You can also view, save, or download your ticket pass directly below.
+                        </>
+                      ) : (
+                        <>
+                          An automated confirmation email with your event details and schedule has been dispatched to{' '}
+                          <strong className="text-foreground font-semibold break-all [word-break:break-all]">
+                            {submittedEmail}
+                          </strong>.
+                        </>
+                      )}
                     </p>
                   </div>
                 </motion.div>
@@ -695,8 +717,8 @@ export const EventRegistrationPage: React.FC = () => {
           )}
 
           {/* Conditional Ticket Pass / Confirmation Card */}
-          {isEmailMode ? (
-            /* QR Code Ticket Pass Card: Only rendered when email is enabled */
+          {isQrEnabled ? (
+            /* QR Code Ticket Pass Card: Only rendered when QR is explicitly enabled */
             <EventTicketPass
               event={event}
               submissionId={submissionId || undefined}
@@ -707,7 +729,7 @@ export const EventRegistrationPage: React.FC = () => {
               attendeeEmail={submittedEmail}
             />
           ) : (
-            /* When email is disabled: No QR generated or shown! Clean confirmation summary on screen */
+            /* When email is disabled or QR is excluded: No QR generated or shown! Clean confirmation summary on screen */
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}

@@ -409,87 +409,99 @@ const EmailService = {
       const answers = submission?.answers || {};
       const fields = form?.schema?.fields || [];
 
-      // Build structured QR text encoding all fields (Default vs Manual Config)
-      let fullQrText = '';
-      const qrConfig = form?.schema?.qr_config || {};
+      // Check whether QR ticket pass should be included in email
+      const emailConfig = form?.schema?.email_config || {};
+      const isQrIncluded = Boolean(
+        emailConfig.include_qr !== false &&
+        eventDetails.include_qr !== false &&
+        form?.schema?.include_qr !== false
+      );
 
-      if (qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()) {
-        const formattedAnswersLines = fields
-          .filter((f) => f.name !== 'email' && f.name !== 'full_name' && f.name !== 'ticket_id' && f.name !== 'email_sent')
-          .map((f) => {
+      let qrBuffer = null;
+
+      if (isQrIncluded) {
+        // Build structured QR text encoding all fields (Default vs Manual Config)
+        let fullQrText = '';
+        const qrConfig = form?.schema?.qr_config || {};
+
+        if (qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()) {
+          const formattedAnswersLines = fields
+            .filter((f) => f.name !== 'email' && f.name !== 'full_name' && f.name !== 'ticket_id' && f.name !== 'email_sent')
+            .map((f) => {
+              const val = answers[f.name] !== undefined ? answers[f.name] : (answers[f.id] !== undefined ? answers[f.id] : '');
+              return (val !== undefined && val !== null && val !== '') ? `${f.label || f.name}: ${val}` : null;
+            })
+            .filter(Boolean)
+            .join('\n');
+
+          const qrVars = {
+            name: attendeeName || 'Attendee',
+            full_name: attendeeName || 'Attendee',
+            email: to,
+            event_title: rawEventTitle,
+            ticket_id: rawTicketId,
+            venue: eventDetails.location || eventDetails.venue || 'Campus Venue / TBA',
+            date: formatEmailDate(eventDetails.startTime || eventDetails.start_time),
+            time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
+            ticket_link: digitalPassLink,
+            event_link: eventLink,
+            registered_at: new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US'),
+            all_form_answers: formattedAnswersLines,
+            all_answers: formattedAnswersLines,
+            form_answers: formattedAnswersLines,
+            form_responses: formattedAnswersLines,
+            ...answers,
+          };
+
+          // Also add field labels as keys so {{Department / Branch}} or {{department}} both work
+          fields.forEach((f) => {
             const val = answers[f.name] !== undefined ? answers[f.name] : (answers[f.id] !== undefined ? answers[f.id] : '');
-            return (val !== undefined && val !== null && val !== '') ? `${f.label || f.name}: ${val}` : null;
-          })
-          .filter(Boolean)
-          .join('\n');
-
-        const qrVars = {
-          name: attendeeName || 'Attendee',
-          full_name: attendeeName || 'Attendee',
-          email: to,
-          event_title: rawEventTitle,
-          ticket_id: rawTicketId,
-          venue: eventDetails.location || eventDetails.venue || 'Campus Venue / TBA',
-          date: formatEmailDate(eventDetails.startTime || eventDetails.start_time),
-          time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
-          ticket_link: digitalPassLink,
-          event_link: eventLink,
-          registered_at: new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US'),
-          all_form_answers: formattedAnswersLines,
-          all_answers: formattedAnswersLines,
-          form_answers: formattedAnswersLines,
-          form_responses: formattedAnswersLines,
-          ...answers,
-        };
-
-        // Also add field labels as keys so {{Department / Branch}} or {{department}} both work
-        fields.forEach((f) => {
-          const val = answers[f.name] !== undefined ? answers[f.name] : (answers[f.id] !== undefined ? answers[f.id] : '');
-          if (val !== undefined && val !== null) {
-            qrVars[f.name] = val;
-            if (f.id) qrVars[f.id] = val;
-            if (f.label) qrVars[f.label] = val;
-          }
-        });
-
-        fullQrText = interpolateVariables(qrConfig.content, qrVars);
-      } else {
-        const qrLines = [
-          'GDG EVENT TICKET',
-          '==============================',
-          `Event: ${eventTitle}`,
-          `Ticket ID: ${ticketId}`,
-          `Name: ${attendeeName || 'Attendee'}`,
-          `Email: ${to}`,
-        ];
-
-        // Append custom form answers
-        fields.forEach((field) => {
-          if (field.name !== 'email' && field.name !== 'full_name' && field.name !== 'ticket_id' && field.name !== 'email_sent') {
-            const val = answers[field.name];
-            if (val !== undefined && val !== null && val !== '') {
-              qrLines.push(`${field.label || field.name}: ${val}`);
+            if (val !== undefined && val !== null) {
+              qrVars[f.name] = val;
+              if (f.id) qrVars[f.id] = val;
+              if (f.label) qrVars[f.label] = val;
             }
-          }
+          });
+
+          fullQrText = interpolateVariables(qrConfig.content, qrVars);
+        } else {
+          const qrLines = [
+            'GDG EVENT TICKET',
+            '==============================',
+            `Event: ${eventTitle}`,
+            `Ticket ID: ${ticketId}`,
+            `Name: ${attendeeName || 'Attendee'}`,
+            `Email: ${to}`,
+          ];
+
+          // Append custom form answers
+          fields.forEach((field) => {
+            if (field.name !== 'email' && field.name !== 'full_name' && field.name !== 'ticket_id' && field.name !== 'email_sent') {
+              const val = answers[field.name];
+              if (val !== undefined && val !== null && val !== '') {
+                qrLines.push(`${field.label || field.name}: ${val}`);
+              }
+            }
+          });
+
+          qrLines.push('------------------------------');
+          qrLines.push(`Date: ${eventDateFormatted}`);
+          qrLines.push(`Time: ${eventTimeFormatted}`);
+          qrLines.push(`Venue: ${eventVenue}`);
+          qrLines.push(`Registered: ${new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US')}`);
+          qrLines.push('==============================');
+          qrLines.push('Google Developer Groups (GDG) On Campus');
+          qrLines.push('Present this QR pass at check-in desk.');
+          fullQrText = qrLines.join('\n');
+        }
+
+        qrBuffer = await generateBrandedQrBuffer(fullQrText, {
+          width: 320,
+          margin: 2,
+          dark: '#0f172a',
+          light: '#ffffff',
         });
-
-        qrLines.push('------------------------------');
-        qrLines.push(`Date: ${eventDateFormatted}`);
-        qrLines.push(`Time: ${eventTimeFormatted}`);
-        qrLines.push(`Venue: ${eventVenue}`);
-        qrLines.push(`Registered: ${new Date(submission?.submitted_at || Date.now()).toLocaleString('en-US')}`);
-        qrLines.push('==============================');
-        qrLines.push('Google Developer Groups (GDG) On Campus');
-        qrLines.push('Present this QR pass at check-in desk.');
-        fullQrText = qrLines.join('\n');
       }
-
-      const qrBuffer = await generateBrandedQrBuffer(fullQrText, {
-        width: 320,
-        margin: 2,
-        dark: '#0f172a',
-        light: '#ffffff',
-      });
 
       // Render custom answers summary table for HTML email
       const customAnswersRows = fields
@@ -507,6 +519,72 @@ const EmailService = {
           `
         )
         .join('');
+
+      // Build Ticket Pass Card HTML (with scannable QR if enabled, or clean confirmation card if QR is excluded)
+      const ticketPassCardHtml = isQrIncluded
+        ? `
+          <!-- Digital Ticket Pass Card (With Inline Scannable QR) -->
+          <tr>
+            <td style="padding: 0 24px 24px 24px;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden; text-align: center; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+                <tr>
+                  <td style="padding: 28px 20px 24px 20px; color: #ffffff;">
+                    <!-- Badge -->
+                    <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 50px; margin-bottom: 12px;">
+                      Official Digital Event Pass
+                    </div>
+
+                    <!-- Unique Ticket ID -->
+                    <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 20px;">
+                      ${ticketId}
+                    </div>
+
+                    <!-- Clean Inline Embedded QR Code Pass -->
+                    <div style="background-color: #ffffff; padding: 14px; border-radius: 18px; display: inline-block; margin-bottom: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.3);">
+                      <img
+                        src="cid:ticket-qr-code"
+                        alt="Event Pass QR - ${ticketId}"
+                        width="200"
+                        height="200"
+                        style="display: block; width: 200px; height: 200px; border: 0; outline: none; border-radius: 10px;"
+                      />
+                    </div>
+
+                    <!-- Check-in Instruction -->
+                    <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 380px; margin: 0 auto;">
+                      📱 <strong>Entrance Check-in:</strong> Present this QR code on your phone at the registration desk for verification.
+                    </div>
+
+                    <!-- Spam / Image Blocking Fallback Notice -->
+                    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #94a3b8; line-height: 1.4; max-width: 420px; margin-left: auto; margin-right: auto;">
+                      💡 <em>Image blocked? Click <strong>"Report Not Spam"</strong> or <strong>"Show Images"</strong> in your mail toolbar, or access your live pass below.</em>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`
+        : `
+          <!-- Registration Confirmed Pass Card (No QR Code Included) -->
+          <tr>
+            <td style="padding: 0 24px 24px 24px;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden; text-align: center; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+                <tr>
+                  <td style="padding: 28px 20px 24px 20px; color: #ffffff;">
+                    <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 50px; margin-bottom: 12px;">
+                      Registration Confirmed
+                    </div>
+                    <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+                      ${ticketId}
+                    </div>
+                    <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+                      ✓ Your seat has been reserved! Please save this Ticket ID for verification at the event entrance.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>`;
 
       const htmlContent = `
 <!DOCTYPE html>
@@ -555,47 +633,7 @@ const EmailService = {
             </td>
           </tr>
 
-          <!-- Digital Ticket Pass Card -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden; text-align: center; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-                <tr>
-                  <td style="padding: 28px 20px 24px 20px; color: #ffffff;">
-                    <!-- Badge -->
-                    <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 50px; margin-bottom: 12px;">
-                      Official Digital Event Pass
-                    </div>
-
-                    <!-- Unique Ticket ID -->
-                    <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 20px;">
-                      ${ticketId}
-                    </div>
-
-                    <!-- Clean Inline Embedded QR Code Pass -->
-                    <div style="background-color: #ffffff; padding: 14px; border-radius: 18px; display: inline-block; margin-bottom: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.3);">
-                      <img
-                        src="cid:ticket-qr-code"
-                        alt="Event Pass QR - ${ticketId}"
-                        width="200"
-                        height="200"
-                        style="display: block; width: 200px; height: 200px; border: 0; outline: none; border-radius: 10px;"
-                      />
-                    </div>
-
-                    <!-- Check-in Instruction -->
-                    <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 380px; margin: 0 auto;">
-                      📱 <strong>Entrance Check-in:</strong> Present this QR code on your phone at the registration desk for verification.
-                    </div>
-
-                    <!-- Spam / Image Blocking Fallback Notice -->
-                    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #94a3b8; line-height: 1.4; max-width: 420px; margin-left: auto; margin-right: auto;">
-                      💡 <em>Image blocked? Click <strong>"Report Not Spam"</strong> or <strong>"Show Images"</strong> in your mail toolbar, or access your live pass below.</em>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+          ${ticketPassCardHtml}
 
           <!-- Event Schedule & Location Grid -->
           <tr>
@@ -747,12 +785,13 @@ const EmailService = {
       `;
 
       // Check for Custom Email Draft Configuration
-      const emailConfig = form?.schema?.email_config || {};
       const isCustomMode = emailConfig.mode === 'custom' && (emailConfig.subject || emailConfig.custom_message || emailConfig.html || emailConfig.body);
 
       let finalHtml = htmlContent;
       let finalSubject = `Registration Confirmed: ${eventTitle} (Ticket ${ticketId})`;
-      let finalText = `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your digital pass and QR code online: ${digitalPassLink}\n\nGDG On Campus`;
+      let finalText = isQrIncluded
+        ? `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your digital pass and QR code online: ${digitalPassLink}\n\nGDG On Campus`
+        : `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your registration details online: ${digitalPassLink}\n\nGDG On Campus`;
 
       if (isCustomMode) {
         const customVars = {
@@ -788,22 +827,25 @@ const EmailService = {
           eventTimeFormatted,
           eventVenue,
           digitalPassLink,
-          includeQr: emailConfig.include_qr !== false,
+          includeQr: isQrIncluded,
         });
 
         finalText = `${populatedBody.replace(/<[^>]+>/g, '')}\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nVenue: ${eventVenue}\nPass: ${digitalPassLink}`;
       }
 
       // 1. Primary Dispatch Method: Official Google Gmail REST API (Scope: https://www.googleapis.com/auth/gmail.send)
-      const gmailAttachments = [
-        {
-          filename: `gdg-pass-qr-${ticketId}.png`,
-          content: qrBuffer,
-          cid: 'ticket-qr-code',
-          contentType: 'image/png',
-          contentDisposition: 'inline',
-        },
-      ];
+      // QR attachment is ONLY attached when include_qr is enabled, dramatically reducing email egress & attachments
+      const gmailAttachments = (isQrIncluded && qrBuffer)
+        ? [
+            {
+              filename: `gdg-pass-qr-${ticketId}.png`,
+              content: qrBuffer,
+              cid: 'ticket-qr-code',
+              contentType: 'image/png',
+              contentDisposition: 'inline',
+            },
+          ]
+        : [];
 
       const gmailApiResult = await GmailApiService.sendMail({
         to,

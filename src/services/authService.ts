@@ -119,6 +119,13 @@ export const authService = {
     });
   },
 
+  async refreshToken(refreshToken: string): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  },
+
   async getGoogleOAuthUrl(role: UserRole = 'student', adminCode?: string): Promise<GoogleUrlResponse> {
     const params = new URLSearchParams({ role });
     if (role === 'admin' && adminCode) {
@@ -148,6 +155,7 @@ export const authService = {
       provider_refresh_token?: string;
       role?: UserRole;
       admin_code?: string;
+      access_token?: string;
     },
     token: string
   ): Promise<GoogleSyncResponse> {
@@ -155,7 +163,10 @@ export const authService = {
       method: 'POST',
       token,
       retries: 2,
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        access_token: token,
+      }),
     });
   },
 

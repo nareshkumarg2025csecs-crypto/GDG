@@ -8,6 +8,7 @@ const {
   studentLogin,
   adminLogin,
   logout,
+  refreshToken,
   getGoogleOAuthUrl,
   syncGoogleProfile,
   getGmailOAuthUrl,
@@ -119,6 +120,9 @@ router.post(
 
 // Common Logout Route
 router.post('/logout', requireAuth, logout);
+
+// Session Refresh Route (Silently refreshes access token using refresh_token)
+router.post('/refresh', studentLoginLimiter, refreshToken);
 
 // Google OAuth Sign-in & Profile Sync
 router.get('/google/url', getGoogleOAuthUrl);

@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/api';
+import { apiRequest, getStoredToken } from '@/lib/api';
 import { type UserRole } from '@/services/authService';
 
 export const AuthCallback: React.FC = () => {
@@ -29,7 +29,8 @@ export const AuthCallback: React.FC = () => {
         const hash = location.hash.startsWith('#') ? location.hash.substring(1) : location.hash;
         const hashParams = new URLSearchParams(hash);
 
-        const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+        const accessTokenFromUrl = hashParams.get('access_token') || searchParams.get('access_token');
+        const accessToken = accessTokenFromUrl || getStoredToken();
         const providerToken =
           hashParams.get('provider_token') ||
           searchParams.get('provider_token') ||
@@ -84,7 +85,9 @@ export const AuthCallback: React.FC = () => {
         if (!accessToken) {
           const queryCode = searchParams.get('code');
           if (!queryCode) {
-            throw new Error('No authentication token received from identity provider.');
+            console.warn('[AuthCallback] No access token found in URL or storage. Redirecting to /auth.');
+            navigate('/auth', { replace: true });
+            return;
           }
           throw new Error('OAuth authorization code flow requires direct server callback.');
         }

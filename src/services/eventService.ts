@@ -59,7 +59,7 @@ export const eventService = {
 
         cachedEventsList = {
           data,
-          expiresAt: Date.now() + 60 * 1000,
+          expiresAt: Date.now() + 300 * 1000,
         };
 
         return data;
@@ -83,7 +83,7 @@ export const eventService = {
 
     cachedSingleEvents.set(id, {
       data,
-      expiresAt: Date.now() + 60 * 1000,
+      expiresAt: Date.now() + 300 * 1000,
     });
 
     return data;
