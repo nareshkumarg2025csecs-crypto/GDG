@@ -105,21 +105,14 @@ export const AuthCallback: React.FC = () => {
           hashParams.get('type') === 'magiclink';
 
         // 3. Sync profile with backend API (creates or retrieves profile row)
-        let syncResponse;
-        try {
-          syncResponse = await syncGoogleOAuth(
-            {
-              provider_token: providerToken,
-              provider_refresh_token: providerRefreshToken,
-              role: roleParam,
-              admin_code: adminCodeParam,
-            },
-            accessToken
-          );
-        } catch (firstSyncErr: any) {
-          // If server was momentarily restarting, wait 1s and retry once
-          if (firstSyncErr?.status === 0 || firstSyncErr?.status >= 500) {
-            await new Promise((r) => setTimeout(r, 1000));
+        // Uses automatic retry with progressive backoff so nodemon reloads or server start-up latency
+        // never show "Authentication Failed" to the user.
+        let syncResponse: any = null;
+        const maxSyncAttempts = 4;
+        let lastSyncError: any = null;
+
+        for (let attempt = 1; attempt <= maxSyncAttempts; attempt++) {
+          try {
             syncResponse = await syncGoogleOAuth(
               {
                 provider_token: providerToken,
@@ -129,9 +122,29 @@ export const AuthCallback: React.FC = () => {
               },
               accessToken
             );
-          } else {
-            throw firstSyncErr;
+
+            if (syncResponse?.profile) {
+              lastSyncError = null;
+              break;
+            }
+          } catch (syncErr: any) {
+            lastSyncError = syncErr;
+            console.warn(`[OAuth Callback] Sync attempt ${attempt}/${maxSyncAttempts} failed:`, syncErr?.message);
+
+            // Abort immediately on genuine authentication rejections (e.g. wrong admin code 403, invalid token 401, validation 400)
+            if (syncErr?.status === 403 || syncErr?.status === 401 || syncErr?.status === 400) {
+              throw syncErr;
+            }
+
+            // For transient network connection drops (ECONNREFUSED / 503 / 502 / 504), wait and retry
+            if (attempt < maxSyncAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, attempt * 800));
+            }
           }
+        }
+
+        if (lastSyncError && !syncResponse?.profile) {
+          throw lastSyncError;
         }
 
         // Clear temporary admin code once consumed

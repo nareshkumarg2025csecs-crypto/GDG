@@ -154,6 +154,7 @@ export const authService = {
     return apiRequest<GoogleSyncResponse>('/api/auth/google/sync-profile', {
       method: 'POST',
       token,
+      retries: 2,
       body: JSON.stringify(payload),
     });
   },
