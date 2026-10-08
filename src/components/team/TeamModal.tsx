@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Linkedin, Github, Mail } from 'lucide-react';
+import { X, Linkedin, Mail } from 'lucide-react';
 import { useTeamStore } from '@/store/teamStore';
 import { DEPARTMENT_COLORS } from '@/data/team';
 
@@ -136,17 +136,6 @@ export default function TeamModal() {
                                         <Linkedin className="w-5 h-5 text-white/60 group-hover:text-[#0A66C2]" aria-hidden="true" />
                                     </a>
                                 ) : null}
-                                {selectedMember.github ? (
-                                    <a
-                                        href={selectedMember.github}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        aria-label={`${selectedMember.name} on GitHub`}
-                                        className="p-3 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 transition-all group"
-                                    >
-                                        <Github className="w-5 h-5 text-white/60 group-hover:text-white" aria-hidden="true" />
-                                    </a>
-                                ) : null}
                                 {selectedMember.email ? (
                                     <a
                                         href={`mailto:${selectedMember.email}`}
@@ -156,7 +145,7 @@ export default function TeamModal() {
                                         <Mail className="w-5 h-5 text-white/60 group-hover:text-[#EA4335]" aria-hidden="true" />
                                     </a>
                                 ) : null}
-                                {!selectedMember.linkedin && !selectedMember.github && !selectedMember.email && (
+                                {!selectedMember.linkedin && !selectedMember.email && (
                                     <p className="text-xs text-white/40 font-mono">Contact details coming soon</p>
                                 )}
                             </div>

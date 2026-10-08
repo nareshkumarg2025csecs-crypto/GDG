@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { ArrowUp, Linkedin, Instagram, Youtube } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { TOOLS_CONFIG } from '@/config/toolsConfig';
 
@@ -12,18 +13,16 @@ const BRAND_LETTERS = [
 const GOOGLE_STRIPE = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
 const socialLinks = [
-  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/', hoverColor: '#E1306C' },
-  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/company/gdgrec/', hoverColor: '#0A66C2' },
-  { name: 'YouTube',   icon: Youtube,   href: 'https://www.youtube.com/@gdgrec', hoverColor: '#FF0000' },
+  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/showcase/google-developer-groups/about/',           hoverColor: '#0A66C2' },
+  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/',                                          hoverColor: '#E1306C' },
+  { name: 'YouTube',   icon: Youtube,   href: 'https://youtube.com/@gdgrec?si=q6AanONH9r7qxSCm',                           hoverColor: '#FF0000' },
 ];
 
 const navLinks = [
-  { label: 'Home', href: '/#home' },
-  { label: 'Events', href: '/events' },
-  { label: 'Team', href: '/team' },
-  { label: 'Resources', href: '/resources' },
-  ...(TOOLS_CONFIG.ENABLED ? [{ label: 'Tools', href: '/tools' }] : []),
-  { label: 'About Us', href: '/#about' },
+  { label: 'Home',     href: '/' },
+  { label: 'Events',   href: '/events' },
+  { label: 'Team',     href: '/team' },
+  { label: 'About Us', href: '/about-us' },
 ];
 
 const Footer = () => {
@@ -133,13 +132,13 @@ const Footer = () => {
             <ul className="space-y-3">
               {navLinks.map((link) => (
                 <li key={link.label}>
-                  <a
-                    href={link.href}
+                  <Link
+                    to={link.href}
                     className="link-wipe text-sm font-medium transition-colors"
                     style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
                   >
                     {link.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -196,11 +195,11 @@ const Footer = () => {
 
             {/* Email */}
             <a
-              href="mailto:contact@gdg.community"
+              href="mailto:gdg@rajalakshmi.edu.in"
               className="link-wipe text-sm font-medium"
               style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
             >
-              contact@gdg.community
+              gdg@rajalakshmi.edu.in
             </a>
           </motion.div>
         </div>

@@ -31,6 +31,7 @@ const PersonalInfoPage = lazy(() => import("./pages/auth/PersonalInfoPage"));
 const AdminOnboardPage = lazy(() => import("./pages/admin/AdminOnboardPage"));
 const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const AboutUsPage = lazy(() => import("./pages/AboutUsPage"));
 
 const OAuthRedirectInterceptor = () => {
   const location = useLocation();
@@ -86,6 +87,7 @@ const App = () => {
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/team" element={<TeamPage />} />
+                  <Route path="/about-us" element={<AboutUsPage />} />
                   <Route path="/resources" element={<ResourcesPage />} />
                   <Route
                     path="/tools"

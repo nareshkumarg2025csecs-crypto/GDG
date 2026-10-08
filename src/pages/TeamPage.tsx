@@ -10,10 +10,11 @@ import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
 import { useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
-import { Linkedin, Mail } from 'lucide-react'
+import { Linkedin, Mail, ArrowLeft } from 'lucide-react'
 import {
     TeamMember,
     TeamSection,
@@ -424,13 +425,24 @@ export default function TeamPage() {
 
             <main id="main-content">
                 {/* Hero Section */}
-            <section className="py-20 md:py-32 relative overflow-hidden bg-background transition-colors duration-300">
+                <section className="pt-28 pb-20 md:pt-36 md:pb-32 relative overflow-hidden bg-background transition-colors duration-300">
                 <div className="absolute inset-0 opacity-[0.03]" style={{
                     backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
                     backgroundSize: '40px 40px',
                 }} />
 
                 <div className="container mx-auto px-4 md:px-6 relative z-10">
+                    {/* Top Back Navigation */}
+                    <div className="mb-6 md:mb-8">
+                        <Link
+                            to="/"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
+                        >
+                            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
+                            <span>Back to Home</span>
+                        </Link>
+                    </div>
+
                     <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="mb-12 md:mb-16 text-center">
                         <div className="flex items-center gap-3 mb-4 justify-center">
                             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />

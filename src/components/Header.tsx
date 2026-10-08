@@ -18,16 +18,13 @@ const SECTIONS = [
   { id: 'home', name: 'Home', href: '/', color: '#4285F4' },
   { id: 'events', name: 'Events', href: '/events', color: '#FBBC04' },
   { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
-  { id: 'resources', name: 'Resources', href: '/resources', color: '#4285F4' },
-  ...(TOOLS_CONFIG.ENABLED && TOOLS_CONFIG.SHOW_IN_NAV
-    ? [{ id: 'tools', name: 'Tools', href: '/tools', color: '#EA4335' }]
-    : []),
+  { id: 'about', name: 'About Us', href: '/about-us', color: '#EA4335' },
 ];
 
 const SOCIAL_LINKS = [
-  { name: 'Instagram', href: 'https://www.instagram.com/gdgrec/', text: '@gdgrec' },
-  { name: 'LinkedIn', href: 'https://www.linkedin.com/company/gdgrec/', text: '@GDG On Campus REC' },
-  { name: 'YouTube', href: 'https://www.youtube.com/@gdgrec', text: '@GDG On Campus REC' },
+  { name: 'LinkedIn', href: 'https://www.linkedin.com/showcase/google-developer-groups/about/', text: 'Professional Updates' },
+  { name: 'Instagram', href: 'https://www.instagram.com/gdgrec/', text: 'Community Photos' },
+  { name: 'YouTube', href: 'https://youtube.com/@gdgrec?si=q6AanONH9r7qxSCm', text: 'Videos & Keynotes' },
 ];
 
 // --- Components ---
@@ -197,6 +194,8 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
       setActiveSection('events');
     } else if (location.pathname.startsWith('/team')) {
       setActiveSection('team');
+    } else if (location.pathname.startsWith('/about-us')) {
+      setActiveSection('about');
     } else if (location.pathname === '/') {
       setActiveSection('home');
     }
@@ -685,7 +684,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                               }}
                               className="group flex items-baseline gap-4 sm:gap-6 py-2"
                             >
-                              <span className="text-xs font-mono text-google-red">04</span>
+                              <span className="text-xs font-mono text-google-red">05</span>
                               <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-red transition-all duration-300 group-hover:translate-x-4">
                                 Admin Events
                               </span>
@@ -707,7 +706,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                                 }}
                                 className="group flex items-baseline gap-4 sm:gap-6 py-2"
                               >
-                                <span className="text-xs font-mono text-google-yellow">05</span>
+                                <span className="text-xs font-mono text-google-yellow">06</span>
                                 <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-yellow transition-all duration-300 group-hover:translate-x-4">
                                   Certificates
                                 </span>
@@ -717,7 +716,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                                 className="group flex items-baseline gap-4 sm:gap-6 py-2 opacity-35 cursor-not-allowed select-none"
                                 title="Certificates module is currently disabled"
                               >
-                                <span className="text-xs font-mono text-muted-foreground">05</span>
+                                <span className="text-xs font-mono text-muted-foreground">06</span>
                                 <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-muted-foreground">
                                   Certificates <span className="text-lg text-muted-foreground font-normal">(Disabled)</span>
                                 </span>
@@ -739,7 +738,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                               }}
                               className="group flex items-baseline gap-4 sm:gap-6 py-2"
                             >
-                              <span className="text-xs font-mono text-google-blue">06</span>
+                              <span className="text-xs font-mono text-google-blue">07</span>
                               <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
                                 Student View
                               </span>
@@ -762,7 +761,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                             }}
                             className="group flex items-baseline gap-4 sm:gap-6 py-2"
                           >
-                            <span className="text-xs font-mono text-google-blue">04</span>
+                            <span className="text-xs font-mono text-google-blue">05</span>
                             <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-blue transition-all duration-300 group-hover:translate-x-4">
                               Dashboard
                             </span>
