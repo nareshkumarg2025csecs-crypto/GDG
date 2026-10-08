@@ -1,20 +1,18 @@
 /**
  * TeamPage.tsx
  * 
- * Hierarchical Team Page with horizontal scroll animations
- * Similar to EventsHorizontal.tsx but with alternating scroll directions per team
+ * Hierarchical Team Page with smooth horizontal interactive carousels.
+ * Supports fluid mouse grab-and-drag, arrow controls, native mobile touch swipe,
+ * natural top-to-bottom and bottom-to-top vertical page navigation, and quick team jump navigation.
  */
 
-import { useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
-import { useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
-import { Linkedin, Mail, ArrowLeft } from 'lucide-react'
+import { Linkedin, Mail, ArrowLeft, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react'
 import {
     TeamMember,
     TeamSection,
@@ -24,9 +22,6 @@ import {
 import { useTeamStore } from '@/store/teamStore'
 import TeamModal from '@/components/team/TeamModal'
 
-// Register GSAP plugins
-gsap.registerPlugin(ScrollTrigger)
-
 // ================================
 // HOLOGRAPHIC CARD COMPONENT
 // ================================
@@ -34,9 +29,10 @@ gsap.registerPlugin(ScrollTrigger)
 interface HolographicCardProps {
     member: TeamMember
     index: number
+    onCardClick?: () => void
 }
 
-function HolographicCard({ member, index }: HolographicCardProps) {
+function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
     const cardRef = useRef<HTMLDivElement>(null)
     const [isHovered, setIsHovered] = useState(false)
     const [imgError, setImgError] = useState(false)
@@ -50,8 +46,8 @@ function HolographicCard({ member, index }: HolographicCardProps) {
         const x = (e.clientX - rect.left) / rect.width - 0.5
         const y = (e.clientY - rect.top) / rect.height - 0.5
         setTilt({
-            rx: -y * 14,
-            ry: x * 14,
+            rx: -y * 12,
+            ry: x * 12,
             fx: (x + 0.5) * 100,
             fy: (y + 0.5) * 100
         })
@@ -62,12 +58,20 @@ function HolographicCard({ member, index }: HolographicCardProps) {
         setTilt({ rx: 0, ry: 0, fx: 50, fy: 50 })
     }, [])
 
+    const handleClick = () => {
+        if (onCardClick) {
+            onCardClick()
+        } else {
+            openModal(member)
+        }
+    }
+
     return (
         <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: Math.min(index * 0.04, 0.3), duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-            className="perspective-1000 flex-shrink-0 w-[280px] md:w-[320px] mx-3"
+            transition={{ delay: Math.min(index * 0.03, 0.25), duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+            className="perspective-1000 flex-shrink-0 w-[260px] sm:w-[280px] md:w-[320px] mx-2.5 sm:mx-3 select-none"
             data-physics
         >
             <div
@@ -83,11 +87,11 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                 onMouseMove={handleMouseMove}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={handleMouseLeave}
-                onClick={() => openModal(member)}
+                onClick={handleClick}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        openModal(member);
+                        handleClick();
                     }
                 }}
                 tabIndex={0}
@@ -127,8 +131,8 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                         }}
                     />
 
-                    {/* Avatar / Member Photo (Local Zero-Egress Image with Monogram Fallback) */}
-                    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                    {/* Avatar / Member Photo */}
+                    <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
                         {member.image && !imgError ? (
                             <img
                                 src={member.image}
@@ -140,7 +144,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                             />
                         ) : (
                             <motion.div
-                                animate={isHovered ? { scale: 1.1, rotate: 5 } : { scale: 1, rotate: 0 }}
+                                animate={isHovered ? { scale: 1.08, rotate: 3 } : { scale: 1, rotate: 0 }}
                                 transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                                 className="w-24 h-24 rounded-2xl flex items-center justify-center text-5xl font-display"
                                 style={{
@@ -157,7 +161,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
 
                     {/* Bottom Info Gradient */}
                     <div
-                        className="absolute bottom-0 left-0 right-0 p-4 z-20"
+                        className="absolute bottom-0 left-0 right-0 p-4 z-20 pointer-events-auto"
                         style={{
                             background: `linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.8) 60%, transparent 100%)`,
                         }}
@@ -170,7 +174,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
                                 <h4 className="font-display text-lg leading-tight break-words text-white" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                                     {member.name}
                                 </h4>
-                                <p className="text-xs font-mono mt-1 break-words" style={{ color: member.color, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.8)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                                <p className="text-xs font-mono mt-1 break-words font-semibold" style={{ color: member.color, textShadow: '0 1px 2px rgba(0,0,0,0.8)', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                                     {member.role}
                                 </p>
                             </div>
@@ -223,7 +227,7 @@ function HolographicCard({ member, index }: HolographicCardProps) {
 }
 
 // ================================
-// TEAM SECTION (HORIZONTAL SCROLL)
+// TEAM SECTION (HORIZONTAL INTERACTIVE CAROUSEL)
 // ================================
 
 interface TeamSectionHorizontalProps {
@@ -232,68 +236,86 @@ interface TeamSectionHorizontalProps {
 }
 
 function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps) {
-    const containerRef = useRef<HTMLElement>(null)
-    const trackRef = useRef<HTMLDivElement>(null)
-    const progressRef = useRef<HTMLDivElement>(null)
+    const scrollRef = useRef<HTMLDivElement>(null)
+    const [canScrollLeft, setCanScrollLeft] = useState(false)
+    const [canScrollRight, setCanScrollRight] = useState(true)
+    const [scrollProgress, setScrollProgress] = useState(0)
+    const [isDragging, setIsDragging] = useState(false)
+    const hasDraggedRef = useRef(false)
+    const startXRef = useRef(0)
+    const startScrollLeftRef = useRef(0)
     const { theme } = useTheme()
+    const { openModal } = useTeamStore()
+
+    // Calculate scroll state & progress
+    const updateScrollState = useCallback(() => {
+        const el = scrollRef.current
+        if (!el) return
+        const maxScroll = el.scrollWidth - el.clientWidth
+        if (maxScroll <= 8) {
+            setCanScrollLeft(false)
+            setCanScrollRight(false)
+            setScrollProgress(100)
+            return
+        }
+        setCanScrollLeft(el.scrollLeft > 12)
+        setCanScrollRight(el.scrollLeft < maxScroll - 12)
+        setScrollProgress(Math.min(100, Math.max(0, (el.scrollLeft / maxScroll) * 100)))
+    }, [])
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && window.innerWidth < 768) return;
+        updateScrollState()
+        window.addEventListener('resize', updateScrollState)
+        return () => window.removeEventListener('resize', updateScrollState)
+    }, [updateScrollState, members])
 
-        const container = containerRef.current
-        const track = trackRef.current
-        const progress = progressRef.current
+    // Arrow navigation
+    const scrollByAmount = (direction: 'left' | 'right') => {
+        if (!scrollRef.current) return
+        const cardWidth = 340
+        const shift = direction === 'left' ? -cardWidth * 2 : cardWidth * 2
+        scrollRef.current.scrollBy({ left: shift, behavior: 'smooth' })
+    }
 
-        if (!container || !track || !progress) return
+    // Mouse grab-and-drag handling
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (!scrollRef.current) return
+        setIsDragging(true)
+        hasDraggedRef.current = false
+        startXRef.current = e.pageX
+        startScrollLeftRef.current = scrollRef.current.scrollLeft
+    }
 
-        const ctx = gsap.context(() => {
-            const isRightToLeft = section.scrollDirection === 'right-to-left'
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!isDragging || !scrollRef.current) return
+        const delta = e.pageX - startXRef.current
+        if (Math.abs(delta) > 6) {
+            hasDraggedRef.current = true
+        }
+        scrollRef.current.scrollLeft = startScrollLeftRef.current - delta
+    }
 
-            // Calculate scroll distance
-            const getScrollDistance = () => -(track.scrollWidth - window.innerWidth)
+    const handleMouseUp = () => {
+        setIsDragging(false)
+    }
 
-            // Set initial position for right-to-left
-            if (isRightToLeft) {
-                gsap.set(track, { x: getScrollDistance })
-            }
+    const handleMouseLeave = () => {
+        setIsDragging(false)
+    }
 
-            // Create horizontal scroll animation
-            gsap.to(track, {
-                x: isRightToLeft ? 0 : getScrollDistance,
-                ease: 'none',
-                scrollTrigger: {
-                    trigger: container,
-                    pin: true,
-                    scrub: 1,
-                    end: () => "+=" + Math.abs(getScrollDistance()),
-                    invalidateOnRefresh: true,
-                },
-            })
-
-            // Animate progress bar
-            gsap.to(progress, {
-                scaleX: 1,
-                ease: 'none',
-                scrollTrigger: {
-                    trigger: container,
-                    start: 'top top',
-                    end: () => "+=3000",
-                    scrub: 1,
-                },
-            })
-        }, containerRef)
-
-        return () => ctx.revert()
-    }, [section.scrollDirection])
+    const handleCardClick = (member: TeamMember) => {
+        if (hasDraggedRef.current) return
+        openModal(member)
+    }
 
     return (
         <section
-            ref={containerRef}
-            className="relative bg-background overflow-hidden transition-colors duration-300"
+            id={`team-${section.id}`}
+            className="py-14 md:py-20 relative bg-background overflow-hidden border-b border-border/30 transition-colors duration-300"
         >
             {/* Background grid */}
             <div
-                className="absolute inset-0 opacity-[0.03]"
+                className="absolute inset-0 opacity-[0.03] pointer-events-none"
                 style={{
                     backgroundImage: `
                         linear-gradient(hsl(var(--foreground)) 1px, transparent 1px),
@@ -306,94 +328,147 @@ function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps)
             {/* Ambient glow - Dark mode only */}
             {theme === 'dark' && (
                 <div
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[150px] opacity-20 hidden md:block"
+                    className="absolute top-1/2 left-1/4 -translate-y-1/2 w-[500px] h-[500px] rounded-full blur-[150px] opacity-15 pointer-events-none"
                     style={{ background: `radial-gradient(circle, ${section.color}, transparent)` }}
                 />
             )}
 
-            {/* Desktop Layout (GSAP Pinned Track) */}
-            <div className="h-screen flex-col justify-center hidden md:flex">
-                {/* Header */}
-                <div className="absolute top-16 left-0 right-0 z-20 px-8 md:px-16">
-                    <p
-                        className="text-xs uppercase tracking-[0.4em] font-semibold mb-2"
-                        style={{
-                            color: section.color,
-                            textShadow: theme === 'light' ? 'none' : `0 0 20px ${section.color}50`
-                        }}
-                    >
-                        {section.label}
-                    </p>
-                    <h2 className="text-5xl md:text-7xl font-display text-foreground transition-colors duration-300">
-                        {section.name}
-                    </h2>
-                    <p className="text-muted-foreground text-sm mt-2">
-                        {section.description}
-                    </p>
-                </div>
+            <div className="container mx-auto px-4 md:px-8 mb-6 md:mb-8 relative z-20">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <span
+                                className="w-2 h-2 rounded-full animate-pulse"
+                                style={{ backgroundColor: section.color }}
+                            />
+                            <p
+                                className="text-xs uppercase tracking-[0.35em] font-mono font-semibold"
+                                style={{
+                                    color: section.color,
+                                    textShadow: theme === 'light' ? 'none' : `0 0 20px ${section.color}50`
+                                }}
+                            >
+                                {section.label}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-display text-foreground tracking-tight">
+                                {section.name}
+                            </h2>
+                            <span
+                                className="px-3 py-1 rounded-full text-xs font-mono font-semibold"
+                                style={{
+                                    backgroundColor: `${section.color}15`,
+                                    color: section.color,
+                                    border: `1px solid ${section.color}35`,
+                                }}
+                            >
+                                {members.length} Operatives
+                            </span>
+                        </div>
+                        <p className="text-muted-foreground text-xs sm:text-sm mt-2 max-w-2xl">
+                            {section.description}
+                        </p>
+                    </div>
 
-                {/* Horizontal track */}
-                <div
-                    ref={trackRef}
-                    className={`flex items-center pt-24 ${section.scrollDirection === 'left-to-right' ? 'pl-8 md:pl-16' : 'pr-8 md:pr-16'}`}
-                >
-                    {/* Start spacer for right-to-left */}
-                    {section.scrollDirection === 'right-to-left' && (
-                        <div className="flex-shrink-0 w-[200px] md:w-[400px]" />
-                    )}
-
-                    {/* Team member cards */}
-                    {members.map((member, index) => (
-                        <HolographicCard key={member.id} member={member} index={index} />
-                    ))}
-
-                    {/* End spacer for left-to-right */}
-                    {section.scrollDirection === 'left-to-right' && (
-                        <div className="flex-shrink-0 w-[200px] md:w-[400px]" />
-                    )}
-                </div>
-
-                {/* Progress bar */}
-                <div className="absolute bottom-8 left-8 right-8 md:left-16 md:right-16 z-20">
-                    <div className={`h-1 rounded-full overflow-hidden ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`}>
-                        <div
-                            ref={progressRef}
-                            className={`h-full rounded-full ${section.scrollDirection === 'right-to-left' ? 'origin-right' : 'origin-left'}`}
-                            style={{
-                                transform: 'scaleX(0)',
-                                background: section.color,
-                            }}
-                        />
+                    {/* Desktop Navigation Arrows */}
+                    <div className="hidden sm:flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => scrollByAmount('left')}
+                            disabled={!canScrollLeft}
+                            aria-label={`Scroll ${section.name} left`}
+                            className={`p-2.5 rounded-xl border transition-all duration-200 ${
+                                canScrollLeft
+                                    ? 'bg-card hover:bg-muted text-foreground border-border hover:scale-105 active:scale-95 shadow-sm'
+                                    : 'opacity-30 cursor-not-allowed bg-muted/40 text-muted-foreground border-transparent'
+                            }`}
+                        >
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => scrollByAmount('right')}
+                            disabled={!canScrollRight}
+                            aria-label={`Scroll ${section.name} right`}
+                            className={`p-2.5 rounded-xl border transition-all duration-200 ${
+                                canScrollRight
+                                    ? 'bg-card hover:bg-muted text-foreground border-border hover:scale-105 active:scale-95 shadow-sm'
+                                    : 'opacity-30 cursor-not-allowed bg-muted/40 text-muted-foreground border-transparent'
+                            }`}
+                        >
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
                     </div>
                 </div>
             </div>
 
-            {/* Mobile Layout: Native Fluid Swipe Track (Zero Pinning Stutter) */}
-            <div className="md:hidden py-14 px-4">
-                <div className="mb-6 px-2">
-                    <p
-                        className="text-xs uppercase tracking-[0.3em] font-semibold mb-1"
-                        style={{ color: section.color }}
-                    >
-                        {section.label}
-                    </p>
-                    <h2 className="text-3xl font-display text-foreground">
-                        {section.name}
-                    </h2>
-                    <p className="text-muted-foreground text-xs mt-1">
-                        {section.description}
-                    </p>
-                </div>
-
+            {/* Horizontal Track Carousel */}
+            <div className="relative group">
+                {/* Left Gradient Fade */}
                 <div
-                    className="flex overflow-x-auto gap-3 pb-4 snap-x snap-mandatory custom-scrollbar"
-                    style={{ scrollbarWidth: 'none' }}
+                    className={`absolute left-0 top-0 bottom-0 w-10 sm:w-16 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none transition-opacity duration-300 ${
+                        canScrollLeft ? 'opacity-100' : 'opacity-0'
+                    }`}
+                />
+
+                {/* Right Gradient Fade */}
+                <div
+                    className={`absolute right-0 top-0 bottom-0 w-10 sm:w-16 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none transition-opacity duration-300 ${
+                        canScrollRight ? 'opacity-100' : 'opacity-0'
+                    }`}
+                />
+
+                {/* Scrollable Track */}
+                <div
+                    ref={scrollRef}
+                    onScroll={updateScrollState}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseLeave}
+                    className={`flex items-center overflow-x-auto py-4 px-4 sm:px-6 md:px-10 snap-x snap-mandatory md:snap-none select-none ${
+                        isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                    }`}
+                    style={{
+                        scrollbarWidth: 'none',
+                        msOverflowStyle: 'none',
+                        WebkitOverflowScrolling: 'touch',
+                    }}
                 >
                     {members.map((member, index) => (
                         <div key={member.id} className="snap-start shrink-0">
-                            <HolographicCard member={member} index={index} />
+                            <HolographicCard
+                                member={member}
+                                index={index}
+                                onCardClick={() => handleCardClick(member)}
+                            />
                         </div>
                     ))}
+                </div>
+            </div>
+
+            {/* Progress Bar & Drag Indicator */}
+            <div className="container mx-auto px-4 md:px-8 mt-4">
+                <div className="flex items-center justify-between gap-4 text-xs font-mono text-muted-foreground mb-2">
+                    <span className="flex items-center gap-1.5 text-[11px]">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: section.color }} />
+                        <span className="hidden sm:inline">Drag or swipe horizontally from left to right to reveal all associates →</span>
+                        <span className="sm:hidden">Swipe right to reveal associates →</span>
+                    </span>
+                    <span className="text-[11px] font-mono font-semibold">
+                        {Math.round(scrollProgress)}%
+                    </span>
+                </div>
+                <div className={`h-1 rounded-full overflow-hidden ${theme === 'light' ? 'bg-black/10' : 'bg-white/10'}`}>
+                    <div
+                        className="h-full rounded-full transition-all duration-150 origin-left"
+                        style={{
+                            width: `${Math.max(6, scrollProgress)}%`,
+                            backgroundColor: section.color,
+                            boxShadow: `0 0 10px ${section.color}60`,
+                        }}
+                    />
                 </div>
             </div>
         </section>
@@ -406,18 +481,64 @@ function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps)
 
 export default function TeamPage() {
     const { theme } = useTheme()
+    const [activeSection, setActiveSection] = useState('leads')
+    const [showBackToTop, setShowBackToTop] = useState(false)
 
     // Separate leads from other teams
     const leadsMembers = teamMembers.filter(m => m.team === 'leads')
     const otherSections = teamSections.filter(s => s.id !== 'leads')
 
-    // Refresh ScrollTrigger on mount to ensure correct pinning positions
+    // Navigation sections list
+    const navSections = [
+        { id: 'leads', name: 'Leadership', color: '#9E9E9E' },
+        { id: 'logistics', name: 'Events & Ops', color: '#34A853' },
+        { id: 'design', name: 'Design', color: '#EA4335' },
+        { id: 'media', name: 'Media', color: '#FBBC04' },
+        { id: 'techops', name: 'Tech Ops', color: '#4285F4' },
+    ]
+
+    // Scroll listener for active section indicator and Back to Top button
     useEffect(() => {
-        const timer = setTimeout(() => {
-            ScrollTrigger.refresh()
-        }, 100) // Small delay to ensure DOM is ready
-        return () => clearTimeout(timer)
+        const handleScroll = () => {
+            setShowBackToTop(window.scrollY > 400)
+
+            const sectionIds = ['leads', 'logistics', 'design', 'media', 'techops']
+            for (const id of sectionIds) {
+                const el = document.getElementById(`team-${id}`)
+                if (el) {
+                    const rect = el.getBoundingClientRect()
+                    if (rect.top <= 240 && rect.bottom >= 240) {
+                        setActiveSection(id)
+                        break
+                    }
+                }
+            }
+        }
+
+        window.addEventListener('scroll', handleScroll, { passive: true })
+        return () => window.removeEventListener('scroll', handleScroll)
     }, [])
+
+    const scrollToTeam = (teamId: string) => {
+        const el = document.getElementById(`team-${teamId}`)
+        if (el) {
+            const headerOffset = 90
+            const elementPosition = el.getBoundingClientRect().top
+            const offsetPosition = elementPosition + window.pageYOffset - headerOffset
+
+            window.scrollTo({
+                top: offsetPosition,
+                behavior: 'smooth'
+            })
+        }
+    }
+
+    const scrollToTop = () => {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        })
+    }
 
     return (
         <div className="min-h-screen bg-background transition-colors duration-300">
@@ -425,71 +546,124 @@ export default function TeamPage() {
 
             <main id="main-content">
                 {/* Hero Section */}
-                <section className="pt-28 pb-20 md:pt-36 md:pb-32 relative overflow-hidden bg-background transition-colors duration-300">
-                <div className="absolute inset-0 opacity-[0.03]" style={{
-                    backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
-                    backgroundSize: '40px 40px',
-                }} />
+                <section className="pt-28 pb-14 md:pt-36 md:pb-20 relative overflow-hidden bg-background transition-colors duration-300">
+                    <div
+                        className="absolute inset-0 opacity-[0.03]"
+                        style={{
+                            backgroundImage: `linear-gradient(hsl(var(--foreground)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground)) 1px, transparent 1px)`,
+                            backgroundSize: '40px 40px',
+                        }}
+                    />
 
-                <div className="container mx-auto px-4 md:px-6 relative z-10">
-                    {/* Top Back Navigation */}
-                    <div className="mb-6 md:mb-8">
-                        <Link
-                            to="/"
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
-                        >
-                            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
-                            <span>Back to Home</span>
-                        </Link>
-                    </div>
-
-                    <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="mb-12 md:mb-16 text-center">
-                        <div className="flex items-center gap-3 mb-4 justify-center">
-                            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                            <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
+                    <div className="container mx-auto px-4 md:px-6 relative z-10">
+                        {/* Top Back Navigation */}
+                        <div className="mb-6 md:mb-8">
+                            <Link
+                                to="/"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
+                            >
+                                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
+                                <span>Back to Home</span>
+                            </Link>
                         </div>
-                        <h1 className="text-4xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 transition-colors duration-300">
-                            CORE <span style={{ color: theme === 'light' ? 'hsl(var(--foreground))' : '#4285F4', textShadow: theme === 'light' ? 'none' : `0 0 40px #4285F460` }}>TEAM</span>
-                        </h1>
-                        <p className="text-muted-foreground font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {teamMembers.length} OPERATIVES ASSIGNED</p>
-                    </motion.div>
-                </div>
-            </section>
 
-            {/* LEADS Section (Static) */}
-            <section className="py-16 relative bg-background">
-                <div className="container mx-auto px-4 md:px-6">
-                    <div className="mb-8">
-                        <p className="text-xs uppercase tracking-[0.4em] font-semibold mb-2" style={{
-                            color: '#9E9E9E',
-                            textShadow: theme === 'light' ? 'none' : '0 0 20px #9E9E9E50'
-                        }}>
-                            // LEADERSHIP
-                        </p>
-                        <h2 className="text-4xl md:text-6xl font-display text-foreground">
-                            GDG on Campus leadership team
-                        </h2>
+                        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="mb-8 md:mb-12 text-center">
+                            <div className="flex items-center gap-3 mb-4 justify-center">
+                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
+                            </div>
+                            <h1 className="text-4xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 transition-colors duration-300">
+                                CORE <span style={{ color: theme === 'light' ? 'hsl(var(--foreground))' : '#4285F4', textShadow: theme === 'light' ? 'none' : `0 0 40px #4285F460` }}>TEAM</span>
+                            </h1>
+                            <p className="text-muted-foreground font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {teamMembers.length} OPERATIVES ASSIGNED</p>
+                        </motion.div>
+
+                        {/* Sticky / Quick Team Jump Navigation Pills */}
+                        <div className="flex items-center justify-center gap-2 overflow-x-auto py-2 px-1 max-w-full scrollbar-none">
+                            {navSections.map((item) => {
+                                const isActive = activeSection === item.id
+                                return (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => scrollToTeam(item.id)}
+                                        className={`px-3.5 py-1.5 rounded-full text-xs font-mono font-semibold transition-all duration-200 whitespace-nowrap flex items-center gap-2 border ${
+                                            isActive
+                                                ? 'bg-card text-foreground shadow-sm scale-105'
+                                                : 'bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent'
+                                        }`}
+                                        style={{
+                                            borderColor: isActive ? item.color : undefined,
+                                        }}
+                                    >
+                                        <span
+                                            className="w-1.5 h-1.5 rounded-full"
+                                            style={{ backgroundColor: item.color }}
+                                        />
+                                        {item.name}
+                                    </button>
+                                )
+                            })}
+                        </div>
                     </div>
+                </section>
 
-                    <div className="flex flex-wrap justify-center gap-6">
-                        {leadsMembers.map((member, index) => (
-                            <HolographicCard key={member.id} member={member} index={index} />
-                        ))}
+                {/* LEADS Section (Static Grid) */}
+                <section id="team-leads" className="py-14 md:py-20 relative bg-background border-b border-border/30">
+                    <div className="container mx-auto px-4 md:px-8">
+                        <div className="mb-8">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="w-2 h-2 rounded-full animate-pulse bg-gray-400" />
+                                <p className="text-xs uppercase tracking-[0.4em] font-mono font-semibold" style={{
+                                    color: '#9E9E9E',
+                                    textShadow: theme === 'light' ? 'none' : '0 0 20px #9E9E9E50'
+                                }}>
+                                    // LEADERSHIP
+                                </p>
+                            </div>
+                            <h2 className="text-3xl sm:text-4xl md:text-5xl font-display text-foreground">
+                                GDG on Campus Leadership Team
+                            </h2>
+                            <p className="text-muted-foreground text-xs sm:text-sm mt-2 max-w-2xl">
+                                Core Chapter Direction, Strategy & Community Vision
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap justify-center gap-6">
+                            {leadsMembers.map((member, index) => (
+                                <HolographicCard key={member.id} member={member} index={index} />
+                            ))}
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            {/* Team Sections with horizontal scroll */}
-            {otherSections.map(section => {
-                const members = teamMembers.filter(m => m.team === section.id)
-                // Reverse items for right-to-left so the first items (Leads) appear on the right (start position)
-                const displayedMembers = section.scrollDirection === 'right-to-left' ? [...members].reverse() : members
+                {/* Team Sections with interactive horizontal scroll */}
+                {otherSections.map(section => {
+                    // Members in natural order: Leads on left, followed by associates
+                    const members = teamMembers.filter(m => m.team === section.id)
 
-                return members.length > 0 ? (
-                    <TeamSectionHorizontal key={section.id} section={section} members={displayedMembers} />
-                ) : null
-            })}
+                    return members.length > 0 ? (
+                        <TeamSectionHorizontal key={section.id} section={section} members={members} />
+                    ) : null
+                })}
             </main>
+
+            {/* Floating Back to Top Button */}
+            <AnimatePresence>
+                {showBackToTop && (
+                    <motion.button
+                        initial={{ opacity: 0, scale: 0.8, y: 15 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: 15 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={scrollToTop}
+                        aria-label="Scroll back to top"
+                        className="fixed bottom-6 right-6 z-50 p-3 rounded-full bg-card/90 hover:bg-card border border-border shadow-2xl backdrop-blur-md text-foreground transition-all duration-200 hover:scale-110 active:scale-95 group focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                        <ArrowUp className="w-5 h-5 text-google-blue group-hover:-translate-y-0.5 transition-transform" />
+                    </motion.button>
+                )}
+            </AnimatePresence>
 
             <TeamModal />
             <Footer />

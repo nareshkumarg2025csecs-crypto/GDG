@@ -121,9 +121,9 @@ export const DEPARTMENT_BAYS: Record<Department, { name: string; description: st
 
 export const TEAM_SECTIONS: TeamSection[] = [
     { id: 'leads', name: 'LEADS', label: '// LEADERSHIP', color: '#9E9E9E', description: 'GDG on Campus leadership team', scrollDirection: 'left-to-right' },
-    { id: 'logistics', name: 'OPERATIONS', label: '// OPERATIONS & EVENTS', color: '#34A853', description: 'Event planning & logistics execution masters', scrollDirection: 'right-to-left' },
+    { id: 'logistics', name: 'EVENTS & OPERATIONS', label: '// EVENTS & OPERATIONS', color: '#34A853', description: 'Event planning, outreach & logistics execution masters', scrollDirection: 'left-to-right' },
     { id: 'design', name: 'DESIGN', label: '// VISUAL SYSTEMS', color: '#EA4335', description: 'UI/UX & brand identity specialists', scrollDirection: 'left-to-right' },
-    { id: 'media', name: 'MEDIA', label: '// CONTENT OPS', color: '#FBBC04', description: 'Photography, video & social resonance', scrollDirection: 'right-to-left' },
+    { id: 'media', name: 'MEDIA', label: '// CONTENT OPS', color: '#FBBC04', description: 'Photography, video & social resonance', scrollDirection: 'left-to-right' },
     { id: 'techops', name: 'TECH OPS', label: '// TECHNICAL OPERATIONS', color: '#4285F4', description: 'Backend architects & code masters', scrollDirection: 'left-to-right' },
 ];
 
