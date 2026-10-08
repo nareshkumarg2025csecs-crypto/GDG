@@ -461,6 +461,15 @@ export const EventRegistrationPage: React.FC = () => {
     return profile?.full_name || 'Attendee';
   }, [answers, fields, profile]);
 
+  // Resolve whether event sends registration QR email or shows on-screen confirmation only
+  const isEmailMode = useMemo(() => {
+    if (details.send_qr_email === false) return false;
+    if (details.email_config && details.email_config.enabled === false) return false;
+    if (form?.schema?.send_qr_email === false) return false;
+    if (form?.schema?.email_config && form?.schema?.email_config.enabled === false) return false;
+    return true;
+  }, [details, form]);
+
   // Answer change handler
   const handleAnswerChange = (fieldName: string, value: any) => {
     setAnswers((prev) => ({ ...prev, [fieldName]: value }));
