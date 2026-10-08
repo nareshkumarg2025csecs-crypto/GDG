@@ -26,11 +26,12 @@ const acquireFormSubmissionLock = async (formId) => {
   const currentPromise = new Promise((resolve) => {
     release = resolve;
   });
-  formSubmissionQueues.set(formId, previousPromise.then(() => currentPromise));
+  const chainedPromise = previousPromise.then(() => currentPromise);
+  formSubmissionQueues.set(formId, chainedPromise);
   await previousPromise;
   return () => {
     release();
-    if (formSubmissionQueues.get(formId) === currentPromise) {
+    if (formSubmissionQueues.get(formId) === chainedPromise) {
       formSubmissionQueues.delete(formId);
     }
   };
@@ -808,7 +809,7 @@ const updateForm = async (req, res) => {
     if (expires_at !== undefined) {
       updatePayload.expires_at = expires_at;
     }
-    if (effectiveLimit !== undefined && effectiveLimit !== null) {
+    if (effectiveLimit !== undefined) {
       updatePayload.submission_limit = effectiveLimit;
       if (updatePayload.schema) {
         updatePayload.schema.submission_limit = effectiveLimit;
@@ -1236,7 +1237,13 @@ const submitForm = async (req, res) => {
       },
     }).catch((err) => console.warn('Activity log failed (non-critical):', err.message));
 
-    // 7. Non-blocking Background Email Confirmation Dispatch with Inline QR Pass
+    // 7. Non-blocking Background Email Confirmation Dispatch with Inline QR Pass (respects email on/off toggle)
+    const shouldSendEmail = Boolean(
+      form?.schema?.email_config?.enabled !== false &&
+      form?.schema?.send_qr_email !== false &&
+      eventInfo?.details?.send_qr_email !== false
+    );
+
     const attendeeEmail = answers.email || req.user.email || req.user.profile?.email;
     const attendeeName =
       answers.full_name ||
@@ -1245,7 +1252,7 @@ const submitForm = async (req, res) => {
       attendeeEmail?.split('@')[0] ||
       'Attendee';
 
-    if (attendeeEmail && attendeeEmail.includes('@')) {
+    if (shouldSendEmail && attendeeEmail && attendeeEmail.includes('@')) {
       setImmediate(async () => {
         try {
           const emailResult = await EmailService.sendRegistrationConfirmation({
@@ -1328,9 +1335,10 @@ const submitForm = async (req, res) => {
         ticket_id: ticketId,
       },
       ticket_id: ticketId,
-      email_dispatched: true,
+      email_dispatched: shouldSendEmail,
+      email_enabled: shouldSendEmail,
       submitted_in_grace_period: submittedInGracePeriod,
-      confirmation_email_sent_to: attendeeEmail,
+      confirmation_email_sent_to: shouldSendEmail ? attendeeEmail : null,
     });
   } catch (error) {
     console.error('submitForm error:', error);
@@ -1390,7 +1398,7 @@ const getMySubmissions = async (req, res) => {
   try {
     const { data: submissions, error } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
+      .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id, email_sent, certificate_sent, certificate_sent_at, certificate_id, forms(id, title, event_id, events(id, title))')
       .eq('user_id', req.user.id)
       .order('submitted_at', { ascending: false });
 
@@ -1677,11 +1685,21 @@ const scannerCheckIn = async (req, res) => {
         answers: updatedAnswers,
       })
       .eq('id', submission.id)
+      .eq('attended', false)
       .select('id, form_id, user_id, answers, attended, submitted_at, ticket_id')
-      .single();
+      .maybeSingle();
 
-    if (updateErr || !updatedSub) {
+    if (updateErr) {
       return res.status(500).json({ error: 'Failed to record check-in in database.' });
+    }
+
+    if (!updatedSub) {
+      return res.status(409).json({
+        error: 'Attendee has already been checked in for this event.',
+        already_attended: true,
+        attended_at: existingAnswers.attended_at || null,
+        scanned_by: existingAnswers.scanned_by || 'Admin',
+      });
     }
 
     // 4. Update in-memory recent check-ins cache for zero-egress live syncing across admins
@@ -2260,7 +2278,7 @@ const uploadFormFile = async (req, res) => {
     // 1. Verify form exists
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('id, event_id, schema')
+      .select('id, event_id, title, created_by, schema')
       .eq('id', formId)
       .single();
 

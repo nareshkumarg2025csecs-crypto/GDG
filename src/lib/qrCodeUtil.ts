@@ -28,28 +28,57 @@ export async function generateBrandedQrDataUrl(
 
   if (typeof document === 'undefined') {
     // Server-side fallback if invoked outside browser
-    return QRCode.toDataURL(text, {
+    try {
+      return await QRCode.toDataURL(text, {
+        width,
+        margin,
+        errorCorrectionLevel: 'H',
+        color: { dark: darkColor, light: lightColor },
+      });
+    } catch {
+      return await QRCode.toDataURL(text, {
+        width,
+        margin,
+        errorCorrectionLevel: 'M',
+        color: { dark: darkColor, light: lightColor },
+      });
+    }
+  }
+
+  // 1. Draw base QR code onto offscreen canvas with fallback on large payloads
+  const canvas = document.createElement('canvas');
+  let allowLogo = false;
+
+  try {
+    await QRCode.toCanvas(canvas, text, {
       width,
       margin,
       errorCorrectionLevel: 'H',
       color: { dark: darkColor, light: lightColor },
     });
+    allowLogo = true;
+  } catch {
+    try {
+      await QRCode.toCanvas(canvas, text, {
+        width,
+        margin,
+        errorCorrectionLevel: 'Q',
+        color: { dark: darkColor, light: lightColor },
+      });
+      allowLogo = true;
+    } catch {
+      await QRCode.toCanvas(canvas, text, {
+        width,
+        margin,
+        errorCorrectionLevel: 'M',
+        color: { dark: darkColor, light: lightColor },
+      });
+      allowLogo = false;
+    }
   }
 
-  // 1. Draw base QR code onto offscreen canvas
-  const canvas = document.createElement('canvas');
-  await QRCode.toCanvas(canvas, text, {
-    width,
-    margin,
-    errorCorrectionLevel: 'H',
-    color: {
-      dark: darkColor,
-      light: lightColor,
-    },
-  });
-
   const ctx = canvas.getContext('2d');
-  if (!ctx) {
+  if (!ctx || !allowLogo) {
     return canvas.toDataURL('image/png');
   }
 
@@ -60,12 +89,12 @@ export async function generateBrandedQrDataUrl(
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
       img.onerror = () => {
-        // Fallback to copy image if primary fails
+        // Fallback to secondary logo if primary fails
         const fallback = new Image();
         fallback.crossOrigin = 'anonymous';
         fallback.onload = () => resolve(fallback);
         fallback.onerror = (err) => reject(err);
-        fallback.src = '/gdg-logo-icon copy.png';
+        fallback.src = '/gdg-logo-icon1.png';
       };
       img.src = logoSrc;
     });

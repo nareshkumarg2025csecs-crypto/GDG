@@ -24,6 +24,16 @@ export const AdminGatewayPage: React.FC = () => {
   const [serverSuccess, setServerSuccess] = useState<string | null>(null);
   const [adminGoogleModalOpen, setAdminGoogleModalOpen] = useState(false);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && adminGoogleModalOpen) {
+        setAdminGoogleModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [adminGoogleModalOpen]);
+
   // If already authenticated as admin, immediately redirect to admin panel
   if (!isLoading && isAuthenticated && role === 'admin') {
     return <Navigate to="/admin/events" replace />;
@@ -452,17 +462,24 @@ export const AdminGatewayPage: React.FC = () => {
 
       {/* Google Admin Code Verification Modal */}
       {adminGoogleModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-code-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setAdminGoogleModalOpen(false)}
+        >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="bg-card border border-border p-6 rounded-3xl max-w-sm w-full space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="w-12 h-12 rounded-2xl bg-google-red/10 text-google-red flex items-center justify-center">
               <KeyRound className="w-6 h-6" />
             </div>
             <div className="space-y-1">
-              <h3 className="font-bold text-base text-foreground font-sans">Admin Code Verification</h3>
+              <h3 id="admin-code-modal-title" className="font-bold text-base text-foreground font-sans">Admin Code Verification</h3>
               <p className="text-xs text-muted-foreground">
                 Enter your secret Admin Verification Code to authorize your Google Administrator privileges.
               </p>

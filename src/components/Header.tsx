@@ -1,4 +1,4 @@
-import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence } from 'framer-motion';
+import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence, useTransform } from 'framer-motion';
 import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard, Award } from 'lucide-react';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -6,8 +6,10 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { useEasterEggStore } from '@/store/easterEggStore';
+import { usePromoBannerStore } from '@/store/promoBannerStore';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import { HeaderNotifications } from '@/components/HeaderNotifications';
+import { TOOLS_CONFIG } from '@/config/toolsConfig';
 
 // --- Constants & Data ---
 
@@ -15,13 +17,16 @@ const SECTIONS = [
   { id: 'home', name: 'Home', href: '/', color: '#4285F4' },
   { id: 'events', name: 'Events', href: '/events', color: '#FBBC04' },
   { id: 'team', name: 'Team', href: '/team', color: '#34A853' },
+  { id: 'resources', name: 'Resources', href: '/resources', color: '#4285F4' },
+  ...(TOOLS_CONFIG.ENABLED && TOOLS_CONFIG.SHOW_IN_NAV
+    ? [{ id: 'tools', name: 'Tools', href: '/tools', color: '#EA4335' }]
+    : []),
 ];
 
 const SOCIAL_LINKS = [
-  { name: 'LinkedIn', href: '#', text: 'Professional Updates' },
-  { name: 'Twitter', href: '#', text: 'Latest News' },
-  { name: 'Instagram', href: '#', text: 'Community Photos' },
-  { name: 'GitHub', href: '#', text: 'Open Source' },
+  { name: 'Instagram', href: 'https://www.instagram.com/gdgrec/', text: '@gdgrec' },
+  { name: 'LinkedIn', href: 'https://www.linkedin.com/company/gdgrec/', text: '@GDG On Campus REC' },
+  { name: 'YouTube', href: 'https://www.youtube.com/@gdgrec', text: '@GDG On Campus REC' },
 ];
 
 // --- Components ---
@@ -145,12 +150,37 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   // Top header nav sections always link to public pages (/events for events)
   const navSections = SECTIONS;
 
+  // Close menus on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (menuOpen) setMenuOpen(false);
+        if (profileDropdownOpen) setProfileDropdownOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [menuOpen, profileDropdownOpen]);
+
+  // Lock body scroll when mobile menu overlay is active
+  useEffect(() => {
+    if (menuOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [menuOpen]);
+
   // Update active section based on route
-  useMemo(() => {
+  useEffect(() => {
     if (location.pathname.startsWith('/admin')) {
       setActiveSection('admin');
     } else if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/profile')) {
       setActiveSection('dashboard');
+    } else if (location.pathname.startsWith('/tools')) {
+      setActiveSection('tools');
     } else if (location.pathname.startsWith('/events')) {
       setActiveSection('events');
     } else if (location.pathname.startsWith('/team')) {
@@ -164,6 +194,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
   const activeColor = useMemo(() => {
     if (activeSection === 'admin') return '#EA4335';
     if (activeSection === 'dashboard') return '#4285F4';
+    if (activeSection === 'tools') return '#EA4335';
     return SECTIONS.find(s => s.id === activeSection)?.color || '#4285F4';
   }, [activeSection]);
 
@@ -184,6 +215,13 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
       duration: 2400,
     });
   };
+
+  const { bannerHeight, isBannerVisible } = usePromoBannerStore();
+  const bannerTopOffset = useTransform(
+    scrollY,
+    [0, Math.max(1, bannerHeight)],
+    [isBannerVisible ? bannerHeight : 0, 0]
+  );
 
   useMotionValueEvent(scrollY, "change", (latest) => {
     const diff = latest - lastScrollYRef.current;
@@ -213,12 +251,15 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
           visible: { y: 0, opacity: 1 },
           hidden: { y: -100, opacity: 0 }
         }}
-        animate={isHidden ? "hidden" : "visible"}
+        animate={isHidden && !menuOpen ? "hidden" : "visible"}
         transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className="fixed top-0 left-0 right-0 z-50 flex justify-center py-2.5 sm:py-4 px-2 sm:px-4 pointer-events-none"
+        className="fixed top-0 left-0 right-0 z-50 flex justify-center py-3 sm:py-4 px-2.5 sm:px-4 pointer-events-none"
+        style={{
+          top: bannerTopOffset,
+        }}
       >
         <motion.nav
-          className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full border transition-all duration-300 pointer-events-auto max-w-[98vw] sm:max-w-[95vw] w-auto shadow-lg"
+          className="relative flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full border transition-all duration-300 pointer-events-auto max-w-[calc(100vw-1rem)] sm:max-w-[95vw] w-auto shadow-lg min-h-[46px] sm:min-h-[46px]"
           style={{
             background: theme === 'light'
               ? 'rgba(255, 255, 255, 0.94)'
@@ -235,31 +276,36 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 : `0 0 0 1px rgba(255,255,255,0.05), 0 8px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 80px ${activeColor}15`,
           }}
         >
-          <motion.a
-            href="/"
+          <motion.div
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 mr-0.5 sm:mr-2 shrink-0"
-            onPointerDown={handleLogoPointerDown}
-            data-easter-trigger="logo"
-            data-no-leet
+            className="flex items-center mr-0.5 sm:mr-2 shrink-0"
           >
-            <span className="font-sans text-lg sm:text-xl font-bold tracking-tight text-foreground">GDG</span>
-            <div className="flex gap-0.5">
-              {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
-                <motion.div
-                  key={color}
-                  animate={{ scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }}
-                  transition={{ duration: 2, repeat: Infinity, delay: i * 0.15, ease: "easeInOut" }}
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
-          </motion.a>
+            <Link
+              to="/"
+              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2"
+              onPointerDown={handleLogoPointerDown}
+              data-easter-trigger="logo"
+              data-no-leet
+              aria-label="Return to Google Developer Groups home"
+            >
+              <span className="font-sans text-xl sm:text-xl font-bold tracking-tight text-foreground">GDG</span>
+              <div className="flex gap-1 sm:gap-0.5">
+                {['#4285F4', '#EA4335', '#FBBC04', '#34A853'].map((color, i) => (
+                  <motion.div
+                    key={color}
+                    animate={{ scale: [1, 1.3, 1], opacity: [0.7, 1, 0.7] }}
+                    transition={{ duration: 2, repeat: Infinity, delay: i * 0.15, ease: "easeInOut" }}
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </Link>
+          </motion.div>
 
-          {/* Desktop Nav Items - Hidden on Mobile */}
-          <div className="hidden md:flex items-center gap-1 shrink-0">
+          {/* Desktop Nav Items - Hidden on Mobile/Tablet */}
+          <div className="hidden lg:flex items-center gap-1 shrink-0">
             <div className="w-px h-6 mr-2 border-r border-border" />
             {navSections.map((section) => (
               <MagneticNavItem
@@ -277,7 +323,11 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             {isAuthenticated && (
               <MagneticNavItem
                 href={isAdmin ? "/admin/events" : "/dashboard"}
-                isActive={activeSection === (isAdmin ? 'admin' : 'dashboard')}
+                isActive={
+                  isAdmin
+                    ? activeSection === 'admin' && !location.pathname.startsWith('/admin/certificates')
+                    : activeSection === 'dashboard'
+                }
                 color={isAdmin ? "#EA4335" : "#4285F4"}
                 onClick={() => setActiveSection(isAdmin ? 'admin' : 'dashboard')}
                 scrolled={scrolled}
@@ -301,8 +351,8 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             <div className="w-px h-6 mx-2 border-r border-border" />
           </div>
 
-          {/* Spacer for mobile layout */}
-          <div className="flex-grow md:hidden" />
+          {/* Spacer for mobile & tablet layout */}
+          <div className="flex-grow lg:hidden" />
 
           {/* User Profile Button with Dropdown (Desktop & Responsive) */}
           {isAuthenticated && profile ? (
@@ -314,7 +364,7 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                 aria-haspopup="menu"
                 aria-expanded={profileDropdownOpen}
                 aria-label="User account profile and settings menu"
-                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm shrink-0"
+                className="flex items-center gap-1.5 sm:gap-1.5 px-2.5 sm:px-2.5 py-1.5 sm:py-1.5 rounded-full text-xs font-semibold border border-border bg-card hover:bg-muted text-foreground transition-all shadow-sm shrink-0 min-h-[36px]"
                 title="User Profile & Settings"
               >
                 <UserAvatar
@@ -462,46 +512,46 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             </div>
           ) : (
             /* Standalone Theme Toggle when logged out */
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={toggleTheme}
                 title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode`}
-                className="p-1.5 sm:p-2 rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors shrink-0"
+                className="w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-full border border-border bg-card hover:bg-muted text-foreground transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
                 aria-label={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
               >
                 {isDark ? (
-                  <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-google-yellow" aria-hidden="true" />
+                  <Sun className="w-4 h-4 sm:w-4 sm:h-4 text-google-yellow" aria-hidden="true" />
                 ) : (
-                  <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-google-blue" aria-hidden="true" />
+                  <Moon className="w-4 h-4 sm:w-4 sm:h-4 text-google-blue" aria-hidden="true" />
                 )}
               </motion.button>
               <Link
                 to="/login"
                 aria-label="Sign In to your account"
-                className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                className="flex items-center gap-1.5 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-1.5 rounded-full text-xs font-semibold text-foreground/80 hover:text-foreground hover:bg-muted transition-colors shrink-0 min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
               >
-                <LogIn className="w-3.5 h-3.5 text-google-blue" aria-hidden="true" />
+                <LogIn className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-google-blue" aria-hidden="true" />
                 <span className="hidden xs:inline">Sign In</span>
               </Link>
             </div>
           )}
 
-          {/* CTA Button */}
+          {/* CTA Button (Visible on sm+ screens; on mobile, available immediately in drawer) */}
           <Link
             to={isAdmin ? "/admin/events" : "/events"}
             aria-label={isAdmin ? "Manage GDG Events" : "View GDG Events"}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold transition-all shrink-0 ml-0.5 sm:ml-1"
+            className="hidden sm:flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2 rounded-full text-xs sm:text-sm font-bold transition-all shrink-0 ml-0.5 sm:ml-1 min-h-[36px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
             style={{
               background: `linear-gradient(135deg, ${activeColor}, ${activeColor}cc)`,
               boxShadow: `0 4px 20px ${activeColor}40, 0 0 40px ${activeColor}20`,
             }}
           >
             {isAdmin ? (
-              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
+              <Shield className="w-4 h-4 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
             ) : (
-              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
+              <Calendar className="w-4 h-4 sm:w-4 sm:h-4 text-white shrink-0" aria-hidden="true" />
             )}
             <span className="text-white hidden sm:inline">{isAdmin ? "Admin Events" : "Events"}</span>
           </Link>
@@ -511,16 +561,16 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             <HeaderNotifications activeColor={activeColor} />
           </div>
 
-          {/* Mobile Menu Toggle Button */}
+          {/* Mobile Menu Toggle Button (Visible on mobile/tablet, hidden on desktop where nav links are displayed) */}
           <motion.button
             onClick={() => setMenuOpen(!menuOpen)}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="w-8 h-8 sm:w-10 sm:h-10 ml-0.5 sm:ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground shrink-0"
+            className="lg:hidden w-9 h-9 sm:w-10 sm:h-10 ml-0.5 sm:ml-1 flex items-center justify-center rounded-full transition-all z-50 border border-border bg-card text-foreground shrink-0 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
             aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={menuOpen}
           >
-            {menuOpen ? <X className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" /> : <Menu className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />}
+            {menuOpen ? <X className="w-4.5 h-4.5 sm:w-5 sm:h-5" aria-hidden="true" /> : <Menu className="w-4.5 h-4.5 sm:w-5 sm:h-5" aria-hidden="true" />}
           </motion.button>
         </motion.nav>
       </motion.header>
@@ -533,6 +583,9 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Site Navigation Menu"
             className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl"
           >
             {/* Grid Background */}
@@ -544,7 +597,12 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
               }}
             />
 
-            <div className="h-full flex flex-col pt-24 pb-10 overflow-y-auto container mx-auto px-4 sm:px-6 relative z-10">
+            <div
+              className="h-full flex flex-col pb-10 overflow-y-auto container mx-auto px-4 sm:px-6 relative z-10"
+              style={{
+                paddingTop: `${(isBannerVisible && bannerHeight > 0 ? bannerHeight : 0) + 116}px`,
+              }}
+            >
               <div className="flex flex-col justify-between h-full space-y-6">
 
                 {/* Navigation Links */}

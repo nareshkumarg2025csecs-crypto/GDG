@@ -58,6 +58,24 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
   const [isDownloadingPass, setIsDownloadingPass] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Keyboard navigation & scroll locking for modal
+  useEffect(() => {
+    if (!isModal || !onClose) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isModal, onClose]);
+
   const details = event.details || {};
   const eventDate = formatEventDate(details.startTime || details.start_time);
   const eventTime = formatEventTimeRange(
@@ -601,6 +619,9 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
   if (isModal) {
     return (
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Event Ticket Pass"
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
         onClick={onClose}
       >

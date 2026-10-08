@@ -63,7 +63,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
     return `${mb.toFixed(1)} MB`;
   };
 
-  const fetchStatus = async (showToast = false) => {
+  const fetchStatus = async (showToast = false, notifyParent = false) => {
     try {
       if (showToast) setIsRefreshing(true);
       const res = await authService.getDriveStatus(token);
@@ -78,7 +78,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
           description: `Drive: ${res.email || 'Connected'} (${formatBytes(res.storageUsedBytes)} used)`,
         });
       }
-      if (onStatusUpdated) onStatusUpdated();
+      if (notifyParent && onStatusUpdated) onStatusUpdated();
     } catch (err: any) {
       if (showToast) {
         toast({
@@ -133,7 +133,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
         title: 'Designated Folder Saved',
         description: `Student files will now be saved inside "${res.folderName || 'Designated Folder'}".`,
       });
-      await fetchStatus();
+      await fetchStatus(false, true);
     } catch (err: any) {
       toast({
         title: 'Could not set Drive folder',
@@ -155,7 +155,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
         title: 'Folder Reset to Drive Root',
         description: 'Student files will now be saved in the account root Drive directory.',
       });
-      await fetchStatus();
+      await fetchStatus(false, true);
     } catch (err: any) {
       toast({
         title: 'Could not reset Drive folder',
@@ -176,7 +176,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
         title: 'Google Drive Disconnected',
         description: 'The storage account has been logged out successfully.',
       });
-      await fetchStatus();
+      await fetchStatus(false, true);
     } catch (err: any) {
       toast({
         title: 'Failed to disconnect Drive',

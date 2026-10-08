@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
-import { ArrowUp, Github, Twitter, Linkedin, Instagram } from 'lucide-react';
+import { ArrowUp, Linkedin, Instagram, Youtube } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
+import { TOOLS_CONFIG } from '@/config/toolsConfig';
 
 const BRAND_LETTERS = [
   { chars: 'GOOGLE', color: null },
@@ -11,13 +12,19 @@ const BRAND_LETTERS = [
 const GOOGLE_STRIPE = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
 const socialLinks = [
-  { name: 'GitHub',    icon: Github,    href: '#', hoverColor: '#ffffff' },
-  { name: 'Twitter',   icon: Twitter,   href: '#', hoverColor: '#1DA1F2' },
-  { name: 'LinkedIn',  icon: Linkedin,  href: '#', hoverColor: '#0A66C2' },
-  { name: 'Instagram', icon: Instagram, href: '#', hoverColor: '#E1306C' },
+  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/', hoverColor: '#E1306C' },
+  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/company/gdgrec/', hoverColor: '#0A66C2' },
+  { name: 'YouTube',   icon: Youtube,   href: 'https://www.youtube.com/@gdgrec', hoverColor: '#FF0000' },
 ];
 
-const navLinks = ['Home', 'Events', 'Core', 'About Us'];
+const navLinks = [
+  { label: 'Home', href: '/#home' },
+  { label: 'Events', href: '/events' },
+  { label: 'Team', href: '/team' },
+  { label: 'Resources', href: '/resources' },
+  ...(TOOLS_CONFIG.ENABLED ? [{ label: 'Tools', href: '/tools' }] : []),
+  { label: 'About Us', href: '/#about' },
+];
 
 const Footer = () => {
   const { theme } = useTheme();
@@ -125,13 +132,13 @@ const Footer = () => {
             </h4>
             <ul className="space-y-3">
               {navLinks.map((link) => (
-                <li key={link}>
+                <li key={link.label}>
                   <a
-                    href={`#${link.toLowerCase().replace(' ', '-')}`}
+                    href={link.href}
                     className="link-wipe text-sm font-medium transition-colors"
                     style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
                   >
-                    {link}
+                    {link.label}
                   </a>
                 </li>
               ))}
@@ -159,9 +166,12 @@ const Footer = () => {
                 <motion.a
                   key={social.name}
                   href={social.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Visit Google Developer Groups on ${social.name}`}
                   whileHover={{ scale: 1.12, y: -4 }}
                   whileTap={{ scale: 0.92 }}
-                  className="w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 border"
+                  className="w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue"
                   data-physics
                   style={{
                     borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(31,31,31,0.12)',
@@ -179,7 +189,7 @@ const Footer = () => {
                     (e.currentTarget as HTMLElement).style.background = isDark ? 'rgba(255,255,255,0.04)' : 'transparent';
                   }}
                 >
-                  <social.icon className="w-4 h-4" />
+                  <social.icon className="w-4 h-4" aria-hidden="true" />
                 </motion.a>
               ))}
             </div>

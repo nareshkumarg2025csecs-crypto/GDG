@@ -16,6 +16,15 @@ if (!adminSignupCode) {
   }
 }
 
+// Scanner authentication strictly requires SCANNER_TOKEN_SECRET.
+// Application startup must fail securely if SCANNER_TOKEN_SECRET is missing.
+const scannerTokenSecret = process.env.SCANNER_TOKEN_SECRET;
+if (!scannerTokenSecret || typeof scannerTokenSecret !== 'string' || !scannerTokenSecret.trim()) {
+  throw new Error(
+    'FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set. The scanner authentication service requires a dedicated HMAC secret.'
+  );
+}
+
 const crypto = require('crypto');
 
 /**
@@ -42,6 +51,25 @@ const validateAdminSignupCode = (candidateCode) => {
   return crypto.timingSafeEqual(secretHash, candidateHash);
 };
 
+/**
+ * Resolves the secret key for signing and verifying scanner admin session tokens.
+ * Strictly checks process.env.SCANNER_TOKEN_SECRET ONLY.
+ * Never falls back to SUPABASE_SERVICE_ROLE_KEY or any hardcoded default secret.
+ *
+ * @returns {string}
+ */
+const getScannerTokenSecret = () => {
+  const secret = process.env.SCANNER_TOKEN_SECRET;
+  if (!secret || typeof secret !== 'string' || !secret.trim()) {
+    throw new Error(
+      'FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set. Dedicated HMAC secret is strictly required for scanner authentication.'
+    );
+  }
+  return secret.trim();
+};
+
 module.exports = {
   validateAdminSignupCode,
+  getScannerTokenSecret,
 };
+

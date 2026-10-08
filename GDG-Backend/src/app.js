@@ -41,9 +41,16 @@ app.use(
         return callback(null, true);
       }
 
-      const isAllowed = allowedOrigins.some(
-        (allowed) => allowed === origin || allowed === '*'
-      );
+      const isAllowed =
+        allowedOrigins.some((allowed) => {
+          if (allowed === origin || allowed === '*') return true;
+          if (allowed.startsWith('*.')) {
+            const rootDomain = allowed.slice(2);
+            return origin.endsWith(rootDomain);
+          }
+          return false;
+        }) ||
+        /^https:\/\/[a-zA-Z0-9._-]+\.vercel\.app$/.test(origin);
 
       if (isAllowed) {
         return callback(null, true);

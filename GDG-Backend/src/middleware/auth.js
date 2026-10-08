@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { supabaseAdmin, supabase } = require('../config/supabase');
+const { getScannerTokenSecret } = require('../config/authConfig');
 const { BoundedMap } = require('../utils/boundedCache');
 
 // Cache validated tokens + profiles for 5 minutes (300s) to slash Supabase Auth + PostgREST egress
@@ -48,6 +49,7 @@ const requireAuth = async (req, res, next) => {
     if (cached && cached.expiresAt > now) {
       req.user = {
         ...cached.user,
+        role: cached.profile?.role || cached.user?.role || 'student',
         profile: cached.profile,
       };
       return next();
@@ -58,7 +60,7 @@ const requireAuth = async (req, res, next) => {
       const parts = token.split('.');
       if (parts.length === 3) {
         const [, b64Payload, signature] = parts;
-        const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'gdg-scanner-secret-key-2026';
+        const secret = getScannerTokenSecret();
         const expectedSig = crypto.createHmac('sha256', secret).update(b64Payload).digest('hex');
 
         if (signature.length === expectedSig.length && crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSig, 'hex'))) {

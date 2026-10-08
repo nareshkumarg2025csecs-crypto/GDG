@@ -4,6 +4,8 @@ process.env.ADMIN_SIGNUP_CODE = 'sec-test-admin-secret-code';
 process.env.ADMIN_MAX_LOGIN_ATTEMPTS = '3'; // Strict 3 attempts for test
 process.env.ADMIN_LOCKOUT_MINUTES = '15';
 process.env.ALLOWED_ORIGINS = 'http://localhost:3000,https://myclub.rajalakshmi.edu.in';
+process.env.SCANNER_TOKEN_SECRET = 'sec-test-scanner-token-secret-32bytes-min';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock-supabase-service-role-key-for-test';
 
 // In-memory data store for tests
 const mockUsers = new Map();
@@ -334,6 +336,9 @@ describe('Security Hardening Test Suite', () => {
         'import shutil\nshutil.rmtree("./")',
         'eval("__import__(\'os\').system(\'whoami\')")',
         'with open("/etc/passwd", "w") as f: f.write("hacked")',
+        'data = open(".env", "r").read()',
+        'subclasses = ().__class__.__base__.__subclasses__()',
+        'getattr(os, "system")("dir")',
       ];
 
       for (const script of maliciousScripts) {
@@ -346,6 +351,163 @@ describe('Security Hardening Test Suite', () => {
     test('Allows safe Pillow, math, and JSON certificate generation script', () => {
       const safeScript = CertificateService.DEFAULT_PYTHON_TEMPLATE;
       expect(() => CertificateService.validateScriptCode(safeScript)).not.toThrow();
+    });
+  });
+
+  describe('5. Scanner Token Authentication & HMAC Secret Enforcement', () => {
+    const crypto = require('crypto');
+    const authConfig = require('../src/config/authConfig');
+
+    test('getScannerTokenSecret() returns process.env.SCANNER_TOKEN_SECRET', () => {
+      expect(authConfig.getScannerTokenSecret()).toBe(process.env.SCANNER_TOKEN_SECRET);
+    });
+
+    test('getScannerTokenSecret() throws securely when SCANNER_TOKEN_SECRET is missing or empty', () => {
+      const originalSecret = process.env.SCANNER_TOKEN_SECRET;
+      try {
+        delete process.env.SCANNER_TOKEN_SECRET;
+        expect(() => authConfig.getScannerTokenSecret()).toThrow(
+          /FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set/i
+        );
+
+        process.env.SCANNER_TOKEN_SECRET = '   ';
+        expect(() => authConfig.getScannerTokenSecret()).toThrow(
+          /FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set/i
+        );
+      } finally {
+        process.env.SCANNER_TOKEN_SECRET = originalSecret;
+      }
+    });
+
+    test('Application startup fails securely if SCANNER_TOKEN_SECRET is missing (no fallback to SUPABASE_SERVICE_ROLE_KEY)', () => {
+      const originalSecret = process.env.SCANNER_TOKEN_SECRET;
+
+      try {
+        delete process.env.SCANNER_TOKEN_SECRET;
+        // Even if SUPABASE_SERVICE_ROLE_KEY is set, authConfig must throw and NEVER fall back
+        expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBeDefined();
+
+        expect(() => {
+          jest.isolateModules(() => {
+            jest.doMock('dotenv', () => ({ config: () => ({}) }));
+            require('../src/config/authConfig');
+          });
+        }).toThrow(/FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set/i);
+
+        // Also test empty string fails startup
+        process.env.SCANNER_TOKEN_SECRET = '   ';
+        expect(() => {
+          jest.isolateModules(() => {
+            jest.doMock('dotenv', () => ({ config: () => ({}) }));
+            require('../src/config/authConfig');
+          });
+        }).toThrow(/FATAL CONFIG ERROR: SCANNER_TOKEN_SECRET environment variable must be set/i);
+      } finally {
+        process.env.SCANNER_TOKEN_SECRET = originalSecret;
+      }
+    });
+
+    test('Scanner admin login signs token using SCANNER_TOKEN_SECRET only', async () => {
+      const res = await request(app)
+        .post('/api/auth/scanner/admin-email-login')
+        .send({
+          email: 'sec.admin@college.edu',
+          admin_code: 'sec-test-admin-secret-code',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.access_token).toBeDefined();
+
+      const token = res.body.access_token;
+      expect(token).toMatch(/^scanner_v1\.[^.]+\.[0-9a-f]{64}$/);
+
+      const [, b64Payload, signature] = token.split('.');
+      const expectedHmac = crypto
+        .createHmac('sha256', process.env.SCANNER_TOKEN_SECRET)
+        .update(b64Payload)
+        .digest('hex');
+
+      expect(signature).toBe(expectedHmac);
+
+      // Verify signature is NOT equal to HMAC signed with SUPABASE_SERVICE_ROLE_KEY
+      const serviceRoleHmac = crypto
+        .createHmac('sha256', process.env.SUPABASE_SERVICE_ROLE_KEY)
+        .update(b64Payload)
+        .digest('hex');
+      expect(signature).not.toBe(serviceRoleHmac);
+    });
+
+    test('Scanner token signed with SCANNER_TOKEN_SECRET is accepted on protected endpoints', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const payloadObj = {
+        sub: adminId,
+        email: 'sec.admin@college.edu',
+        role: 'admin',
+        iat: nowSec,
+        exp: nowSec + 3600,
+      };
+      const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      const signature = crypto
+        .createHmac('sha256', process.env.SCANNER_TOKEN_SECRET)
+        .update(b64Payload)
+        .digest('hex');
+      const validToken = `scanner_v1.${b64Payload}.${signature}`;
+
+      const res = await request(app)
+        .get('/api/me')
+        .set('Authorization', `Bearer ${validToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.user.email).toBe('sec.admin@college.edu');
+      expect(res.body.profile.role).toBe('admin');
+    });
+
+    test('Scanner token signed with SUPABASE_SERVICE_ROLE_KEY is REJECTED (no fallback allowed)', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const payloadObj = {
+        sub: adminId,
+        email: 'sec.admin@college.edu',
+        role: 'admin',
+        iat: nowSec,
+        exp: nowSec + 3600,
+      };
+      const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      const forgedSignature = crypto
+        .createHmac('sha256', process.env.SUPABASE_SERVICE_ROLE_KEY)
+        .update(b64Payload)
+        .digest('hex');
+      const invalidToken = `scanner_v1.${b64Payload}.${forgedSignature}`;
+
+      const res = await request(app)
+        .get('/api/me')
+        .set('Authorization', `Bearer ${invalidToken}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toMatch(/unauthorized/i);
+    });
+
+    test('Scanner token signed with old deprecated keys or arbitrary secrets is REJECTED', async () => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const payloadObj = {
+        sub: adminId,
+        email: 'sec.admin@college.edu',
+        role: 'admin',
+        iat: nowSec,
+        exp: nowSec + 3600,
+      };
+      const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+      const oldKeySignature = crypto
+        .createHmac('sha256', 'gdg-scanner-secret-key-2026')
+        .update(b64Payload)
+        .digest('hex');
+      const rejectedToken = `scanner_v1.${b64Payload}.${oldKeySignature}`;
+
+      const res = await request(app)
+        .get('/api/me')
+        .set('Authorization', `Bearer ${rejectedToken}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toMatch(/unauthorized/i);
     });
   });
 });

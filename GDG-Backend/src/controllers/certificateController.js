@@ -142,15 +142,19 @@ const getAttendedParticipants = async (req, res) => {
       return res.status(200).json(cached.data);
     }
 
-    const { data: form } = await supabaseAdmin
+    const { data: forms, error: formErr } = await supabaseAdmin
       .from('forms')
       .select('id')
-      .eq('event_id', eventId)
-      .maybeSingle();
+      .eq('event_id', eventId);
 
-    if (!form?.id) {
+    if (formErr || !forms || forms.length !== 1) {
+      if (formErr) {
+        console.error('getAttendedParticipants form error:', formErr);
+      }
       return res.status(200).json({ participants: [], totalAttended: 0, totalCertificatesSent: 0 });
     }
+
+    const form = forms[0];
 
     // Use paginated retrieval to safely fetch high participant counts
     const submissions = await CertificateService.fetchAllAttendedSubmissions({

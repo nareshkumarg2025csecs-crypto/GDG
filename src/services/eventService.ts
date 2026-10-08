@@ -1,5 +1,6 @@
 import { apiRequest } from '@/lib/api';
 import type { ClubEvent, EventDetails } from '@/lib/formUtils';
+import { clearFormsSummaryCache } from '@/services/formService';
 
 export interface EventsResponse {
   message: string;
@@ -37,6 +38,7 @@ export interface GoogleLinkUrlResponse {
 
 // Low-egress client cache (60s TTL) to prevent repeated network trips
 let cachedEventsList: { data: EventsResponse; expiresAt: number } | null = null;
+let inFlightEventsList: Promise<EventsResponse> | null = null;
 const cachedSingleEvents = new Map<string, { data: SingleEventResponse; expiresAt: number }>();
 
 export const eventService = {
@@ -45,16 +47,28 @@ export const eventService = {
       return cachedEventsList.data;
     }
 
-    const data = await apiRequest<EventsResponse>('/api/events', {
-      method: 'GET',
-    });
+    if (!forceRefresh && inFlightEventsList) {
+      return inFlightEventsList;
+    }
 
-    cachedEventsList = {
-      data,
-      expiresAt: Date.now() + 60 * 1000,
-    };
+    inFlightEventsList = (async () => {
+      try {
+        const data = await apiRequest<EventsResponse>('/api/events', {
+          method: 'GET',
+        });
 
-    return data;
+        cachedEventsList = {
+          data,
+          expiresAt: Date.now() + 60 * 1000,
+        };
+
+        return data;
+      } finally {
+        inFlightEventsList = null;
+      }
+    })();
+
+    return inFlightEventsList;
   },
 
   async getEventById(id: string, forceRefresh = false): Promise<SingleEventResponse> {
@@ -76,31 +90,37 @@ export const eventService = {
   },
 
   async createEvent(data: { title: string; details: EventDetails }): Promise<SingleEventResponse> {
-    cachedEventsList = null;
-    return apiRequest<SingleEventResponse>('/api/events', {
+    const res = await apiRequest<SingleEventResponse>('/api/events', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    cachedEventsList = null;
+    clearFormsSummaryCache();
+    return res;
   },
 
   async updateEvent(
     id: string,
     data: { title?: string; details?: EventDetails }
   ): Promise<SingleEventResponse> {
-    cachedEventsList = null;
-    cachedSingleEvents.delete(id);
-    return apiRequest<SingleEventResponse>(`/api/events/${id}`, {
+    const res = await apiRequest<SingleEventResponse>(`/api/events/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+    cachedEventsList = null;
+    cachedSingleEvents.delete(id);
+    clearFormsSummaryCache();
+    return res;
   },
 
   async deleteEvent(id: string): Promise<{ message: string; deleted_event: ClubEvent }> {
-    cachedEventsList = null;
-    cachedSingleEvents.delete(id);
-    return apiRequest<{ message: string; deleted_event: ClubEvent }>(`/api/events/${id}`, {
+    const res = await apiRequest<{ message: string; deleted_event: ClubEvent }>(`/api/events/${id}`, {
       method: 'DELETE',
     });
+    cachedEventsList = null;
+    cachedSingleEvents.delete(id);
+    clearFormsSummaryCache();
+    return res;
   },
 
   async createCalendarReminder(eventId: string): Promise<CalendarReminderResponse> {

@@ -17,7 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { eventService } from '@/services/eventService';
 import { dashboardService, type AppNotification } from '@/services/dashboardService';
 import { formService } from '@/services/formService';
-import type { ClubEvent } from '@/lib/formUtils';
+import { type ClubEvent, stripMarkdown } from '@/lib/formUtils';
 
 interface HeaderNotificationsProps {
   activeColor?: string;
@@ -89,6 +89,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
   const [activeFilter, setActiveFilter] = useState<'all' | 'alerts' | 'events'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [lastOpenedAt, setLastOpenedAt] = useState<number>(0);
+  const [panelBaselineOpenedAt, setPanelBaselineOpenedAt] = useState<number>(0);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const lastFetchTimeRef = useRef<number>(0);
@@ -131,7 +132,9 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
   useEffect(() => {
     try {
       const storedLastOpened = localStorage.getItem(userStorageKey);
-      setLastOpenedAt(storedLastOpened ? parseInt(storedLastOpened, 10) : 0);
+      const parsedLastOpened = storedLastOpened ? parseInt(storedLastOpened, 10) : 0;
+      setLastOpenedAt(parsedLastOpened);
+      setPanelBaselineOpenedAt(parsedLastOpened);
 
       const storedRead = localStorage.getItem(userReadIdsKey);
       if (storedRead) {
@@ -229,7 +232,10 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       const [eventsRes, personalList] = await Promise.all([eventsPromise, personalPromise]);
 
       if (eventsRes?.events) {
-        const sortedEvents = [...eventsRes.events].sort((a, b) => {
+        const publishedEvents = eventsRes.events.filter(
+          (e) => e.details?.status === 'published' || e.details?.published === true
+        );
+        const sortedEvents = [...publishedEvents].sort((a, b) => {
           const tA = new Date(a.created_at || a.details?.startTime || 0).getTime();
           const tB = new Date(b.created_at || b.details?.startTime || 0).getTime();
           return tB - tA;
@@ -303,27 +309,74 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen]);
 
   // Eligible events:
-  // - Authenticated: ONLY events created AFTER the user joined (with 60-second buffer)
-  // - Unauthenticated: all recent GDG events
+  // 1. Events that have already ended (endTime/startTime in the past) are strictly EXCLUDED
+  // 2. Events where registration or form is closed/full are strictly EXCLUDED
+  // 3. For new visitors / unauthenticated users: show only the single latest active event
+  // 4. For authenticated users: show active events created after joining
   const userEligibleEvents = useMemo(() => {
     if (!events.length) return [];
+    const now = Date.now();
+
+    const activeEvents = events.filter((event) => {
+      const details = event.details || {};
+
+      // Check if event has already ended
+      const rawEnd = details.endTime || details.end_time || details.startTime || details.start_time;
+      if (rawEnd) {
+        const endTimeMs = new Date(rawEnd).getTime();
+        if (!isNaN(endTimeMs) && endTimeMs <= now) {
+          return false;
+        }
+      }
+
+      // Check if registration is explicitly closed
+      if (details.is_registration_open === false || details.registration_closed === true) {
+        return false;
+      }
+
+      // Check if registration deadline has passed
+      if (details.registration_deadline) {
+        const deadlineMs = new Date(details.registration_deadline).getTime();
+        if (!isNaN(deadlineMs) && deadlineMs <= now) {
+          return false;
+        }
+      }
+
+      // Check capacity limit
+      if (details.is_full === true) {
+        return false;
+      }
+
+      return true;
+    });
+
     if (isAuthenticated && userRegistrationTime > 0) {
-      return events.filter((event) => {
+      return activeEvents.filter((event) => {
         const eventCreatedTime = new Date(event.created_at).getTime();
         if (isNaN(eventCreatedTime)) return false;
         return eventCreatedTime >= userRegistrationTime - 60000;
       });
     }
-    return events;
+
+    // New visitor: show only the single latest current event that is open
+    return activeEvents.slice(0, 1);
   }, [events, isAuthenticated, userRegistrationTime]);
 
   // Combine into unified notification list
@@ -332,7 +385,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       id: `event_${ev.id}`,
       type: 'event',
       title: ev.title,
-      message: ev.details?.description || 'Newly announced event in Google Developer Group.',
+      message: stripMarkdown(ev.details?.description) || 'Newly announced event in Google Developer Group.',
       timestamp: ev.created_at,
       category: ev.details?.category || 'Event',
       eventId: ev.id,
@@ -388,6 +441,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
     setIsOpen(nextState);
 
     if (nextState) {
+      setPanelBaselineOpenedAt(lastOpenedAt);
       const now = Date.now();
       setLastOpenedAt(now);
       try {
@@ -473,7 +527,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
             transition={{ duration: 0.18, ease: 'easeOut' }}
             role="region"
             aria-label="Event and attendance notifications"
-            className="fixed sm:absolute top-20 sm:top-full left-3 right-3 sm:left-auto sm:right-0 sm:mt-2.5 sm:w-[420px] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden flex flex-col max-h-[84vh] sm:max-h-[580px]"
+            className="fixed sm:absolute top-16 sm:top-full left-3 right-3 sm:left-auto sm:right-0 sm:mt-2.5 sm:w-[420px] rounded-2xl border border-border bg-card text-card-foreground shadow-2xl z-50 overflow-hidden flex flex-col max-h-[72vh] sm:max-h-[500px]"
             style={{
               boxShadow: '0 20px 50px -10px rgba(0, 0, 0, 0.5)',
             }}
@@ -575,8 +629,8 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
               )}
             </div>
 
-            {/* Notification List */}
-            <div className="overflow-y-auto divide-y divide-border/50 flex-1 overscroll-contain bg-card">
+            {/* Notification List (Scrollable, showing few items at once in mobile view) */}
+            <div className="overflow-y-auto divide-y divide-border/50 flex-1 overscroll-contain bg-card max-h-[46vh] sm:max-h-[350px]">
               {isLoading ? (
                 <div className="p-6 text-center space-y-3 bg-card">
                   <div className="w-8 h-8 rounded-full border-2 border-blue-500/30 border-t-blue-500 animate-spin mx-auto" />
@@ -604,9 +658,10 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                 </div>
               ) : (
                 filteredNotifications.slice(0, 10).map((item) => {
+                  const effectiveBaseline = isOpen ? panelBaselineOpenedAt : lastOpenedAt;
                   const isItemUnread =
                     !readIds.has(item.id) &&
-                    (lastOpenedAt === 0 || new Date(item.timestamp).getTime() > lastOpenedAt);
+                    (effectiveBaseline === 0 || new Date(item.timestamp).getTime() > effectiveBaseline);
                   const relativeTime = getRelativeTime(item.timestamp);
 
                   // 1. Attendance Verified Notification Item
@@ -644,11 +699,11 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                             </span>
                           </div>
 
-                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-emerald-500 transition-colors line-clamp-1 leading-snug">
+                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-emerald-500 transition-colors line-clamp-2 break-words leading-snug">
                             {item.title}
                           </h5>
 
-                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                          <p className="text-[11px] text-muted-foreground line-clamp-3 break-words leading-relaxed">
                             {item.message}
                           </p>
 
@@ -700,11 +755,11 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                             </span>
                           </div>
 
-                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-amber-500 transition-colors line-clamp-1 leading-snug">
+                          <h5 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-amber-500 transition-colors line-clamp-2 break-words leading-snug">
                             {item.title}
                           </h5>
 
-                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
+                          <p className="text-[11px] text-muted-foreground line-clamp-3 break-words leading-relaxed">
                             {item.message}
                           </p>
 
@@ -766,13 +821,13 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
                           </span>
                         </div>
 
-                        <h5 className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-blue-500 transition-colors line-clamp-1 leading-snug">
+                        <h5 className="text-xs sm:text-sm font-semibold text-foreground group-hover:text-blue-500 transition-colors line-clamp-2 break-words leading-snug">
                           {item.title}
                         </h5>
 
                         {item.message && (
-                          <p className="text-[11px] text-muted-foreground line-clamp-1 leading-relaxed">
-                            {item.message}
+                          <p className="text-[11px] text-muted-foreground line-clamp-3 break-words leading-relaxed">
+                            {stripMarkdown(item.message)}
                           </p>
                         )}
 

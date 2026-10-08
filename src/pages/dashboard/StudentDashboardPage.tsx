@@ -1111,6 +1111,9 @@ export const StudentDashboardPage: React.FC = () => {
                   const isCertsIssued = Boolean(
                     details.certificates_issued || (submission as any).certificates_issued
                   );
+                  const endTimestamp = details.endTime || details.end_time || details.startTime || details.start_time;
+                  const parsedEndDate = endTimestamp ? parseEventDate(endTimestamp) : null;
+                  const isEnded = parsedEndDate ? parsedEndDate.getTime() < Date.now() : false;
 
                   return (
                     <motion.div
@@ -1160,6 +1163,11 @@ export const StudentDashboardPage: React.FC = () => {
                                 <XCircle className="w-3.5 h-3.5" />
                                 <span>Not Attended</span>
                               </span>
+                            ) : isEnded ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-500 text-white shadow-sm">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Event Concluded</span>
+                              </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-sm">
                                 <Clock className="w-3.5 h-3.5" />
@@ -1202,6 +1210,11 @@ export const StudentDashboardPage: React.FC = () => {
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-rose-600 text-white shadow-sm">
                                 <XCircle className="w-3.5 h-3.5" />
                                 <span>Not Attended</span>
+                              </span>
+                            ) : isEnded ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-slate-500 text-white shadow-sm">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>Event Concluded</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-amber-500 text-white shadow-sm">
@@ -1274,11 +1287,21 @@ export const StudentDashboardPage: React.FC = () => {
                               Certificates were issued to attended participants. Since attendance was not marked as present, a certificate was not awarded.
                             </p>
                           </div>
+                        ) : isEnded ? (
+                          <div className="p-3 rounded-2xl bg-muted/40 border border-border/60 text-muted-foreground space-y-1">
+                            <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+                              <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span>Event Concluded</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
+                              This event has concluded. Attendance verification records and certificates are being processed.
+                            </p>
+                          </div>
                         ) : (
                           <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-600 dark:text-amber-400 space-y-1">
                             <div className="flex items-center gap-2 text-xs font-bold">
                               <Clock className="w-4 h-4 text-amber-500 shrink-0" />
-                              <span>Event has started</span>
+                              <span>Event is underway</span>
                             </div>
                             <p className="text-[11px] text-muted-foreground leading-relaxed pl-6">
                               This event is underway. Attendance records and certificates will be updated after conclusion.

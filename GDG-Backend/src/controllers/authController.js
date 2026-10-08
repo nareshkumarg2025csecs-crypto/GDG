@@ -2,13 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { supabase, supabaseAdmin } = require('../config/supabase');
-const { validateAdminSignupCode } = require('../config/authConfig');
+const { validateAdminSignupCode, getScannerTokenSecret } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
 const GoogleCalendarService = require('../services/googleCalendarService');
 const GoogleDriveService = require('../services/googleDriveService');
 const GmailApiService = require('../services/gmailApiService');
 const EmailQueueService = require('../services/emailQueueService');
+
+/**
+ * Escapes unsafe HTML characters to prevent XSS / HTML injection in generated emails.
+ *
+ * @param {any} str
+ * @returns {string}
+ */
+const escapeHtml = (str) => {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
 
 /**
  * Builds the official Google Developer Groups branded HTML verification email.
@@ -18,6 +34,7 @@ const EmailQueueService = require('../services/emailQueueService');
  * @returns {string}
  */
 const buildVerificationEmailHtml = (fullName, actionLink) => {
+  const safeFullName = escapeHtml(fullName);
   return `
 <!DOCTYPE html>
 <html>
@@ -47,7 +64,7 @@ const buildVerificationEmailHtml = (fullName, actionLink) => {
           <tr>
             <td style="padding: 0 36px 32px;">
               <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
-                Welcome, ${fullName}! 👋
+                Welcome, ${safeFullName}! 👋
               </h2>
               <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #475569;">
                 Thank you for creating an account with our GDG student community. To finish setting up your account and access workshops, hackathons, and certifications, please verify your email address.
@@ -98,6 +115,7 @@ const buildVerificationEmailHtml = (fullName, actionLink) => {
  * @returns {string}
  */
 const buildPasswordResetEmailHtml = (fullName, actionLink) => {
+  const safeFullName = escapeHtml(fullName);
   return `
 <!DOCTYPE html>
 <html>
@@ -127,7 +145,7 @@ const buildPasswordResetEmailHtml = (fullName, actionLink) => {
           <tr>
             <td style="padding: 0 36px 32px;">
               <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
-                Hello, ${fullName}! 
+                Hello, ${safeFullName}! 
               </h2>
               <p style="margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #475569;">
                 We received a request to reset your password for your Google Developer Groups student account. Click the button below to set a new password:
@@ -352,10 +370,22 @@ const handleSignup = async (req, res, fixedRole) => {
 
       console.log(`[Student Signup] Verification email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
 
+      let emailEnqueued = false;
+      if (!sendRes.success) {
+        console.warn(`[Student Signup] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+        EmailQueueService.enqueue({
+          to: normalizedEmail,
+          subject: emailSubject,
+          html: emailHtml,
+          text: emailText,
+        });
+        emailEnqueued = true;
+      }
+
       await logActivity(req, {
         user_id: userId,
         action: 'signup_verification_sent',
-        details: { email: normalizedEmail, full_name: full_name.trim(), email_sent: sendRes.success },
+        details: { email: normalizedEmail, full_name: full_name.trim(), email_sent: sendRes.success, enqueued: emailEnqueued },
       });
 
       return res.status(201).json({
@@ -425,7 +455,7 @@ const handleLogin = async (req, res, expectedRole) => {
     // 1. Fetch user profile upfront to check lockout status
     let { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, email, full_name, role, details, locked_until, failed_login_count')
+      .select('id, email, full_name, role, details, locked_until, failed_login_count, created_at')
       .eq('email', normalizedEmail)
       .maybeSingle();
 
@@ -553,7 +583,7 @@ const handleLogin = async (req, res, expectedRole) => {
     if (!profile) {
       const { data: profileById } = await supabaseAdmin
         .from('profiles')
-        .select('id, email, full_name, role, details, locked_until, failed_login_count')
+        .select('id, email, full_name, role, details, locked_until, failed_login_count, created_at')
         .eq('id', userId)
         .maybeSingle();
       if (profileById) {
@@ -697,10 +727,22 @@ const resendStudentVerification = async (req, res) => {
 
     console.log(`[Resend Verification] Email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
 
+    let emailEnqueued = false;
+    if (!sendRes.success) {
+      console.warn(`[Resend Verification] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+      EmailQueueService.enqueue({
+        to: normalizedEmail,
+        subject: emailSubject,
+        html: emailHtml,
+        text: emailText,
+      });
+      emailEnqueued = true;
+    }
+
     await logActivity(req, {
       user_id: profile ? profile.id : null,
       action: 'resend_verification_email',
-      details: { email: normalizedEmail, email_sent: sendRes.success },
+      details: { email: normalizedEmail, email_sent: sendRes.success, enqueued: emailEnqueued },
     });
 
     return res.status(200).json({
@@ -781,10 +823,22 @@ const studentForgotPassword = async (req, res) => {
 
     console.log(`[Forgot Password] Reset email sent to ${normalizedEmail} via Gmail API:`, sendRes.success);
 
+    let emailEnqueued = false;
+    if (!sendRes.success) {
+      console.warn(`[Forgot Password] Direct Gmail dispatch failed for ${normalizedEmail} (${sendRes.error || 'unknown'}). Enqueuing through EmailQueueService...`);
+      EmailQueueService.enqueue({
+        to: normalizedEmail,
+        subject: emailSubject,
+        html: emailHtml,
+        text: emailText,
+      });
+      emailEnqueued = true;
+    }
+
     await logActivity(req, {
       user_id: profile.id,
       action: 'forgot_password_requested',
-      details: { email: normalizedEmail, email_sent: sendRes.success },
+      details: { email: normalizedEmail, email_sent: sendRes.success, enqueued: emailEnqueued },
     });
 
     return res.status(200).json({
@@ -939,38 +993,19 @@ const getGoogleOAuthUrl = async (req, res) => {
 
     console.log('[OAuth] Generated OAuth redirectTo:', redirectUrl);
 
-    // Admin provides all needed scopes (drive, spreadsheets, calendar).
-    // Students only request standard identity scopes (openid, email, profile).
-    // Calendar scope is NOT requested here so students do not see a permission consent screen and log in directly.
-    const isAdmin = role === 'admin';
-    const scopesString = isAdmin
-      ? 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive'
-      : 'openid email profile';
-
-    const requestedScopes = isAdmin
-      ? [
-          'https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/calendar.events',
-          'https://www.googleapis.com/auth/drive',
-        ]
-      : [
-          'openid',
-          'email',
-          'profile',
-        ];
+    // Both Admin and Students use clean standard identity scopes (openid, email, profile).
+    // prompt is set to 'select_account' without 'consent' or 'offline' access so Google does NOT
+    // force a consent screen or verification warning for either admins or students.
+    const scopesString = 'openid email profile';
+    const requestedScopes = ['openid', 'email', 'profile'];
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         scopes: scopesString,
-        queryParams: isAdmin
-          ? {
-              access_type: 'offline',
-              prompt: 'consent',
-            }
-          : {
-              prompt: 'select_account',
-            },
+        queryParams: {
+          prompt: 'select_account',
+        },
         redirectTo: redirectUrl,
       },
     });
@@ -1144,16 +1179,6 @@ const getGmailOAuthUrl = async (req, res) => {
     console.error('getGmailOAuthUrl error:', err);
     return res.status(500).json({ error: err.message });
   }
-};
-
-const escapeHtml = (str) => {
-  if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 };
 
 /**
@@ -1551,7 +1576,7 @@ const disconnectDriveAccount = async (req, res) => {
  */
 const scannerAdminEmailLogin = async (req, res) => {
   try {
-    const { email, admin_code } = req.body;
+    const { email, admin_code, admin_id } = req.body;
 
     // 1. Strictly validate the admin secret code first
     if (!admin_code || typeof admin_code !== 'string' || !admin_code.trim()) {
@@ -1564,34 +1589,40 @@ const scannerAdminEmailLogin = async (req, res) => {
       await logActivity(req, {
         user_id: null,
         action: 'scanner_login_rejected_invalid_secret_code',
-        details: { email: email ? String(email).trim().toLowerCase() : null },
+        details: { email: email ? String(email).trim().toLowerCase() : null, admin_id: admin_id || null },
       });
       return res.status(401).json({
         error: 'Incorrect admin secret code. Access denied.',
       });
     }
 
-    if (!email || typeof email !== 'string' || !email.trim()) {
-      return res.status(400).json({ error: 'Admin email is required.' });
+    if ((!email || typeof email !== 'string' || !email.trim()) && !admin_id) {
+      return res.status(400).json({ error: 'Admin email or admin ID is required.' });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = email ? email.trim().toLowerCase() : null;
 
-    // 2. Check if an admin profile exists with this email
-    const { data: profile, error: profileErr } = await supabaseAdmin
+    // 2. Check if an admin profile exists with this email or admin_id
+    let profileQuery = supabaseAdmin
       .from('profiles')
-      .select('id, email, full_name, role, details, created_at')
-      .eq('email', normalizedEmail)
-      .maybeSingle();
+      .select('id, email, full_name, role, details, created_at');
+
+    if (admin_id) {
+      profileQuery = profileQuery.eq('id', admin_id);
+    } else {
+      profileQuery = profileQuery.eq('email', normalizedEmail);
+    }
+
+    const { data: profile, error: profileErr } = await profileQuery.maybeSingle();
 
     if (profileErr) {
       console.error('scannerAdminEmailLogin error querying profile:', profileErr);
-      return res.status(500).json({ error: 'Database error validating admin email.' });
+      return res.status(500).json({ error: 'Database error validating admin account.' });
     }
 
     if (!profile) {
       return res.status(404).json({
-        error: `No account found with email "${normalizedEmail}". Please sign in or register on the GDG portal first.`,
+        error: `No admin account found. Please register on the GDG portal first.`,
       });
     }
 
@@ -1599,10 +1630,10 @@ const scannerAdminEmailLogin = async (req, res) => {
       await logActivity(req, {
         user_id: profile.id,
         action: 'scanner_login_rejected_not_admin',
-        details: { email: normalizedEmail, role: profile.role },
+        details: { email: profile.email, role: profile.role },
       });
       return res.status(403).json({
-        error: `Account "${normalizedEmail}" is registered as "${profile.role}", not as an Admin. Only authorized GDG administrators can access the event scanner.`,
+        error: `Account "${profile.email}" is registered as "${profile.role}", not as an Admin. Only authorized GDG administrators can access the event scanner.`,
       });
     }
 
@@ -1617,14 +1648,14 @@ const scannerAdminEmailLogin = async (req, res) => {
       exp: expSec,
     };
     const b64Payload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
-    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || 'gdg-scanner-secret-key-2026';
+    const secret = getScannerTokenSecret();
     const signature = crypto.createHmac('sha256', secret).update(b64Payload).digest('hex');
     const scannerToken = `scanner_v1.${b64Payload}.${signature}`;
 
     await logActivity(req, {
       user_id: profile.id,
       action: 'scanner_admin_login_success',
-      details: { email: normalizedEmail, full_name: profile.full_name },
+      details: { email: profile.email, full_name: profile.full_name },
     });
 
     const position = profile.details?.position || profile.details?.role || 'Administrator';
@@ -1650,10 +1681,22 @@ const scannerAdminEmailLogin = async (req, res) => {
 /**
  * GET /api/auth/scanner/verified-admins
  * Returns all active administrators registered in Supabase database.
- * Formats details so scanner app displays their name, email, and position.
+ * Strictly restricted to authorized callers (authenticated admin or valid X-Admin-Code header).
  */
 const getScannerVerifiedAdmins = async (req, res) => {
   try {
+    const adminCodeHeader = req.headers['x-admin-code'];
+    const isAuthorized = Boolean(
+      (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) ||
+      (adminCodeHeader && validateAdminSignupCode(String(adminCodeHeader).trim()))
+    );
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized: Admin authorization or valid X-Admin-Code header is required to access verified administrators.',
+      });
+    }
+
     const { data: admins, error } = await supabaseAdmin
       .from('profiles')
       .select('id, email, full_name, role, details, created_at')
@@ -1672,8 +1715,8 @@ const getScannerVerifiedAdmins = async (req, res) => {
         const details = admin.details || {};
         return {
           id: admin.id,
-          email: admin.email,
-          name: admin.full_name || admin.email.split('@')[0],
+          ...(isAuthorized ? { email: admin.email } : {}),
+          name: admin.full_name || (admin.email ? admin.email.split('@')[0] : 'Administrator'),
           position: details.position || details.role || 'Administrator',
           domain: details.domain || details.department || 'Leadership',
           role: admin.role,

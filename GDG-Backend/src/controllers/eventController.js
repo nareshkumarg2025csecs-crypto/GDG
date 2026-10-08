@@ -107,12 +107,12 @@ const listEvents = async (req, res) => {
       });
     }
 
-    // Single-Flight: Coalesce all simultaneous requests into a SINGLE database call
+    // Single-Flight: Coalesce simultaneous requests with default limit into a single query
     let events;
-    if (eventsListInflightPromise) {
+    if (queryLimit === 100 && eventsListInflightPromise) {
       events = await eventsListInflightPromise;
     } else {
-      eventsListInflightPromise = (async () => {
+      const fetchPromise = (async () => {
         let query = supabaseAdmin
           .from('events')
           .select('id, title, details, created_by, created_at, updated_at')
@@ -135,8 +135,12 @@ const listEvents = async (req, res) => {
         });
       })();
 
+      if (queryLimit === 100) {
+        eventsListInflightPromise = fetchPromise;
+      }
+
       try {
-        events = await eventsListInflightPromise;
+        events = await fetchPromise;
       } catch (dbErr) {
         console.warn('Events query timed out or failed (single-flight):', dbErr.message);
         if (eventsListCache.data) {
@@ -147,14 +151,13 @@ const listEvents = async (req, res) => {
             warning: 'Database under high load; showing cached events.',
           });
         }
-        return res.status(200).json({
-          message: 'Events fetched (degraded mode).',
-          count: 0,
-          events: [],
-          warning: dbErr.message,
+        return res.status(503).json({
+          error: 'Events service is temporarily unavailable. Please try again shortly.',
         });
       } finally {
-        eventsListInflightPromise = null;
+        if (queryLimit === 100 && eventsListInflightPromise === fetchPromise) {
+          eventsListInflightPromise = null;
+        }
       }
     }
 

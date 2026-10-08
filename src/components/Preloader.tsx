@@ -17,7 +17,14 @@ const STATUS_MESSAGES = [
 const CURTAIN_COLORS = ["#4285F4", "#EA4335", "#FBBC04", "#34A853"];
 
 export default function Preloader() {
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      return !sessionStorage.getItem('gdg_preloader_seen');
+    } catch {
+      return false;
+    }
+  });
   const [exiting, setExiting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusIdx, setStatusIdx] = useState(0);
@@ -26,12 +33,20 @@ export default function Preloader() {
 
   // Progress bar increment
   useEffect(() => {
+    if (!loading) return;
+
     // Lock scroll during preload
     document.body.style.overflow = 'hidden';
 
+    try {
+      sessionStorage.setItem('gdg_preloader_seen', 'true');
+    } catch {
+      // Ignore storage errors in private browsing
+    }
+
     let currentProgress = 0;
     const interval = setInterval(() => {
-      currentProgress += Math.random() * 12;
+      currentProgress += Math.random() * 16 + 10;
       if (currentProgress >= 100) {
         currentProgress = 100;
         clearInterval(interval);
@@ -40,18 +55,19 @@ export default function Preloader() {
           setTimeout(() => {
             setLoading(false);
             document.body.style.overflow = '';
-          }, 1000);
-        }, 400);
+          }, 450);
+        }, 150);
       }
       setProgress(Math.round(currentProgress));
       // Rotate status message roughly per 20% progress
       setStatusIdx(Math.min(Math.floor(currentProgress / 17), STATUS_MESSAGES.length - 1));
-    }, 140);
+    }, 45);
+
     return () => {
       clearInterval(interval);
       document.body.style.overflow = '';
     };
-  }, []);
+  }, [loading]);
 
   // Terminal typing animation (preserved from original)
   useEffect(() => {

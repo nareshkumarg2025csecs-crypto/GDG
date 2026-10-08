@@ -158,12 +158,22 @@ export const AuthCallback: React.FC = () => {
           Boolean(syncResponse.profile?.details?.position) &&
           Boolean(syncResponse.profile?.details?.domain);
 
-        const targetUrl =
+        const rawTargetUrl =
           localStorage.getItem('auth_redirect_url') ||
           searchParams.get('redirect') ||
           (syncResponse.profile.role === 'admin' ? '/admin/events' : '/');
 
         localStorage.removeItem('auth_redirect_url');
+
+        // Strict internal path validation to prevent open redirects
+        const defaultFallback = syncResponse.profile.role === 'admin' ? '/admin/events' : '/';
+        const targetUrl =
+          rawTargetUrl &&
+          rawTargetUrl.startsWith('/') &&
+          !rawTargetUrl.startsWith('//') &&
+          !rawTargetUrl.startsWith('/\\')
+            ? rawTargetUrl
+            : defaultFallback;
 
         if (syncResponse.profile.role === 'admin') {
           if (!hasAdminOnboarded) {
@@ -227,7 +237,7 @@ export const AuthCallback: React.FC = () => {
                 onClick={() => window.location.reload()}
                 className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-md"
               >
-                <span>🔄 Retry Authentication</span>
+                <span>Retry Authentication</span>
               </button>
               <Link
                 to="/login"

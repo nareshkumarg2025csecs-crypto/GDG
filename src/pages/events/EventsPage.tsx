@@ -10,8 +10,6 @@ import {
   CalendarPlus,
   CalendarCheck,
   ArrowRight,
-  ArrowLeft,
-  Home,
   Sparkles,
   Layers,
   Image as ImageIcon,
@@ -20,6 +18,7 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import Header from '@/components/Header';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
@@ -196,40 +195,23 @@ export const EventsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-24 pb-20 px-4 sm:px-6 lg:px-8">
-      {/* Background Decorative Ambient */}
-      <div
-        className="fixed inset-0 opacity-10 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(66, 133, 244, 0.15) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(66, 133, 244, 0.15) 1px, transparent 1px)
-          `,
-          backgroundSize: '60px 60px',
-        }}
-      />
+    <div className="min-h-screen bg-background text-foreground">
+      <Header />
+      <main id="main-content" className="pt-24 sm:pt-28 pb-20 px-4 sm:px-6 lg:px-8">
+        {/* Background Decorative Ambient */}
+        <div
+          className="fixed inset-0 opacity-10 pointer-events-none"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(66, 133, 244, 0.15) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(66, 133, 244, 0.15) 1px, transparent 1px)
+            `,
+            backgroundSize: '60px 60px',
+          }}
+        />
 
-      <div className="max-w-7xl mx-auto space-y-8 relative z-10">
-        {/* Top Back Navigation Bar */}
-        <div className="flex items-center justify-between">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
-          >
-            <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
-            <span>Back to Home</span>
-          </Link>
-
-          <Link
-            to="/"
-            className="p-2 rounded-full border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            title="Go to Home"
-          >
-            <Home className="w-4 h-4" />
-          </Link>
-        </div>
-
-        {/* Hero Section */}
+        <div className="max-w-7xl mx-auto space-y-8 relative z-10">
+          {/* Hero Section */}
         <div className="text-center max-w-3xl mx-auto space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20 font-mono">
             <Sparkles className="w-3.5 h-3.5" />
@@ -250,6 +232,7 @@ export const EventsPage: React.FC = () => {
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
+              aria-label="Search events by title, topic, or venue"
               placeholder="Search events, topics, venues..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -750,6 +733,7 @@ export const EventsPage: React.FC = () => {
           eventUrl={qrModalEvent.url}
         />
       )}
+      </main>
     </div>
   );
 };

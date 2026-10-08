@@ -43,13 +43,11 @@ export default function TeamModal() {
         if (e.target === e.currentTarget) closeModal();
     }, [closeModal]);
 
-    if (!selectedMember) return null;
-
-    const departmentColor = DEPARTMENT_COLORS[selectedMember.department];
+    const departmentColor = selectedMember ? DEPARTMENT_COLORS[selectedMember.department] : '#4285F4';
 
     return (
         <AnimatePresence>
-            {isModalOpen && (
+            {isModalOpen && selectedMember && (
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -58,6 +56,7 @@ export default function TeamModal() {
                     onClick={handleBackdropClick}
                     role="dialog"
                     aria-modal="true"
+                    aria-labelledby="team-modal-member-name"
                 >
                     <motion.div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
 
@@ -104,7 +103,7 @@ export default function TeamModal() {
                                 </div>
                             )}
 
-                            <h2 className="text-2xl font-bold text-white text-center mb-1">
+                            <h2 id="team-modal-member-name" className="text-2xl font-bold text-white text-center mb-1">
                                 {selectedMember.name}
                             </h2>
 

@@ -278,7 +278,7 @@ async function runStressTest() {
   const viewPeakMem = getMemorySnapshot();
   console.log(`✅ [STAGE 1 COMPLETE] 700 Viewing Requests finished in ${tViewDuration} ms`);
   console.log(`   Throughput:     ${((700 / tViewDuration) * 1000).toFixed(0)} req/sec`);
-  console.log(`   Success Rate:   ${viewSuccess}/700 (100%)`);
+  console.log(`   Success Rate:   ${viewSuccess}/700 (${((viewSuccess / 700) * 100).toFixed(1)}%)`);
   console.log(`   Cache Hits:     ${viewCached}`);
   console.log(`   RSS:            ${viewPeakMem.rssMB} MB (${viewPeakMem.percentOf512MB} of 512MB)`);
   console.log(`   Heap Used:      ${viewPeakMem.heapUsedMB} MB\n`);
@@ -381,7 +381,7 @@ async function runStressTest() {
 
   const stage3Mem = getMemorySnapshot();
   console.log(`✅ [STAGE 3 COMPLETE] 1,000 Items Pushed. Cache Size: ${testBoundedCache.size} (Strictly Capped at 200)`);
-  console.log(`   Oldest Keys Evicted:   800 keys`);
+  console.log(`   Oldest Keys Evicted:   ${1000 - testBoundedCache.size} keys`);
   console.log(`   RSS:                   ${stage3Mem.rssMB} MB`);
   console.log(`   Heap Used:             ${stage3Mem.heapUsedMB} MB\n`);
 

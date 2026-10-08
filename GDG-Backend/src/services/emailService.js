@@ -133,11 +133,47 @@ function buildCustomHtmlEmail({
 </html>`;
   }
 
-  // If custom HTML snippet/elements are provided, preserve all HTML tags
-  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(trimmed);
-  const formattedBody = hasHtmlTags
-    ? trimmed
-    : trimmed.split('\n\n').map(p => `<p style="margin: 0 0 16px 0; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`).join('');
+  // 1. Auto-link any plain URLs (e.g. Google Meet links) that are not already wrapped in <a> tags
+  let autoLinked = trimmed.replace(
+    /(^|[^">])(https?:\/\/[^\s<"']+)/g,
+    '$1<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #4285F4; font-weight: 700; text-decoration: underline; word-break: break-all;">$2</a>'
+  );
+
+  // 2. If a Google Meet or Zoom link is present without an explicit action button, add a prominent button
+  if (
+    /https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(autoLinked) &&
+    !/Join Google Meet/i.test(autoLinked)
+  ) {
+    const meetMatch = autoLinked.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
+    if (meetMatch) {
+      const meetUrl = meetMatch[0];
+      const buttonHtml = `\n\n<div style="margin: 14px 0 18px 0;"><a href="${meetUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">Join Google Meet Session &rarr;</a></div>\n\n`;
+      autoLinked = autoLinked.replace(
+        new RegExp(`(<a[^>]*>${meetUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/a>)`),
+        `$1${buttonHtml}`
+      );
+    }
+  }
+
+  // 3. Normalize newlines and preserve all line breaks so lines never collapse continuously into one
+  const normalized = autoLinked.replace(/\r\n/g, '\n');
+  const blocks = normalized.split(/\n{2,}/);
+
+  const formattedBody = blocks
+    .map((block) => {
+      const trimmedBlock = block.trim();
+      if (!trimmedBlock) return '';
+      if (/^<(?:div|table|ul|ol|h[1-6]|blockquote)[\s>]/i.test(trimmedBlock)) {
+        return trimmedBlock.replace(/\n/g, '<br/>');
+      }
+      if (/^<p[\s>]/i.test(trimmedBlock)) {
+        return trimmedBlock.replace(/\n/g, '<br/>');
+      }
+      const withBr = trimmedBlock.replace(/\n/g, '<br/>');
+      return `<p style="margin: 0 0 16px 0; line-height: 1.6; color: #334155; font-size: 14px;">${withBr}</p>`;
+    })
+    .filter(Boolean)
+    .join('');
 
   return `
 <!DOCTYPE html>
@@ -178,7 +214,39 @@ function buildCustomHtmlEmail({
           <!-- Content Body -->
           <tr>
             <td style="padding: 32px; font-size: 15px; line-height: 1.6; color: #334155;">
+              <h2 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
+                Welcome to ${eventTitle}!
+              </h2>
+              <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b;">
+                Hi <strong>${attendeeName || 'Attendee'}</strong>, your registration has been confirmed.
+              </p>
               ${formattedBody}
+              ${!trimmed.includes(eventVenue) ? `
+              <!-- Event Schedule & Venue -->
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 24px 0;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+                  Event Schedule & Venue
+                </div>
+                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
+                  📅 <strong>Date:</strong> ${eventDateFormatted}
+                </div>
+                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
+                  ⏰ <strong>Time:</strong> ${eventTimeFormatted}
+                </div>
+                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
+                  📍 <strong>Venue:</strong> ${eventVenue}
+                </div>
+                <div style="font-size: 13px; color: #0284c7;">
+                  🎟️ <strong>Ticket ID:</strong> <code style="font-family: monospace; font-weight: 700;">${ticketId}</code>
+                </div>
+              </div>` : ''}
+              ${!trimmed.includes(digitalPassLink) ? `
+              <!-- View Digital Pass CTA -->
+              <div style="text-align: center; margin: 24px 0 10px 0;">
+                <a href="${digitalPassLink}" target="_blank" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 13px 30px; border-radius: 50px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+                  View & Download Digital Pass Online →
+                </a>
+              </div>` : ''}
             </td>
           </tr>
           <!-- Footer -->
@@ -680,7 +748,7 @@ const EmailService = {
 
       // Check for Custom Email Draft Configuration
       const emailConfig = form?.schema?.email_config || {};
-      const isCustomMode = emailConfig.mode === 'custom' && (emailConfig.subject || emailConfig.html || emailConfig.body);
+      const isCustomMode = emailConfig.mode === 'custom' && (emailConfig.subject || emailConfig.custom_message || emailConfig.html || emailConfig.body);
 
       let finalHtml = htmlContent;
       let finalSubject = `Registration Confirmed: ${eventTitle} (Ticket ${ticketId})`;
@@ -703,7 +771,12 @@ const EmailService = {
           finalSubject = interpolateVariables(emailConfig.subject, customVars);
         }
 
-        const rawBody = emailConfig.html || emailConfig.body || '';
+        let rawBody = '';
+        if (emailConfig.custom_message && emailConfig.custom_message.trim()) {
+          rawBody = emailConfig.custom_message.trim();
+        } else {
+          rawBody = emailConfig.html || emailConfig.body || '';
+        }
         const populatedBody = interpolateVariables(rawBody, customVars);
 
         finalHtml = buildCustomHtmlEmail({

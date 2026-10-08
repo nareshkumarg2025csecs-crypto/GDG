@@ -161,6 +161,7 @@ export const AdminCertificatesPage: React.FC = () => {
   // 3. Load Event Config & Attended Attendees when selectedEventId changes
   useEffect(() => {
     if (!selectedEventId) return;
+    let isCurrent = true;
 
     const loadEventDetails = async () => {
       try {
@@ -170,6 +171,7 @@ export const AdminCertificatesPage: React.FC = () => {
 
         // Fetch certificate configuration
         const cfg = await certificateService.getEventConfig(selectedEventId, token);
+        if (!isCurrent) return;
         const fallbackSubject =
           cfg.defaultEmailSubject || `Your Certificate of Participation: ${cfg.eventTitle}`;
         const fallbackBody =
@@ -184,6 +186,7 @@ export const AdminCertificatesPage: React.FC = () => {
 
         // Fetch attended participants
         const pRes = await certificateService.getAttendedParticipants(selectedEventId, token);
+        if (!isCurrent) return;
         setParticipants(pRes.participants || []);
         setTotalAttended(pRes.totalAttended || 0);
 
@@ -196,18 +199,24 @@ export const AdminCertificatesPage: React.FC = () => {
         // Auto generate fresh preview
         handleGeneratePreview(selectedEventId, cfg.scriptCode);
       } catch (err: any) {
+        if (!isCurrent) return;
         toast({
           title: 'Failed to load event certificate',
           description: err.message || 'Could not load certificate settings for this event.',
           variant: 'destructive',
         });
       } finally {
-        setIsLoadingConfig(false);
-        setIsLoadingParticipants(false);
+        if (isCurrent) {
+          setIsLoadingConfig(false);
+          setIsLoadingParticipants(false);
+        }
       }
     };
 
     loadEventDetails();
+    return () => {
+      isCurrent = false;
+    };
   }, [selectedEventId, token]);
 
   // 4. Generate Preview
@@ -492,7 +501,7 @@ export const AdminCertificatesPage: React.FC = () => {
   };
 
   // 11. Polling Job Progress
-  const startPollingJob = (jobId: string) => {
+  const startPollingJob = (jobId: string, eventId = selectedEventId) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
 
     pollIntervalRef.current = setInterval(async () => {
@@ -509,9 +518,11 @@ export const AdminCertificatesPage: React.FC = () => {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
-          // Refresh participants table when job finishes
-          const pRes = await certificateService.getAttendedParticipants(selectedEventId, token);
-          setParticipants(pRes.participants || []);
+          // Refresh participants table when job finishes only if user is still viewing that event
+          if (eventId && eventId === selectedEventId) {
+            const pRes = await certificateService.getAttendedParticipants(eventId, token);
+            setParticipants(pRes.participants || []);
+          }
         }
       } catch {
         // ignore polling network hiccup

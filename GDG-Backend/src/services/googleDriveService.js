@@ -788,7 +788,7 @@ class GoogleDriveService {
     ]);
 
     const uploadUrl =
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink,size,mimeType';
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink,webContentLink,size,mimeType';
 
     const uploadRes = await fetch(uploadUrl, {
       method: 'POST',
@@ -807,23 +807,6 @@ class GoogleDriveService {
     }
 
     const fileData = await uploadRes.json();
-
-    // Optionally set permission to reader for anyone with link so admins can view easily
-    try {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${fileData.id}/permissions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          role: 'reader',
-          type: 'anyone',
-        }),
-      });
-    } catch (permErr) {
-      console.warn('Could not set public view permission on Drive file:', permErr.message);
-    }
 
     const directViewLink = fileData.webViewLink || `https://drive.google.com/file/d/${fileData.id}/view?usp=drivesdk`;
 

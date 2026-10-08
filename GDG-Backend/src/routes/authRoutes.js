@@ -29,7 +29,7 @@ const {
   saveGoogleTokens,
   getGoogleLinkStatus,
 } = require('../controllers/calendarController');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, optionalAuth } = require('../middleware/auth');
 const {
   adminLoginLimiter,
   studentLoginLimiter,
@@ -106,6 +106,8 @@ router.post(
 // Mobile Scanner App Fast Admin Email Login (Links with existing admin GAuth & password accounts)
 router.get(
   '/scanner/verified-admins',
+  adminCodeValidationLimiter,
+  optionalAuth,
   getScannerVerifiedAdmins
 );
 

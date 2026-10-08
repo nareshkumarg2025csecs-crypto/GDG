@@ -152,8 +152,7 @@ const validateForgotPassword = [
   body('email')
     .trim()
     .isEmail()
-    .withMessage('Valid email is required')
-    .normalizeEmail(),
+    .withMessage('Valid email is required'),
   validate,
 ];
 

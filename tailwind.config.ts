@@ -81,6 +81,9 @@ export default {
           ring: "hsl(var(--sidebar-ring))",
         },
       },
+      screens: {
+        xs: "480px",
+      },
       fontFamily: {
         display: ['Bebas Neue', 'sans-serif'],
         body: ['Space Grotesk', 'sans-serif'],
@@ -106,9 +109,6 @@ export default {
       boxShadow: {
         'glow-sm': '0 0 20px currentColor',
         'glow-md': '0 0 40px currentColor',
-      },
-      transitionTimingFunction: {
-        'premium': 'cubic-bezier(0.23, 1, 0.32, 1)',
       },
       keyframes: {
         "accordion-down": {
@@ -231,6 +231,7 @@ export default {
         'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
       transitionTimingFunction: {
+        'premium': 'cubic-bezier(0.23, 1, 0.32, 1)',
         'smooth': 'cubic-bezier(0.23, 1, 0.32, 1)',
         'bounce-soft': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
       },

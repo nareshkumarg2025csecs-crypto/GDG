@@ -1,8 +1,9 @@
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, lazy } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
-import FluidCanvas from './FluidCanvas';
 import { useTheme } from '@/contexts/ThemeContext';
+
+const FluidCanvas = lazy(() => import('./FluidCanvas'));
 
 const CountUp = ({ end, duration = 2, suffix = '' }: { end: number; duration?: number; suffix?: string }) => {
   const [count, setCount] = useState(0);
@@ -151,7 +152,7 @@ const HeroSection = () => {
       {/* Main content — editorial split */}
       <motion.div
         style={isMobile ? undefined : { y, opacity, scale }}
-        className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end px-5 sm:px-8 md:px-12 lg:px-16 pb-24 md:pb-32 pt-24 md:pt-28 max-w-[1600px] mx-auto w-full gap-8 lg:gap-0"
+        className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end px-5 sm:px-8 md:px-12 lg:px-16 pb-28 sm:pb-32 pt-24 md:pt-28 max-w-[1600px] mx-auto w-full gap-8 lg:gap-0"
       >
         {/* Left: editorial giant headline (7/12 cols) */}
         <div className="flex-1 min-w-0">
@@ -175,14 +176,14 @@ const HeroSection = () => {
           </motion.div>
 
           {/* Three headline lines with per-line parallax */}
-          <div className="overflow-hidden">
+          <div className="overflow-hidden" aria-hidden="true">
             {HERO_WORDS.map((word, i) => (
               <motion.div
                 key={word.text}
                 style={{ y: [line0y, line1y, line2y][i] }}
                 className="overflow-hidden"
               >
-                <motion.h2
+                <motion.span
                   initial={{ y: '100%', opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{
@@ -200,7 +201,7 @@ const HeroSection = () => {
                   }}
                 >
                   {word.text}
-                </motion.h2>
+                </motion.span>
               </motion.div>
             ))}
           </div>
@@ -254,7 +255,7 @@ const HeroSection = () => {
           initial={{ opacity: 0, x: 50 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 1.2, duration: 0.9, ease: [0.23, 1, 0.32, 1] }}
-          className="w-full lg:w-auto flex flex-row lg:flex-col gap-3 lg:gap-4 lg:pl-12 lg:border-l shrink-0"
+          className="w-full lg:w-auto grid grid-cols-2 lg:flex lg:flex-col gap-2.5 sm:gap-3 lg:gap-4 lg:pl-12 lg:border-l shrink-0"
           style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(31,31,31,0.1)' }}
         >
           {stats.map((stat, i) => (
@@ -265,7 +266,7 @@ const HeroSection = () => {
               className="flex-1 lg:flex-none group"
               data-physics
             >
-              <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-4 p-4 rounded-xl transition-all duration-300"
+              <div className="flex flex-col sm:flex-row lg:items-center gap-1 sm:gap-2 lg:gap-4 p-3.5 sm:p-4 rounded-xl transition-all duration-300"
                 style={{
                   backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.8)',
                   border: `1px solid ${stat.color}${isDark ? '22' : '18'}`,

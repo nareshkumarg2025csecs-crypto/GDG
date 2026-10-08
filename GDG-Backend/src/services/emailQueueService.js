@@ -54,12 +54,24 @@ class EmailQueueService {
     headers = {},
     lastError = null,
   }) {
-    // Strip raw Buffer content from attachments — Supabase JSONB cannot serialize Node.js Buffers.
-    // The HTML email already embeds the QR via a hosted API URL so binary data is not needed for retries.
+    // Serialize Buffer attachments to base64 so Supabase JSONB stores them safely
+    // and nodemailer can restore the inline image when drainQueue sends it.
     const safeAttachments = (attachments || []).map((att) => {
-      if (att && att.content && (Buffer.isBuffer(att.content) || att.content?.type === 'Buffer')) {
-        // Keep only metadata; strip the binary blob
-        return { filename: att.filename, contentType: att.contentType || 'application/octet-stream', stripped: true };
+      if (att && att.content) {
+        if (Buffer.isBuffer(att.content)) {
+          return {
+            ...att,
+            content: att.content.toString('base64'),
+            encoding: 'base64',
+          };
+        }
+        if (att.content?.type === 'Buffer' && Array.isArray(att.content?.data)) {
+          return {
+            ...att,
+            content: Buffer.from(att.content.data).toString('base64'),
+            encoding: 'base64',
+          };
+        }
       }
       return att;
     });

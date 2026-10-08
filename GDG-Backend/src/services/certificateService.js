@@ -253,13 +253,15 @@ class CertificateService {
     }
 
     const dangerousPatterns = [
-      /\bimport\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes)\b/i,
-      /\bfrom\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes)\b/i,
-      /\bos\.(system|popen|spawn|exec|remove|unlink|rmdir|mkdir|rename|replace|walk|environ|putenv)\b/i,
-      /\b(eval|exec|compile|__import__|globals|locals)\s*\(/i,
-      /\bopen\s*\([^)]*['"][wax+]/i,
+      /\bimport\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes|inspect|posix|nt)\b/i,
+      /\bfrom\s+(subprocess|socket|http|urllib|requests|pty|shutil|commands|importlib|webbrowser|multiprocessing|threading|ctypes|inspect|posix|nt)\b/i,
+      /\bos\.(system|popen|spawn|exec|remove|unlink|rmdir|mkdir|rename|replace|walk|environ|putenv|chdir|chmod|chown)\b/i,
+      /\b(eval|exec|compile|__import__|globals|locals|getattr|setattr|breakpoint|input|memoryview)\s*\(/i,
+      /(?<!\.)\bopen\s*\(\s*(?!args\.data\b)/i,
       /\bbuiltins\b/i,
-      /\bsys\.modules\b/i,
+      /\b(sys\.modules|sys\.path)\b/i,
+      /(__class__|__base__|__subclasses__|__mro__|__globals__|__code__|__dict__|__builtins__)/i,
+      /(\.env|passwd|shadow|\.\.[/\\])/i,
     ];
 
     for (const pattern of dangerousPatterns) {
@@ -742,15 +744,35 @@ class CertificateService {
 
       const pythonBin = this.getPythonBinary();
       await new Promise((resolve, reject) => {
-        const pythonProcess = spawn(pythonBin, [
-          scriptPath,
-          '--data',
-          dataPath,
-          '--output',
-          outFilePath,
-          '--assets',
-          ASSETS_DIR,
-        ]);
+        const pythonProcess = spawn(
+          pythonBin,
+          [
+            scriptPath,
+            '--data',
+            dataPath,
+            '--output',
+            outFilePath,
+            '--assets',
+            ASSETS_DIR,
+          ],
+          {
+            env: {
+              PATH: process.env.PATH,
+              SYSTEMROOT: process.env.SYSTEMROOT,
+              APPDATA: process.env.APPDATA,
+              LOCALAPPDATA: process.env.LOCALAPPDATA,
+              USERPROFILE: process.env.USERPROFILE,
+              HOMEPATH: process.env.HOMEPATH,
+              HOMEDRIVE: process.env.HOMEDRIVE,
+              HOME: process.env.HOME,
+              PYTHONPATH: process.env.PYTHONPATH,
+              TEMP: tempDir,
+              TMP: tempDir,
+              PYTHONUNBUFFERED: '1',
+            },
+            cwd: tempDir,
+          }
+        );
 
         let stderr = '';
         let stdout = '';
@@ -850,6 +872,9 @@ class CertificateService {
    * without running into the 1,000-row PostgREST default limit.
    */
   static async fetchAllAttendedSubmissions({ formId, submissionIds = null }) {
+    if (!formId) {
+      throw new Error('A valid formId is required to fetch attended submissions.');
+    }
     const PAGE_SIZE = 1000;
     let allSubmissions = [];
     let page = 0;
@@ -860,11 +885,8 @@ class CertificateService {
         .from('form_submissions')
         .select('id, form_id, user_id, answers, attended, ticket_id, submitted_at, certificate_sent, certificate_sent_at, certificate_id')
         .eq('attended', true)
+        .eq('form_id', formId)
         .order('submitted_at', { ascending: false });
-
-      if (formId) {
-        query = query.eq('form_id', formId);
-      }
 
       if (submissionIds && Array.isArray(submissionIds) && submissionIds.length > 0) {
         query = query.in('id', submissionIds);
@@ -933,16 +955,27 @@ class CertificateService {
 
     const config = await this.getEventConfig(eventId);
 
-    // Resolve event's form
-    const { data: form } = await supabaseAdmin
+    // Resolve event's form - fail closed unless exactly one form is found
+    const { data: forms, error: formErr } = await supabaseAdmin
       .from('forms')
       .select('id')
-      .eq('event_id', eventId)
-      .maybeSingle();
+      .eq('event_id', eventId);
+
+    if (formErr || !forms || forms.length !== 1) {
+      throw new Error(
+        formErr
+          ? `Failed to resolve event form: ${formErr.message}`
+          : forms && forms.length > 1
+          ? 'Multiple registration forms found for this event. Cannot determine certificate recipients.'
+          : 'No registration form found for this event.'
+      );
+    }
+
+    const form = forms[0];
 
     // Fetch attended participants using paginated retrieval to avoid 1000 row cap
     const submissions = await this.fetchAllAttendedSubmissions({
-      formId: form?.id,
+      formId: form.id,
       submissionIds,
     });
 

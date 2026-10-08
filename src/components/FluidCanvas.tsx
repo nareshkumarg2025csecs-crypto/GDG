@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, Environment } from '@react-three/drei';
 import * as THREE from 'three';
@@ -147,32 +147,52 @@ const FluidScene = () => {
 
 // ── 5. Exported Canvas ─────────────────────────────────────────────────────
 const FluidCanvas = () => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isVisible, setIsVisible] = useState(true);
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el || typeof IntersectionObserver === 'undefined') return;
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                setIsVisible(entry.isIntersecting);
+            },
+            { threshold: 0.05 }
+        );
+
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <Canvas
-            camera={{ position: [0, 0, 6], fov: 45 }}
-            dpr={[1, 1.5]}
-            gl={{
-                antialias: true,
-                alpha: true,
-                powerPreference: "default"
-            }}
-            onCreated={({ gl }) => {
-                gl.domElement.addEventListener('webglcontextlost', (e) => {
-                    e.preventDefault();
-                }, false);
-            }}
-            frameloop="always"
-            style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                pointerEvents: 'none'
-            }}
-        >
-            <FluidScene />
-        </Canvas>
+        <div ref={containerRef} className="absolute inset-0 pointer-events-none">
+            <Canvas
+                camera={{ position: [0, 0, 6], fov: 45 }}
+                dpr={[1, 1.5]}
+                gl={{
+                    antialias: true,
+                    alpha: true,
+                    powerPreference: "default"
+                }}
+                onCreated={({ gl }) => {
+                    gl.domElement.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault();
+                    }, false);
+                }}
+                frameloop={isVisible ? "always" : "never"}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    pointerEvents: 'none'
+                }}
+            >
+                <FluidScene />
+            </Canvas>
+        </div>
     );
 };
 

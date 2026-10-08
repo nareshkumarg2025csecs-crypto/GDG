@@ -33,7 +33,10 @@ export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
-  const { token, headers = {}, body, retries = 1, ...rest } = options;
+  const { token, headers = {}, body, ...rest } = options;
+  const method = (rest.method || 'GET').toUpperCase();
+  const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(method);
+  const retries = options.retries !== undefined ? options.retries : (isSafeMethod ? 1 : 0);
 
   const baseUrl = getApiBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

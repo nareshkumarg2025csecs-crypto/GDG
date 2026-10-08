@@ -34,5 +34,5 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
   console.error('🚨 [CRASH-GUARD] Uncaught Exception:', err);
-  // Log full stack trace so it can be monitored without bringing down concurrent users
+  process.exit(1);
 });

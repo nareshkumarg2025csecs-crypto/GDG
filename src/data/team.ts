@@ -124,7 +124,7 @@ export const TEAM_SECTIONS: TeamSection[] = [
     { id: 'logistics', name: 'OPERATIONS', label: '// OPERATIONS & EVENTS', color: '#34A853', description: 'Event planning & logistics execution masters', scrollDirection: 'right-to-left' },
     { id: 'design', name: 'DESIGN', label: '// VISUAL SYSTEMS', color: '#EA4335', description: 'UI/UX & brand identity specialists', scrollDirection: 'left-to-right' },
     { id: 'media', name: 'MEDIA', label: '// CONTENT OPS', color: '#FBBC04', description: 'Photography, video & social resonance', scrollDirection: 'right-to-left' },
-    { id: 'techops', name: 'TECH_OPS', label: '// TECHNICAL OPERATIONS', color: '#4285F4', description: 'Backend architects & code masters', scrollDirection: 'left-to-right' },
+    { id: 'techops', name: 'TECH OPS', label: '// TECHNICAL OPERATIONS', color: '#4285F4', description: 'Backend architects & code masters', scrollDirection: 'left-to-right' },
 ];
 
 interface RawMemberEntry {

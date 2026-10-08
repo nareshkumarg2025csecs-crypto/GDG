@@ -200,12 +200,13 @@ export const PersonalInfoPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4">
               {/* 1. Full Name */}
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <label htmlFor="fullName" className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-google-blue" />
                   <span>Full Name</span>
                   <span className="text-destructive">*</span>
                 </label>
                 <input
+                  id="fullName"
                   type="text"
                   required
                   placeholder="e.g. Alex Johnson"
@@ -226,7 +227,7 @@ export const PersonalInfoPage: React.FC = () => {
               {/* 2. Roll Number with hidden example (placeholder="e.g. 240801202") */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <label htmlFor="rollNo" className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
                     <Hash className="w-3.5 h-3.5 text-google-yellow" />
                     <span>Roll Number / Register Number</span>
                     <span className="text-destructive">*</span>
@@ -236,6 +237,7 @@ export const PersonalInfoPage: React.FC = () => {
                   </span>
                 </div>
                 <input
+                  id="rollNo"
                   type="text"
                   required
                   placeholder="e.g. 240801202"
@@ -289,12 +291,13 @@ export const PersonalInfoPage: React.FC = () => {
                     transition={{ duration: 0.2 }}
                     className="space-y-1 overflow-hidden"
                   >
-                    <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <label htmlFor="customDepartment" className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
                       <Building2 className="w-3.5 h-3.5 text-google-blue" />
                       <span>Specify Department Name</span>
                       <span className="text-destructive">*</span>
                     </label>
                     <input
+                      id="customDepartment"
                       type="text"
                       required
                       placeholder="e.g. Robotics and Automation Engineering"
@@ -344,12 +347,13 @@ export const PersonalInfoPage: React.FC = () => {
 
               {/* 5. Phone Number */}
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <label htmlFor="phoneNumber" className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <Phone className="w-3.5 h-3.5 text-google-blue" />
                   <span>Phone Number</span>
                   <span className="text-destructive">*</span>
                 </label>
                 <input
+                  id="phoneNumber"
                   type="tel"
                   required
                   placeholder="e.g. 9876543210 or +91 9876543210"
@@ -370,7 +374,7 @@ export const PersonalInfoPage: React.FC = () => {
               {/* 6. Email ID (Editable) */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <label htmlFor="email" className="block text-xs font-semibold text-foreground flex items-center gap-1.5">
                     <Mail className="w-3.5 h-3.5 text-google-red" />
                     <span>Email Address</span>
                     <span className="text-destructive">*</span>
@@ -380,6 +384,7 @@ export const PersonalInfoPage: React.FC = () => {
                   </span>
                 </div>
                 <input
+                  id="email"
                   type="email"
                   required
                   placeholder="e.g. yourname@example.com"

@@ -95,7 +95,7 @@ const MessageSection = () => {
   };
 
   return (
-    <div ref={outerRef} className="relative min-h-screen md:min-h-[115vh]">
+    <div ref={outerRef} id="about" className="relative min-h-screen md:min-h-[115vh]">
       <div
         ref={stickyRef}
         className="relative md:sticky top-0 min-h-screen md:h-screen flex flex-col items-center justify-center overflow-hidden bg-background py-16 md:py-0"
