@@ -44,6 +44,7 @@ import {
 } from '@/services/certificateService';
 import type { ClubEvent } from '@/lib/formUtils';
 import { toast } from '@/hooks/use-toast';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 import Editor from '@monaco-editor/react';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -675,6 +676,17 @@ export const AdminCertificatesPage: React.FC = () => {
           </div>
         </div>
 
+        {!ENABLE_CERTIFICATES && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 flex items-center justify-between gap-3 text-xs sm:text-sm shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-5 h-5 shrink-0 text-amber-500" />
+              <span>
+                <strong>Certificates Module Is Currently Disabled:</strong> Certificate generation, dispatch, and student downloads are currently turned off. To re-enable, set <code>ENABLE_CERTIFICATES = true</code> in <code>src/config/featureFlags.ts</code>.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* ========================================================================= */}
         {/* TABS NAVIGATION                                                           */}
         {/* ========================================================================= */}
@@ -1212,8 +1224,13 @@ export const AdminCertificatesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleStartBatchDispatch}
-                disabled={isStartingDispatch || selectedSubmissionIds.size === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-600/25 transition-all disabled:opacity-50 shrink-0"
+                disabled={!ENABLE_CERTIFICATES || isStartingDispatch || selectedSubmissionIds.size === 0}
+                className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold shadow-lg transition-all shrink-0 ${
+                  !ENABLE_CERTIFICATES
+                    ? 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed select-none shadow-none'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/25 disabled:opacity-50'
+                }`}
+                title={!ENABLE_CERTIFICATES ? "Certificate dispatch is currently disabled" : undefined}
               >
                 {isStartingDispatch ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1221,7 +1238,7 @@ export const AdminCertificatesPage: React.FC = () => {
                   <Send className="w-4 h-4" />
                 )}
                 <span>
-                  Generate & Send Certificates ({selectedSubmissionIds.size})
+                  Generate & Send Certificates ({selectedSubmissionIds.size}) {!ENABLE_CERTIFICATES && '(Disabled)'}
                 </span>
               </button>
             </div>

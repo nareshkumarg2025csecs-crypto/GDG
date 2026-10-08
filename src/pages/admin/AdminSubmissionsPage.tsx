@@ -26,6 +26,7 @@ import {
 import { formService } from '@/services/formService';
 import { eventService } from '@/services/eventService';
 import { toast } from '@/hooks/use-toast';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 import {
   type EventForm,
   type FormSubmission,
@@ -325,14 +326,26 @@ export const AdminSubmissionsPage: React.FC = () => {
             )}
 
             {/* Certificates Studio Navigation */}
-            <Link
-              to="/admin/certificates"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-semibold shadow-sm hover:bg-blue-500/20 transition-all"
-              title="Open Certificates Studio"
-            >
-              <Award className="w-4 h-4 text-blue-500" />
-              <span>Certificates</span>
-            </Link>
+            {ENABLE_CERTIFICATES ? (
+              <Link
+                to="/admin/certificates"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs sm:text-sm font-semibold shadow-sm hover:bg-blue-500/20 transition-all"
+                title="Open Certificates Studio"
+              >
+                <Award className="w-4 h-4 text-blue-500" />
+                <span>Certificates</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border bg-muted/40 text-muted-foreground text-xs sm:text-sm font-semibold shadow-sm opacity-50 cursor-not-allowed select-none"
+                title="Certificates module is currently disabled"
+              >
+                <Award className="w-4 h-4 text-muted-foreground" />
+                <span>Certificates (Disabled)</span>
+              </button>
+            )}
 
             {/* Export CSV → Google Sheets compatible */}
             <button

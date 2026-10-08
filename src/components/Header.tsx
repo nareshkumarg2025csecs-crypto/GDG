@@ -10,6 +10,7 @@ import { usePromoBannerStore } from '@/store/promoBannerStore';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import { HeaderNotifications } from '@/components/HeaderNotifications';
 import { TOOLS_CONFIG } from '@/config/toolsConfig';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 
 // --- Constants & Data ---
 
@@ -39,9 +40,10 @@ interface MagneticNavItemProps {
   onClick?: () => void;
   scrolled?: boolean;
   transparent?: boolean;
+  disabled?: boolean;
 }
 
-const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, transparent }: MagneticNavItemProps) => {
+const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, transparent, disabled }: MagneticNavItemProps) => {
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -51,7 +53,7 @@ const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, t
   const ySpring = useSpring(y, springConfig);
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!ref.current) return;
+    if (disabled || !ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -72,14 +74,24 @@ const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, t
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{ x: xSpring, y: ySpring }}
-      className="relative"
+      className={`relative ${disabled ? 'opacity-40 cursor-not-allowed select-none' : ''}`}
     >
       <Link
-        to={href}
-        onClick={onClick}
-        className="relative px-4 py-2 text-sm font-medium transition-colors group block"
+        to={disabled ? '#' : href}
+        onClick={(e) => {
+          if (disabled) {
+            e.preventDefault();
+            return;
+          }
+          onClick?.();
+        }}
+        tabIndex={disabled ? -1 : undefined}
+        aria-disabled={disabled}
+        className={`relative px-4 py-2 text-sm font-medium transition-colors group block ${
+          disabled ? 'pointer-events-none cursor-not-allowed' : ''
+        }`}
       >
-        {isActive && (
+        {isActive && !disabled && (
           <motion.div
             layoutId="activeGlow"
             className="absolute inset-0 rounded-full"
@@ -91,7 +103,7 @@ const MagneticNavItem = ({ children, href, isActive, color, onClick, scrolled, t
           />
         )}
         <motion.div className={`absolute inset-0 rounded-full transition-opacity duration-300 ${transparent ? 'opacity-0' : 'opacity-0'}`} />
-        <motion.span className={`relative z-10 transition-colors duration-300 ${isActive
+        <motion.span className={`relative z-10 transition-colors duration-300 ${isActive && !disabled
           ? 'text-foreground font-semibold'
           : 'text-foreground/70 group-hover:text-foreground'
           }`}>
@@ -338,14 +350,17 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
             )}
             {isAuthenticated && isAdmin && (
               <MagneticNavItem
-                href="/admin/certificates"
+                href={ENABLE_CERTIFICATES ? "/admin/certificates" : "#"}
                 isActive={location.pathname.startsWith('/admin/certificates')}
                 color="#FBBC04"
-                onClick={() => setActiveSection('admin')}
+                onClick={() => {
+                  if (ENABLE_CERTIFICATES) setActiveSection('admin');
+                }}
+                disabled={!ENABLE_CERTIFICATES}
                 scrolled={scrolled}
                 transparent={transparent}
               >
-                Certificates
+                Certificates {!ENABLE_CERTIFICATES && "(Disabled)"}
               </MagneticNavItem>
             )}
             <div className="w-px h-6 mx-2 border-r border-border" />
@@ -439,15 +454,30 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                           <Shield className="w-4 h-4 text-google-red" aria-hidden="true" />
                           <span>Admin Events Panel</span>
                         </Link>
-                        <Link
-                          to="/admin/certificates"
-                          role="menuitem"
-                          onClick={() => setProfileDropdownOpen(false)}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-google-yellow hover:text-amber-500 transition-colors"
-                        >
-                          <Award className="w-4 h-4 text-google-yellow" aria-hidden="true" />
-                          <span>Certificates Studio</span>
-                        </Link>
+                        {ENABLE_CERTIFICATES ? (
+                          <Link
+                            to="/admin/certificates"
+                            role="menuitem"
+                            onClick={() => setProfileDropdownOpen(false)}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-muted text-xs font-semibold text-google-yellow hover:text-amber-500 transition-colors"
+                          >
+                            <Award className="w-4 h-4 text-google-yellow" aria-hidden="true" />
+                            <span>Certificates Studio</span>
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-muted/30 text-muted-foreground opacity-50 cursor-not-allowed select-none"
+                            title="Certificates module is currently disabled"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Award className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+                              <span>Certificates Studio</span>
+                            </div>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">Disabled</span>
+                          </button>
+                        )}
                         <Link
                           to="/dashboard"
                           role="menuitem"
@@ -668,19 +698,31 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                             exit={{ x: -50, opacity: 0 }}
                             transition={{ delay: 0.34, duration: 0.4 }}
                           >
-                            <Link
-                              to="/admin/certificates"
-                              onClick={() => {
-                                setActiveSection('admin');
-                                setMenuOpen(false);
-                              }}
-                              className="group flex items-baseline gap-4 sm:gap-6 py-2"
-                            >
-                              <span className="text-xs font-mono text-google-yellow">05</span>
-                              <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-yellow transition-all duration-300 group-hover:translate-x-4">
-                                Certificates
-                              </span>
-                            </Link>
+                            {ENABLE_CERTIFICATES ? (
+                              <Link
+                                to="/admin/certificates"
+                                onClick={() => {
+                                  setActiveSection('admin');
+                                  setMenuOpen(false);
+                                }}
+                                className="group flex items-baseline gap-4 sm:gap-6 py-2"
+                              >
+                                <span className="text-xs font-mono text-google-yellow">05</span>
+                                <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-google-yellow transition-all duration-300 group-hover:translate-x-4">
+                                  Certificates
+                                </span>
+                              </Link>
+                            ) : (
+                              <div
+                                className="group flex items-baseline gap-4 sm:gap-6 py-2 opacity-35 cursor-not-allowed select-none"
+                                title="Certificates module is currently disabled"
+                              >
+                                <span className="text-xs font-mono text-muted-foreground">05</span>
+                                <span className="text-3xl sm:text-5xl md:text-6xl font-sans font-bold text-muted-foreground">
+                                  Certificates <span className="text-lg text-muted-foreground font-normal">(Disabled)</span>
+                                </span>
+                              </div>
+                            )}
                           </motion.div>
 
                           <motion.div
@@ -770,14 +812,26 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                               <Shield className="w-4 h-4" />
                               <span>Events</span>
                             </Link>
-                            <Link
-                              to="/admin/certificates"
-                              onClick={() => setMenuOpen(false)}
-                              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold bg-google-yellow/10 text-google-yellow border-google-yellow/20 hover:bg-google-yellow/20 transition-colors"
-                            >
-                              <Award className="w-4 h-4" />
-                              <span>Certs</span>
-                            </Link>
+                            {ENABLE_CERTIFICATES ? (
+                              <Link
+                                to="/admin/certificates"
+                                onClick={() => setMenuOpen(false)}
+                                className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold bg-google-yellow/10 text-google-yellow border-google-yellow/20 hover:bg-google-yellow/20 transition-colors"
+                              >
+                                <Award className="w-4 h-4" />
+                                <span>Certs</span>
+                              </Link>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold bg-muted/40 text-muted-foreground border-border/60 opacity-40 cursor-not-allowed select-none"
+                                title="Certificates module is currently disabled"
+                              >
+                                <Award className="w-4 h-4" />
+                                <span>Certs (Off)</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               aria-label="Log out of your account"

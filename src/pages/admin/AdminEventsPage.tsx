@@ -40,6 +40,7 @@ import {
 } from '@/lib/formUtils';
 import { GmailAuthCard } from '@/components/admin/GmailAuthCard';
 import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 
 
 export const AdminEventsPage: React.FC = () => {
@@ -235,14 +236,26 @@ export const AdminEventsPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
-            <Link
-              to="/admin/certificates"
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold transition-all shadow-sm"
-              title="Certificates Studio"
-            >
-              <Award className="w-4 h-4 text-google-yellow" />
-              <span>Certificates</span>
-            </Link>
+            {ENABLE_CERTIFICATES ? (
+              <Link
+                to="/admin/certificates"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                title="Certificates Studio"
+              >
+                <Award className="w-4 h-4 text-google-yellow" />
+                <span>Certificates</span>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl border border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed select-none text-xs sm:text-sm font-semibold transition-all shadow-sm"
+                title="Certificates module is currently disabled"
+              >
+                <Award className="w-4 h-4 text-muted-foreground" />
+                <span>Certificates (Disabled)</span>
+              </button>
+            )}
             <Link
               to="/admin/events/new"
               className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm text-white shadow-md hover:shadow-lg transition-all"

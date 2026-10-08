@@ -41,6 +41,7 @@ import { dashboardService } from '@/services/dashboardService';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
 import { certificateService } from '@/services/certificateService';
+import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 import { toast } from '@/hooks/use-toast';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import Header from '@/components/Header';
@@ -361,14 +362,26 @@ export const StudentDashboardPage: React.FC = () => {
 
           <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
             {role === 'admin' && (
-              <Link
-                to="/admin/certificates"
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-xs sm:text-sm font-bold text-white shadow-sm hover:shadow-md transition-all"
-                title="Open Certificates Studio"
-              >
-                <Award className="w-4 h-4 text-white" />
-                <span>Certificates Studio</span>
-              </Link>
+              ENABLE_CERTIFICATES ? (
+                <Link
+                  to="/admin/certificates"
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-xs sm:text-sm font-bold text-white shadow-sm hover:shadow-md transition-all"
+                  title="Open Certificates Studio"
+                >
+                  <Award className="w-4 h-4 text-white" />
+                  <span>Certificates Studio</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-muted/50 text-muted-foreground border border-border opacity-50 cursor-not-allowed select-none text-xs sm:text-sm font-bold shadow-sm"
+                  title="Certificates module is currently disabled"
+                >
+                  <Award className="w-4 h-4 text-muted-foreground" />
+                  <span>Certificates Studio (Disabled)</span>
+                </button>
+              )
             )}
             <Link
               to="/events"
@@ -1254,9 +1267,13 @@ export const StudentDashboardPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleDownloadCertificate(submission.id, event.title)}
-                                disabled={downloadingCertificateId === submission.id}
-                                className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white text-xs font-bold transition-all shadow-sm hover:shadow disabled:opacity-50"
-                                title="Download official Certificate document (PDF)"
+                                disabled={!ENABLE_CERTIFICATES || downloadingCertificateId === submission.id}
+                                className={`w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-white text-xs font-bold transition-all shadow-sm ${
+                                  !ENABLE_CERTIFICATES
+                                    ? 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed select-none'
+                                    : 'bg-emerald-600 hover:bg-emerald-500 active:scale-98 hover:shadow disabled:opacity-50'
+                                }`}
+                                title={!ENABLE_CERTIFICATES ? "Certificate downloads are currently disabled" : "Download official Certificate document (PDF)"}
                               >
                                 {downloadingCertificateId === submission.id ? (
                                   <>
@@ -1266,7 +1283,7 @@ export const StudentDashboardPage: React.FC = () => {
                                 ) : (
                                   <>
                                     <Download className="w-3.5 h-3.5" />
-                                    <span>Download Certificate (PDF)</span>
+                                    <span>Download Certificate {!ENABLE_CERTIFICATES ? '(Disabled)' : '(PDF)'}</span>
                                   </>
                                 )}
                               </button>
@@ -1345,30 +1362,46 @@ export const StudentDashboardPage: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleDownloadCertificate(submission.id, event.title)}
-                              disabled={downloadingCertificateId === submission.id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold transition-all shadow-sm disabled:opacity-50"
-                              title="Download Certificate (PDF)"
+                              disabled={!ENABLE_CERTIFICATES || downloadingCertificateId === submission.id}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-sm ${
+                                !ENABLE_CERTIFICATES
+                                  ? 'border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed select-none'
+                                  : 'border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 disabled:opacity-50'
+                              }`}
+                              title={!ENABLE_CERTIFICATES ? "Certificate downloads are currently disabled" : "Download Certificate (PDF)"}
                             >
                               {downloadingCertificateId === submission.id ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                               ) : (
                                 <Download className="w-3.5 h-3.5" />
                               )}
-                              <span>Download PDF</span>
+                              <span>Download PDF {!ENABLE_CERTIFICATES && '(Disabled)'}</span>
                             </button>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2">
                           {role === 'admin' && (
-                            <Link
-                              to="/admin/certificates"
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-all shadow-sm"
-                              title="Open Certificate Studio"
-                            >
-                              <Award className="w-3.5 h-3.5" />
-                              <span>Certificates</span>
-                            </Link>
+                            ENABLE_CERTIFICATES ? (
+                              <Link
+                                to="/admin/certificates"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-google-blue/30 bg-google-blue/10 hover:bg-google-blue/20 text-google-blue text-xs font-semibold transition-all shadow-sm"
+                                title="Open Certificate Studio"
+                              >
+                                <Award className="w-3.5 h-3.5" />
+                                <span>Certificates</span>
+                              </Link>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-muted/40 text-muted-foreground text-xs font-semibold opacity-50 cursor-not-allowed select-none"
+                                title="Certificates module is currently disabled"
+                              >
+                                <Award className="w-3.5 h-3.5" />
+                                <span>Certificates (Disabled)</span>
+                              </button>
+                            )
                           )}
                           <Link
                             to={`/events/${event.id}`}
