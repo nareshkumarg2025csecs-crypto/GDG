@@ -19,8 +19,9 @@ import {
   Users,
 } from 'lucide-react';
 import Header from '@/components/Header';
-import { eventService } from '@/services/eventService';
-import { formService } from '@/services/formService';
+import { useQuery } from '@tanstack/react-query';
+import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
+import { formService, FORM_QUERY_KEYS } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/hooks/use-toast';
@@ -44,75 +45,89 @@ export const EventsPage: React.FC = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [formsByEvent, setFormsByEvent] = useState<Record<string, EventForm>>({});
-  const [mySubmissions, setMySubmissions] = useState<FormSubmission[]>([]);
-  const [addedCalendarEventIds, setAddedCalendarEventIds] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
   const [qrModalEvent, setQrModalEvent] = useState<{ title: string; url: string } | null>(null);
+  const [localAddedCalendarEventIds, setLocalAddedCalendarEventIds] = useState<string[]>([]);
 
-  // Load published events (always — no auth required)
-  // Load forms + submissions only when authenticated
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      // Always fetch events — public endpoint, no token needed
-      const eventsRes = await eventService.listEvents();
-      const allEvents = eventsRes.events || [];
-      const publishedEvents = allEvents.filter(
-        (e) => e.details?.status === 'published' || e.details?.published === true
-      );
-      setEvents(publishedEvents);
+  // 1. Cached Events Query (5-minute staleTime)
+  const {
+    data: eventsRes,
+    isLoading: isEventsLoading,
+    error: eventsError,
+  } = useQuery({
+    queryKey: EVENT_QUERY_KEYS.list(),
+    queryFn: () => eventService.listEvents(),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-      // Only fetch forms & submissions when user is logged in
-      if (isAuthenticated) {
-        try {
-          const [subsRes, calRes] = await Promise.all([
-            formService.getMySubmissions().catch(() => ({ submissions: [] })),
-            eventService.getMyCalendarEvents().catch(() => ({ event_ids: [] })),
-          ]);
-          setMySubmissions(subsRes.submissions || []);
-          setAddedCalendarEventIds(calRes.event_ids || []);
-        } catch {
-          // ignore
-        }
-      }
+  // 2. Cached Forms Summary Query (1 batch request, shared across cards)
+  const { data: formsSummaryRes } = useQuery({
+    queryKey: FORM_QUERY_KEYS.summary(),
+    queryFn: () => formService.getFormsSummary(),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-      // Fetch batch forms summary in 1 single fast call (cuts N queries down to 1)
-      try {
-        const summaryRes = await formService.getFormsSummary();
-        if (summaryRes?.formsByEvent) {
-          setFormsByEvent(summaryRes.formsByEvent);
-        }
-      } catch {
-        // ignore form summary failure
-      }
-    } catch (err: any) {
-      // Don't show raw token/auth errors to the user — just fail silently for events
-      const isAuthError =
-        err?.message?.toLowerCase().includes('unauthorized') ||
-        err?.message?.toLowerCase().includes('token') ||
-        err?.status === 401;
-      if (!isAuthError) {
-        toast({
-          title: 'Error loading events',
-          description: 'Could not fetch events. Please try again later.',
-          variant: 'destructive',
-        });
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // 3. User Submissions Query (only when authenticated, cached)
+  const { data: subsRes } = useQuery({
+    queryKey: FORM_QUERY_KEYS.mySubmissions(),
+    queryFn: () => formService.getMySubmissions().catch(() => ({ message: 'ok', count: 0, submissions: [] })),
+    enabled: !!isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
+  // 4. Calendar Reminders Query (only when authenticated, cached)
+  const { data: calRes } = useQuery({
+    queryKey: EVENT_QUERY_KEYS.calendar(),
+    queryFn: () => eventService.getMyCalendarEvents().catch(() => ({ event_ids: [], count: 0 })),
+    enabled: !!isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
+
+  const isLoading = isEventsLoading;
+
+  const events = useMemo(() => {
+    const all = eventsRes?.events || [];
+    return all.filter(
+      (e) => e.details?.status === 'published' || e.details?.published === true
+    );
+  }, [eventsRes]);
+
+  const formsByEvent = useMemo(() => {
+    return formsSummaryRes?.formsByEvent || {};
+  }, [formsSummaryRes]);
+
+  const mySubmissions = useMemo(() => {
+    return subsRes?.submissions || [];
+  }, [subsRes]);
+
+  const addedCalendarEventIds = useMemo(() => {
+    const fetched = calRes?.event_ids || [];
+    return Array.from(new Set([...fetched, ...localAddedCalendarEventIds]));
+  }, [calRes, localAddedCalendarEventIds]);
+
+  // Restore scroll position after returning from event details
   useEffect(() => {
-    loadData();
-  }, [isAuthenticated]);
+    const savedScroll = sessionStorage.getItem('gdg_events_scroll_y');
+    if (savedScroll && !isLoading && events.length > 0) {
+      const scrollY = parseInt(savedScroll, 10);
+      sessionStorage.removeItem('gdg_events_scroll_y');
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+      });
+    }
+  }, [isLoading, events.length]);
+
+  const handleEventCardNavigate = () => {
+    sessionStorage.setItem('gdg_events_scroll_y', String(window.scrollY));
+  };
 
   const registeredFormIds = useMemo(() => {
     return new Set(mySubmissions.map((s) => s.form_id));
@@ -294,7 +309,7 @@ export const EventsPage: React.FC = () => {
                 : 'hidden';
 
               const accentColor = details.theme_color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
-              const banner = details.banner_url || details.coverImage || details.cover_image;
+              const banner = details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image;
 
               return (
                 <motion.div
@@ -309,12 +324,13 @@ export const EventsPage: React.FC = () => {
                 >
                   {/* Event Banner Image (if added by Admin) or Gradient Header */}
                   {banner ? (
-                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-black">
+                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-black aspect-[16/10]">
                       <img
                         src={banner}
                         alt={event.title}
-                        loading="lazy"
+                        loading={idx < 3 ? 'eager' : 'lazy'}
                         decoding="async"
+                        fetchPriority={idx === 0 ? 'high' : 'auto'}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
@@ -384,6 +400,7 @@ export const EventsPage: React.FC = () => {
                       <div className="absolute bottom-4 left-4 right-4">
                         <Link
                           to={`/events/${event.id}`}
+                          onClick={handleEventCardNavigate}
                           className="text-lg sm:text-xl font-bold font-sans text-white hover:underline line-clamp-1"
                         >
                           {event.title}
@@ -458,6 +475,7 @@ export const EventsPage: React.FC = () => {
 
                       <Link
                         to={`/events/${event.id}`}
+                        onClick={handleEventCardNavigate}
                         className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-2 break-words"
                       >
                         {event.title}
@@ -605,6 +623,7 @@ export const EventsPage: React.FC = () => {
                           isAuthenticated ? (
                             <Link
                               to={`/events/${event.id}/form`}
+                              onClick={handleEventCardNavigate}
                               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
                             >
                               <span>Register</span>
@@ -613,9 +632,10 @@ export const EventsPage: React.FC = () => {
                           ) : (
                             <button
                               type="button"
-                              onClick={() =>
-                                navigate(`/login?redirect=${encodeURIComponent(`/events/${event.id}/form`)}`)
-                              }
+                              onClick={() => {
+                                handleEventCardNavigate();
+                                navigate(`/login?redirect=${encodeURIComponent(`/events/${event.id}/form`)}`);
+                              }}
                               className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
                             >
                               <span>Register</span>
@@ -625,6 +645,7 @@ export const EventsPage: React.FC = () => {
                         ) : attachedForm && regState === 'upcoming' ? (
                           <Link
                             to={`/events/${event.id}`}
+                            onClick={handleEventCardNavigate}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold hover:bg-amber-500/20 transition-colors"
                             title={`Registration opens in ${calculateRemainingTime(opensAt).formatted}`}
                           >
@@ -639,6 +660,7 @@ export const EventsPage: React.FC = () => {
                         ) : (
                           <Link
                             to={`/events/${event.id}`}
+                            onClick={handleEventCardNavigate}
                             className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
                           >
                             <span>Details</span>

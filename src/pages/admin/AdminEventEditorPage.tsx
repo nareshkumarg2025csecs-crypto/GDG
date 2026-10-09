@@ -398,6 +398,7 @@ export const AdminEventEditorPage: React.FC = () => {
   const [endTime, setEndTime] = useState('');
   const [capacity, setCapacity] = useState<string>('');
   const [bannerUrl, setBannerUrl] = useState('');
+  const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [themeColor, setThemeColor] = useState(GOOGLE_THEME_COLORS[0].hex);
   const [isPublished, setIsPublished] = useState(false);
 
@@ -859,23 +860,23 @@ export const AdminEventEditorPage: React.FC = () => {
         });
       };
       img.onload = () => {
-        // Egress-Optimized Resolution: 1920x1080 provides crystal-clear retina display while keeping file size under 250KB
-        let maxW = 1920;
-        let maxH = 1080;
-        let compressionQuality = 0.82;
+        // High-res banner: 1600x900 provides retina crispness while keeping file size under 140 KB
+        let maxW = 1600;
+        let maxH = 900;
+        let compressionQuality = 0.80;
 
         if (qualityPreset === '2k') {
-          maxW = 1920;
-          maxH = 1080;
-          compressionQuality = 0.85;
+          maxW = 1600;
+          maxH = 900;
+          compressionQuality = 0.82;
         } else if (qualityPreset === 'hd') {
-          maxW = 1440;
-          maxH = 810;
-          compressionQuality = 0.80;
+          maxW = 1280;
+          maxH = 720;
+          compressionQuality = 0.78;
         } else if (qualityPreset === 'original') {
-          maxW = 2048;
-          maxH = 1152;
-          compressionQuality = 0.85;
+          maxW = 1600;
+          maxH = 900;
+          compressionQuality = 0.80;
         }
 
         let { width, height } = img;
@@ -893,12 +894,37 @@ export const AdminEventEditorPage: React.FC = () => {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d');
+
+        // Lightweight card thumbnail: 640x360 max for event cards & timelines (~35 KB)
+        const thumbMaxW = 640;
+        const thumbMaxH = 360;
+        let thumbW = img.width;
+        let thumbH = img.height;
+        if (thumbW > thumbMaxW) {
+          thumbH = Math.round((thumbH * thumbMaxW) / thumbW);
+          thumbW = thumbMaxW;
+        }
+        if (thumbH > thumbMaxH) {
+          thumbW = Math.round((thumbW * thumbMaxH) / thumbH);
+          thumbH = thumbMaxH;
+        }
+
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = thumbW;
+        thumbCanvas.height = thumbH;
+        const thumbCtx = thumbCanvas.getContext('2d');
+
         if (ctx) {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          // WebP format offers 60-80% smaller size at identical visual crispness compared to PNG/JPEG
+          if (thumbCtx) {
+            thumbCtx.imageSmoothingEnabled = true;
+            thumbCtx.imageSmoothingQuality = 'high';
+            thumbCtx.drawImage(img, 0, 0, thumbW, thumbH);
+          }
+
           const exportFormat = 'image/webp';
           canvas.toBlob(
             async (blob) => {
@@ -908,7 +934,6 @@ export const AdminEventEditorPage: React.FC = () => {
               }
 
               try {
-                // Ensure extension is .webp
                 const baseName = file.name.replace(/\.[^/.]+$/, '');
                 const uploadFile = new File([blob], `${baseName}.webp`, { type: exportFormat });
                 const uploadRes = await eventService.uploadPoster(uploadFile, id);
@@ -921,6 +946,25 @@ export const AdminEventEditorPage: React.FC = () => {
                   sizeKb,
                   name: `${baseName}.webp`,
                 });
+
+                // Generate and upload thumbnail if canvas supported
+                if (thumbCtx) {
+                  thumbCanvas.toBlob(
+                    async (thumbBlob) => {
+                      if (thumbBlob) {
+                        try {
+                          const thumbFile = new File([thumbBlob], `${baseName}_thumb.webp`, { type: exportFormat });
+                          const thumbRes = await eventService.uploadPoster(thumbFile, id);
+                          setThumbnailUrl(thumbRes.url);
+                        } catch {
+                          // Thumbnail upload is best-effort fallback
+                        }
+                      }
+                    },
+                    exportFormat,
+                    0.75
+                  );
+                }
 
                 toast({
                   title: 'Poster Optimized & Uploaded! 🚀',
@@ -989,6 +1033,7 @@ export const AdminEventEditorPage: React.FC = () => {
         setLocation(details.location || details.venue || '');
         setCapacity(details.capacity ? String(details.capacity) : '');
         setBannerUrl(details.banner_url || details.coverImage || details.cover_image || '');
+        setThumbnailUrl(details.thumbnail_url || '');
         setThemeColor(details.theme_color || GOOGLE_THEME_COLORS[0].hex);
         setIsPublished(details.status === 'published' || details.published === true);
 
@@ -1351,6 +1396,7 @@ export const AdminEventEditorPage: React.FC = () => {
         location: location.trim(),
         venue: location.trim(),
         banner_url: bannerUrl.trim() || undefined,
+        thumbnail_url: thumbnailUrl.trim() || undefined,
         coverImage: bannerUrl.trim() || undefined,
         theme_color: themeColor,
         is_registration_open: isRegistrationOpen,
@@ -1909,6 +1955,7 @@ export const AdminEventEditorPage: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setBannerUrl('');
+                        setThumbnailUrl('');
                         setImageMeta(null);
                       }}
                       className="p-1.5 rounded-lg bg-destructive/80 text-white hover:bg-destructive transition-colors"

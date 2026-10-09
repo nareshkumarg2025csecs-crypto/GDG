@@ -9,6 +9,7 @@ const {
   deleteEvent,
   uploadEventPoster,
   migrateBase64Posters,
+  auditEventStorage,
 } = require('../controllers/eventController');
 const { createEventReminder, getMyCalendarEvents } = require('../controllers/calendarController');
 const { getFormsByEvent } = require('../controllers/formController');
@@ -38,6 +39,14 @@ router.post(
   requireAuth,
   requireRole('admin'),
   migrateBase64Posters
+);
+
+// Storage Audit & Orphan Cleanup (Admin only)
+router.post(
+  '/storage-audit',
+  requireAuth,
+  requireRole('admin'),
+  auditEventStorage
 );
 
 // Authenticated Calendar Reminder Query (must be before /:id)

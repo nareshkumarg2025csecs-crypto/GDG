@@ -36,12 +36,28 @@ export interface GoogleLinkUrlResponse {
   scopes: string[];
 }
 
-// Low-egress client cache (60s TTL) to prevent repeated network trips
+// Low-egress client cache (300s TTL) to prevent repeated network trips
 let cachedEventsList: { data: EventsResponse; expiresAt: number } | null = null;
 let inFlightEventsList: Promise<EventsResponse> | null = null;
 const cachedSingleEvents = new Map<string, { data: SingleEventResponse; expiresAt: number }>();
+let cachedCalendarEvents: { data: { event_ids: string[]; count: number }; expiresAt: number } | null = null;
+
+export const EVENT_QUERY_KEYS = {
+  all: ['events'] as const,
+  list: () => ['events', 'list'] as const,
+  detail: (id: string) => ['events', 'detail', id] as const,
+  calendar: () => ['events', 'calendar-reminders'] as const,
+};
+
+export function clearEventsCache() {
+  cachedEventsList = null;
+  cachedSingleEvents.clear();
+  cachedCalendarEvents = null;
+}
 
 export const eventService = {
+  clearEventsCache,
+
   async listEvents(forceRefresh = false): Promise<EventsResponse> {
     if (!forceRefresh && cachedEventsList && cachedEventsList.expiresAt > Date.now()) {
       return cachedEventsList.data;
@@ -62,6 +78,16 @@ export const eventService = {
           expiresAt: Date.now() + 300 * 1000,
         };
 
+        // Pre-populate individual event cache for instant detail viewing
+        if (data?.events && Array.isArray(data.events)) {
+          for (const ev of data.events) {
+            cachedSingleEvents.set(ev.id, {
+              data: { message: 'Loaded from events list cache', event: ev },
+              expiresAt: Date.now() + 300 * 1000,
+            });
+          }
+        }
+
         return data;
       } finally {
         inFlightEventsList = null;
@@ -75,6 +101,22 @@ export const eventService = {
     const cached = cachedSingleEvents.get(id);
     if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
       return cached.data;
+    }
+
+    // Optimization: If event exists in cachedEventsList, use it immediately with zero network egress
+    if (!forceRefresh && cachedEventsList && cachedEventsList.expiresAt > Date.now()) {
+      const match = cachedEventsList.data.events.find((e) => e.id === id);
+      if (match) {
+        const synthesized: SingleEventResponse = {
+          message: 'Loaded from events list cache',
+          event: match,
+        };
+        cachedSingleEvents.set(id, {
+          data: synthesized,
+          expiresAt: cachedEventsList.expiresAt,
+        });
+        return synthesized;
+      }
     }
 
     const data = await apiRequest<SingleEventResponse>(`/api/events/${id}`, {
@@ -124,9 +166,16 @@ export const eventService = {
   },
 
   async createCalendarReminder(eventId: string): Promise<CalendarReminderResponse> {
-    return apiRequest<CalendarReminderResponse>(`/api/events/${eventId}/calendar-reminder`, {
+    const res = await apiRequest<CalendarReminderResponse>(`/api/events/${eventId}/calendar-reminder`, {
       method: 'POST',
     });
+    if (res?.success && cachedCalendarEvents?.data) {
+      if (!cachedCalendarEvents.data.event_ids.includes(eventId)) {
+        cachedCalendarEvents.data.event_ids = [...cachedCalendarEvents.data.event_ids, eventId];
+        cachedCalendarEvents.data.count = cachedCalendarEvents.data.event_ids.length;
+      }
+    }
+    return res;
   },
 
   async createEventReminder(eventId: string): Promise<CalendarReminderResponse> {
@@ -149,11 +198,22 @@ export const eventService = {
     });
   },
 
-  async getMyCalendarEvents(): Promise<{ event_ids: string[]; count: number }> {
-    return apiRequest<{ event_ids: string[]; count: number }>(
+  async getMyCalendarEvents(forceRefresh = false): Promise<{ event_ids: string[]; count: number }> {
+    if (!forceRefresh && cachedCalendarEvents && cachedCalendarEvents.expiresAt > Date.now()) {
+      return cachedCalendarEvents.data;
+    }
+
+    const data = await apiRequest<{ event_ids: string[]; count: number }>(
       '/api/events/calendar-reminders/me',
       { method: 'GET' }
     );
+
+    cachedCalendarEvents = {
+      data,
+      expiresAt: Date.now() + 300 * 1000,
+    };
+
+    return data;
   },
 
   async syncSheetForAdmin(formId: string): Promise<{ message: string; rows_synced: number }> {

@@ -201,6 +201,9 @@ const getEventById = async (req, res) => {
     const { id } = req.params;
     const now = Date.now();
 
+    // Egress optimization: browser & CDN caching headers
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+
     const cached = singleEventCache.get(id);
     if (cached && cached.expiresAt > now) {
       return res.status(200).json({
@@ -290,10 +293,28 @@ const updateEvent = async (req, res) => {
       updatePayload.title = title.trim();
     }
 
+    let oldBannerUrl = null;
+    let oldThumbnailUrl = null;
+
     if (details && typeof details === 'object') {
       const cleanDetails = { ...details };
       delete cleanDetails.certificate_config;
       updatePayload.details = await PosterStorageService.sanitizeEventDetails(cleanDetails, id);
+
+      // Check previous banner to clean up replaced file
+      try {
+        const { data: prevEv } = await supabaseAdmin
+          .from('events')
+          .select('details')
+          .eq('id', id)
+          .single();
+        if (prevEv?.details) {
+          oldBannerUrl = prevEv.details.banner_url || prevEv.details.coverImage;
+          oldThumbnailUrl = prevEv.details.thumbnail_url;
+        }
+      } catch {
+        // non-critical
+      }
     }
 
     const { data: event, error } = await supabaseAdmin
@@ -308,6 +329,18 @@ const updateEvent = async (req, res) => {
         error: 'Event not found or failed to update.',
         details: error ? error.message : undefined,
       });
+    }
+
+    // Storage cleanup: delete previous poster file if a new one was uploaded
+    if (updatePayload.details) {
+      const newBanner = updatePayload.details.banner_url || updatePayload.details.coverImage;
+      const newThumb = updatePayload.details.thumbnail_url;
+      if (oldBannerUrl && newBanner && oldBannerUrl !== newBanner) {
+        PosterStorageService.deletePosterByUrl(oldBannerUrl).catch(() => {});
+      }
+      if (oldThumbnailUrl && newThumb && oldThumbnailUrl !== newThumb) {
+        PosterStorageService.deletePosterByUrl(oldThumbnailUrl).catch(() => {});
+      }
     }
 
     // Invalidate cache for this event and the list
@@ -444,6 +477,14 @@ const deleteEvent = async (req, res) => {
       });
     }
 
+    // Clean up event banner and thumbnail from Supabase Storage
+    if (event.details) {
+      const banner = event.details.banner_url || event.details.coverImage;
+      const thumb = event.details.thumbnail_url;
+      if (banner) PosterStorageService.deletePosterByUrl(banner).catch(() => {});
+      if (thumb) PosterStorageService.deletePosterByUrl(thumb).catch(() => {});
+    }
+
     // Invalidate cache for this event and the list
     invalidateEventCache(id);
 
@@ -466,6 +507,28 @@ const deleteEvent = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/events/storage-audit
+ * Admin-only: Inspects and optionally cleans orphaned banner files in Supabase Storage.
+ */
+const auditEventStorage = async (req, res) => {
+  try {
+    const dryRun = req.body?.dryRun !== false;
+    const auditResult = await PosterStorageService.auditStoragePosters({ dryRun });
+    return res.status(200).json({
+      message: dryRun
+        ? 'Storage audit dry-run completed successfully.'
+        : 'Storage cleanup completed successfully.',
+      ...auditResult,
+    });
+  } catch (error) {
+    console.error('auditEventStorage error:', error);
+    return res.status(500).json({
+      error: error.message || 'Failed to perform storage audit.',
+    });
+  }
+};
+
 module.exports = {
   createEvent,
   listEvents,
@@ -474,5 +537,6 @@ module.exports = {
   deleteEvent,
   uploadEventPoster,
   migrateBase64Posters,
+  auditEventStorage,
   invalidateEventCache,
 };

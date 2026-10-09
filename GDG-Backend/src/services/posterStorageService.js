@@ -83,7 +83,7 @@ class PosterStorageService {
       .from(POSTER_BUCKET)
       .upload(filePath, buffer, {
         contentType: mimeType || 'image/jpeg',
-        cacheControl: '31536000, public, immutable',
+        cacheControl: 'public, max-age=31536000, immutable',
         upsert: true,
       });
 
@@ -99,6 +99,155 @@ class PosterStorageService {
     return {
       publicUrl: urlData.publicUrl,
       path: filePath,
+    };
+  }
+
+  /**
+   * Safely deletes an existing poster file from Supabase Storage by its public URL or path.
+   * Prevents accumulating orphaned banner files when events are updated or deleted.
+   *
+   * @param {string} urlOrPath
+   * @returns {Promise<boolean>}
+   */
+  static async deletePosterByUrl(urlOrPath) {
+    if (!urlOrPath || typeof urlOrPath !== 'string') {
+      return false;
+    }
+
+    try {
+      // Extract storage path from public URL: .../club-assets/event-posters/filename.webp
+      let relativePath = null;
+      if (urlOrPath.includes(`/${POSTER_BUCKET}/`)) {
+        const parts = urlOrPath.split(`/${POSTER_BUCKET}/`);
+        if (parts[1]) {
+          relativePath = decodeURIComponent(parts[1].split('?')[0]);
+        }
+      } else if (urlOrPath.includes(`/${POSTER_FOLDER}/`)) {
+        const parts = urlOrPath.split(`/${POSTER_FOLDER}/`);
+        if (parts[1]) {
+          relativePath = `${POSTER_FOLDER}/${decodeURIComponent(parts[1].split('?')[0])}`;
+        }
+      } else if (urlOrPath.startsWith(`${POSTER_FOLDER}/`)) {
+        relativePath = urlOrPath;
+      }
+
+      if (!relativePath || !relativePath.startsWith(`${POSTER_FOLDER}/`)) {
+        return false;
+      }
+
+      const { data, error } = await supabaseAdmin.storage
+        .from(POSTER_BUCKET)
+        .remove([relativePath]);
+
+      if (error) {
+        console.warn(`[PosterStorageService] Could not remove old poster '${relativePath}':`, error.message);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.warn('[PosterStorageService] deletePosterByUrl error:', err.message);
+      return false;
+    }
+  }
+
+  /**
+   * Safe Storage Audit & Cleanup tool:
+   * Compares all files in the Supabase Storage bucket against active database references.
+   *
+   * @param {Object} options
+   * @param {boolean} [options.dryRun=true] - If true, only reports without deleting
+   * @returns {Promise<Object>}
+   */
+  static async auditStoragePosters({ dryRun = true } = {}) {
+    await this.ensureBucketExists();
+
+    // 1. List files in storage bucket under POSTER_FOLDER
+    const { data: files, error: listError } = await supabaseAdmin.storage
+      .from(POSTER_BUCKET)
+      .list(POSTER_FOLDER, { limit: 1000, sortBy: { column: 'created_at', order: 'desc' } });
+
+    if (listError) {
+      throw new Error(`Failed to list storage objects: ${listError.message}`);
+    }
+
+    // 2. Fetch all active event banner/thumbnail references from PostgreSQL
+    const { data: events, error: eventsError } = await supabaseAdmin
+      .from('events')
+      .select('id, title, details');
+
+    if (eventsError) {
+      throw new Error(`Failed to fetch events for storage audit: ${eventsError.message}`);
+    }
+
+    const referencedFiles = new Set();
+    for (const ev of events || []) {
+      const details = ev.details || {};
+      const urls = [
+        details.banner_url,
+        details.thumbnail_url,
+        details.coverImage,
+        details.cover_image,
+      ];
+      for (const u of urls) {
+        if (u && typeof u === 'string') {
+          const match = u.match(/event-posters\/([^?#]+)/);
+          if (match && match[1]) {
+            referencedFiles.add(match[1]);
+          }
+        }
+      }
+    }
+
+    const totalFiles = (files || []).filter((f) => f.name !== '.emptyFolderPlaceholder');
+    const totalBytes = totalFiles.reduce((acc, f) => acc + (f.metadata?.size || 0), 0);
+
+    const now = Date.now();
+    const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+
+    const orphanedFiles = [];
+    let orphanedBytes = 0;
+
+    for (const file of totalFiles) {
+      const isReferenced = referencedFiles.has(file.name);
+      if (!isReferenced) {
+        // Only consider files created at least 2 hours ago as orphaned to prevent race conditions during upload
+        const createdMs = file.created_at ? new Date(file.created_at).getTime() : 0;
+        if (createdMs < twoHoursAgo || !file.created_at) {
+          orphanedFiles.push({
+            name: file.name,
+            path: `${POSTER_FOLDER}/${file.name}`,
+            size: file.metadata?.size || 0,
+            created_at: file.created_at,
+          });
+          orphanedBytes += file.metadata?.size || 0;
+        }
+      }
+    }
+
+    let deletedCount = 0;
+    if (!dryRun && orphanedFiles.length > 0) {
+      const pathsToDelete = orphanedFiles.map((f) => f.path);
+      const { error: removeErr } = await supabaseAdmin.storage
+        .from(POSTER_BUCKET)
+        .remove(pathsToDelete);
+
+      if (!removeErr) {
+        deletedCount = orphanedFiles.length;
+      }
+    }
+
+    return {
+      dryRun,
+      totalFilesCount: totalFiles.length,
+      totalStorageBytes: totalBytes,
+      totalStorageFormatted: `${(totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+      referencedFilesCount: referencedFiles.size,
+      orphanedFilesCount: orphanedFiles.length,
+      orphanedBytes,
+      orphanedFormatted: `${(orphanedBytes / (1024 * 1024)).toFixed(2)} MB`,
+      deletedCount,
+      orphanedFilesSample: orphanedFiles.slice(0, 20),
     };
   }
 

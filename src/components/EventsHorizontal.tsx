@@ -7,12 +7,13 @@
  * Mobile: native horizontal scroll with scroll-snap fallback.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useTheme } from '@/contexts/ThemeContext';
-import { eventService } from '@/services/eventService';
+import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
 import { formatEventDate, formatEventDateRange, stripMarkdown } from '@/lib/formUtils';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -168,49 +169,44 @@ export function EventsHorizontal() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  const [liveEvents, setLiveEvents] = useState<EventItem[]>(events);
+  const { data: eventsRes } = useQuery({
+    queryKey: EVENT_QUERY_KEYS.list(),
+    queryFn: () => eventService.listEvents(),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-  // Fetch live published events from backend
-  useEffect(() => {
-    const fetchLiveEvents = async () => {
-      try {
-        const { events: fetched } = await eventService.listEvents();
-        const published = (fetched || []).filter(
-          (e) => e.details?.status === 'published' || e.details?.published === true
-        );
+  const liveEvents = useMemo(() => {
+    const fetched = eventsRes?.events || [];
+    const published = fetched.filter(
+      (e) => e.details?.status === 'published' || e.details?.published === true
+    );
 
-        if (published.length > 0) {
-          const colors = ['#4285F4', '#34A853', '#EA4335', '#FBBC04'];
-          const mapped: EventItem[] = published.map((e, idx) => {
-            const details = e.details || {};
-            const col = details.theme_color || colors[idx % colors.length];
-            return {
-              id: e.id,
-              eventId: e.id,
-              title: e.title,
-              type: details.category || 'Workshop',
-              date: formatEventDateRange(
-                details.startTime || details.start_time,
-                details.endTime || details.end_time
-              ),
-              color: col,
-              bannerUrl: details.banner_url || details.coverImage || details.cover_image,
-              description: stripMarkdown(
-                details.description ||
-                (details.custom_sections && details.custom_sections[0]?.content) ||
-                'Join this Google Developer Group community session.'
-              ),
-            };
-          });
-          setLiveEvents(mapped);
-        }
-      } catch {
-        // Fallback to initial events
-      }
-    };
+    if (published.length === 0) return events;
 
-    fetchLiveEvents();
-  }, []);
+    const colors = ['#4285F4', '#34A853', '#EA4335', '#FBBC04'];
+    return published.map((e, idx) => {
+      const details = e.details || {};
+      const col = details.theme_color || colors[idx % colors.length];
+      return {
+        id: e.id,
+        eventId: e.id,
+        title: e.title,
+        type: details.category || 'Workshop',
+        date: formatEventDateRange(
+          details.startTime || details.start_time,
+          details.endTime || details.end_time
+        ),
+        color: col,
+        bannerUrl: details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image,
+        description: stripMarkdown(
+          details.description ||
+          (details.custom_sections && details.custom_sections[0]?.content) ||
+          'Join this Google Developer Group community session.'
+        ),
+      };
+    });
+  }, [eventsRes]);
 
   const themeEvents = liveEvents.map((e) =>
     theme === 'light'

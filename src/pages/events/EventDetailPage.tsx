@@ -20,8 +20,9 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import { eventService } from '@/services/eventService';
-import { formService } from '@/services/formService';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { eventService, EVENT_QUERY_KEYS, type EventsResponse } from '@/services/eventService';
+import { formService, FORM_QUERY_KEYS } from '@/services/formService';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -41,19 +42,12 @@ export const EventDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAuthenticated, profile } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [event, setEvent] = useState<ClubEvent | null>(null);
-  const [form, setForm] = useState<EventForm | null>(null);
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [submissionDate, setSubmissionDate] = useState<string | null>(null);
-  const [userSubmission, setUserSubmission] = useState<FormSubmission | null>(null);
   const [showTicketModal, setShowTicketModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
-  const [calendarAdded, setCalendarAdded] = useState(false);
   const [bannerZoomOpen, setBannerZoomOpen] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
-  // Shown when email+password user tries to add to calendar
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
 
@@ -72,73 +66,77 @@ export const EventDetailPage: React.FC = () => {
     return () => { document.body.style.overflow = ''; };
   }, [bannerZoomOpen]);
 
-  useEffect(() => {
-    if (!id) return;
+  // 1. Instant cache lookup from existing events list (zero spinner when navigating from /events or home)
+  const cachedList = queryClient.getQueryData<EventsResponse>(EVENT_QUERY_KEYS.list());
+  const initialEvent = useMemo(() => {
+    return cachedList?.events?.find((e) => e.id === id);
+  }, [cachedList, id]);
 
-    const loadEventDetails = async () => {
-      setIsLoading(true);
-      try {
-        // Event & form are public — no auth token needed
-        const [eventRes, formsRes] = await Promise.all([
-          eventService.getEventById(id),
-          formService.getFormsByEvent(id).catch(() => ({ forms: [] })),
-        ]);
+  // 2. Event detail query with instant initialData
+  const {
+    data: eventRes,
+    isLoading: isEventLoading,
+  } = useQuery({
+    queryKey: EVENT_QUERY_KEYS.detail(id || ''),
+    queryFn: () => eventService.getEventById(id!),
+    enabled: !!id,
+    initialData: initialEvent ? { message: 'Cached list item', event: initialEvent } : undefined,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-        setEvent(eventRes.event);
+  const event = eventRes?.event || null;
 
-        const attachedForm = formsRes.forms && formsRes.forms.length > 0 ? formsRes.forms[0] : null;
-        setForm(attachedForm);
+  // 3. Form for this event (cached 5 min)
+  const { data: formsRes } = useQuery({
+    queryKey: FORM_QUERY_KEYS.byEvent(id || ''),
+    queryFn: () => formService.getFormsByEvent(id!).catch(() => ({ message: 'ok', count: 0, forms: [] })),
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-        // Only check registration and calendar state if user is logged in
-        if (isAuthenticated) {
-          // Check calendar-added state
-          try {
-            if (localStorage.getItem(`gdg_calendar_added_${id}`) === 'true') {
-              setCalendarAdded(true);
-            }
-            const calRes = await eventService.getMyCalendarEvents();
-            if ((calRes.event_ids || []).includes(id!)) {
-              setCalendarAdded(true);
-            }
-          } catch {
-            // non-critical
-          }
+  const form = useMemo(() => {
+    return formsRes?.forms && formsRes.forms.length > 0 ? formsRes.forms[0] : null;
+  }, [formsRes]);
 
-          if (attachedForm) {
-            try {
-              const subsRes = await formService.getMySubmissions();
-              const userSub = (subsRes.submissions || []).find((s) => s.form_id === attachedForm.id);
-              if (userSub) {
-                setIsRegistered(true);
-                setSubmissionDate(userSub.submitted_at);
-                setUserSubmission(userSub);
-              }
-            } catch {
-              // Submission check failure is non-critical
-            }
-          }
-        }
-      } catch (err: any) {
-        // Suppress raw auth/token errors — just navigate away if truly not found
-        const isAuthError =
-          err?.status === 401 ||
-          err?.message?.toLowerCase().includes('unauthorized') ||
-          err?.message?.toLowerCase().includes('token');
-        if (!isAuthError) {
-          toast({
-            title: 'Event not found',
-            description: 'Could not retrieve event details.',
-            variant: 'destructive',
-          });
-          navigate('/events');
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // 4. User submissions query (re-uses existing cache from EventsPage without extra network requests)
+  const { data: subsRes } = useQuery({
+    queryKey: FORM_QUERY_KEYS.mySubmissions(),
+    queryFn: () => formService.getMySubmissions().catch(() => ({ message: 'ok', count: 0, submissions: [] })),
+    enabled: !!isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
 
-    loadEventDetails();
-  }, [id, isAuthenticated, navigate]);
+  // 5. Calendar reminders query (re-uses existing cache from EventsPage)
+  const { data: calRes } = useQuery({
+    queryKey: EVENT_QUERY_KEYS.calendar(),
+    queryFn: () => eventService.getMyCalendarEvents().catch(() => ({ event_ids: [], count: 0 })),
+    enabled: !!isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+  });
+
+  const userSubmission = useMemo(() => {
+    if (!form || !subsRes?.submissions) return null;
+    return subsRes.submissions.find((s) => s.form_id === form.id) || null;
+  }, [form, subsRes]);
+
+  const isRegistered = Boolean(userSubmission);
+  const submissionDate = userSubmission?.submitted_at || null;
+
+  const [localCalendarAdded, setLocalCalendarAdded] = useState(() => {
+    return id ? localStorage.getItem(`gdg_calendar_added_${id}`) === 'true' : false;
+  });
+
+  const calendarAdded = useMemo(() => {
+    if (localCalendarAdded) return true;
+    if (id && calRes?.event_ids?.includes(id)) return true;
+    return false;
+  }, [localCalendarAdded, id, calRes]);
+
+  const isLoading = isEventLoading && !initialEvent;
 
   const details = event?.details || {};
   const banner = details.banner_url || details.coverImage || details.cover_image;
@@ -197,7 +195,7 @@ export const EventDetailPage: React.FC = () => {
       }
 
       if (res.success || res.calendar_event_id) {
-        setCalendarAdded(true);
+        setLocalCalendarAdded(true);
         try {
           localStorage.setItem(`gdg_calendar_added_${id}`, 'true');
         } catch (_) {}
@@ -293,11 +291,13 @@ export const EventDetailPage: React.FC = () => {
         <div className="rounded-3xl border border-border bg-card text-card-foreground shadow-xl overflow-hidden">
           {/* Banner Image (if added by Admin) — click to zoom */}
           {banner && (
-            <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-black group cursor-zoom-in" onClick={() => setBannerZoomOpen(true)}>
+            <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-black group cursor-zoom-in aspect-[16/9]" onClick={() => setBannerZoomOpen(true)}>
               <img
                 src={banner}
                 alt={event.title}
+                loading="eager"
                 decoding="async"
+                fetchPriority="high"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
