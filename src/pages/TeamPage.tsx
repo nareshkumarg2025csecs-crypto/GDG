@@ -100,7 +100,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                 className="relative cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl"
             >
                 <div
-                    className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden transition-colors duration-300"
+                    className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden transition-colors duration-300"
                     style={{
                         background: `linear-gradient(145deg, ${member.color}15, ${member.color}05, var(--card-bg))`,
                         border: `1px solid ${member.color}${isHovered ? '80' : '30'}`,
@@ -140,7 +140,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                                 loading="lazy"
                                 decoding="async"
                                 onError={() => setImgError(true)}
-                                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                                className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                             />
                         ) : (
                             <motion.div
@@ -199,8 +199,10 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                                 )}
                                 {member.email ? (
                                     <a
-                                        href={`mailto:${member.email}`}
-                                        title={`Email ${member.name}`}
+                                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(member.email)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`Email ${member.name} via Gmail`}
                                         className="p-1.5 rounded-full bg-white/10 hover:bg-[#EA4335] transition-colors backdrop-blur-sm group/icon"
                                     >
                                         <Mail className="w-3.5 h-3.5 text-white/80 group-hover/icon:text-white" />
@@ -217,9 +219,13 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                         </div>
                     </div>
 
-                    {/* Corner decorations */}
-                    <div className="absolute top-0 left-0 w-8 h-8 pointer-events-none z-10" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
-                    <div className="absolute bottom-0 right-0 w-8 h-8 pointer-events-none z-10" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
+                    {/* Corner decorations (shown for monogram cards) */}
+                    {!member.image && (
+                        <>
+                            <div className="absolute top-0 left-0 w-8 h-8 pointer-events-none z-10" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
+                            <div className="absolute bottom-0 right-0 w-8 h-8 pointer-events-none z-10" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
+                        </>
+                    )}
                 </div>
             </div>
         </motion.div>

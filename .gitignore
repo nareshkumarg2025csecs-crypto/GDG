@@ -37,3 +37,6 @@ gdg-scanner/
 skills-lock.json
 
 .vercel
+
+# Temporary scratch directory
+scratch/

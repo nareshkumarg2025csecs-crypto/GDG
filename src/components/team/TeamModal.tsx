@@ -84,7 +84,7 @@ export default function TeamModal() {
                                     src={selectedMember.image}
                                     alt={selectedMember.name}
                                     onError={() => setImgError(true)}
-                                    className="w-24 h-24 mx-auto mb-6 rounded-full object-cover object-top shadow-lg"
+                                    className="w-32 h-40 mx-auto mb-6 rounded-2xl object-cover object-center shadow-lg"
                                     style={{
                                         border: `2px solid ${departmentColor}`,
                                         boxShadow: `0 0 25px ${departmentColor}50`,
@@ -138,8 +138,10 @@ export default function TeamModal() {
                                 ) : null}
                                 {selectedMember.email ? (
                                     <a
-                                        href={`mailto:${selectedMember.email}`}
-                                        aria-label={`Email ${selectedMember.name}`}
+                                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(selectedMember.email)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={`Email ${selectedMember.name} via Gmail`}
                                         className="p-3 rounded-full bg-white/5 hover:bg-[#EA4335]/20 border border-white/10 hover:border-[#EA4335] transition-all group"
                                     >
                                         <Mail className="w-5 h-5 text-white/60 group-hover:text-[#EA4335]" aria-hidden="true" />

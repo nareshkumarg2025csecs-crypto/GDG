@@ -511,8 +511,10 @@ function HolographicGarageCard({ member, index, isDark, onOpenModal }: Holograph
                                 )}
                                 {member.email && (
                                     <a
-                                        href={`mailto:${member.email}`}
-                                        title={`Email ${member.name}`}
+                                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(member.email)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`Email ${member.name} via Gmail`}
                                         className="p-1.5 rounded-full bg-white/10 hover:bg-[#EA4335] transition-colors backdrop-blur-sm"
                                     >
                                         <Mail className="w-3.5 h-3.5 text-white/80 hover:text-white" />
