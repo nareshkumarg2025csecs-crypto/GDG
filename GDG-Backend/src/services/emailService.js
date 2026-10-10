@@ -27,7 +27,350 @@ function interpolateVariables(template, vars) {
 }
 
 /**
- * Builds a clean, responsive HTML wrapper for custom email drafts.
+ * Formats organizer plain text / custom message into responsive HTML paragraphs
+ * and converts Google Meet / URL links into action buttons.
+ */
+function formatOrganizerMessageToHtml(rawMsg, fallbackEventTitle = 'GDG Event') {
+  if (!rawMsg || !rawMsg.trim()) {
+    return `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #334155; font-size: 14px;">We look forward to welcoming you to <strong>${escapeHtml(fallbackEventTitle)}</strong>! Please find your event pass and schedule details below.</p>`;
+  }
+
+  // 1. Auto-link URLs
+  let autoLinked = rawMsg.trim().replace(
+    /(^|[^">])(https?:\/\/[^\s<"']+)/g,
+    '$1<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #4285F4; font-weight: 700; text-decoration: underline; word-break: break-all;">$2</a>'
+  );
+
+  // 2. Add action button for Google Meet
+  if (/https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(autoLinked) && !/Join Google Meet/i.test(autoLinked)) {
+    const meetMatch = autoLinked.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
+    if (meetMatch) {
+      const meetUrl = meetMatch[0];
+      const buttonHtml = `\n\n<div style="margin: 14px 0 18px 0;"><a href="${meetUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">Join Google Meet Session &rarr;</a></div>\n\n`;
+      autoLinked = autoLinked.replace(
+        new RegExp(`(<a[^>]*>${meetUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/a>)`),
+        `$1${buttonHtml}`
+      );
+    }
+  }
+
+  const normalized = autoLinked.replace(/\r\n/g, '\n');
+  const blocks = normalized.split(/\n{2,}/);
+
+  return blocks
+    .map((block) => {
+      const trimmedBlock = block.trim();
+      if (!trimmedBlock) return '';
+      if (/^<(?:div|table|ul|ol|h[1-6]|blockquote)[\s>]/i.test(trimmedBlock)) {
+        return trimmedBlock.replace(/\n/g, '<br/>');
+      }
+      if (/^<p[\s>]/i.test(trimmedBlock)) {
+        return trimmedBlock.replace(/\n/g, '<br/>');
+      }
+      const withBr = trimmedBlock.replace(/\n/g, '<br/>');
+      return `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #334155; font-size: 14px;">${withBr}</p>`;
+    })
+    .filter(Boolean)
+    .join('');
+}
+
+/**
+ * Template 1: Unified Official Registration Pass Template
+ * Used by Default QR Pass mode and Advanced HTML Draft.
+ * Supports both QR and No-QR modes.
+ * Contains no organizer footer details.
+ */
+function buildOfficialPassEmailHtml({
+  attendeeName,
+  eventTitle,
+  ticketId,
+  eventDateFormatted,
+  eventTimeFormatted,
+  eventVenue,
+  digitalPassLink,
+  includeQr = true,
+}) {
+  const safeAttendeeName = escapeHtml(attendeeName || 'Attendee');
+  const safeEventTitle = escapeHtml(eventTitle || 'GDG Event');
+  const safeTicketId = escapeHtml(ticketId || 'CONFIRMED');
+  const safeDate = escapeHtml(eventDateFormatted || 'TBA');
+  const safeTime = escapeHtml(eventTimeFormatted || 'TBA');
+  const safeVenue = escapeHtml(eventVenue || 'Campus Venue / TBA');
+  const safePassLink = escapeHtml(digitalPassLink || '#');
+
+  const passCardHtml = includeQr
+    ? `
+    <!-- Digital Pass QR Card -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Digital Event Pass
+      </div>
+      <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
+        ${safeTicketId}
+      </div>
+      <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+        <img src="cid:ticket-qr-code" alt="Pass QR - ${safeTicketId}" width="190" height="190" style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;" />
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+        📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
+      </div>
+    </div>
+    <!-- /Digital Pass QR Card -->`
+    : `
+    <!-- Digital Event Confirmation Pass Card (Without QR) -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 26px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Event Pass
+      </div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+        ${safeTicketId}
+      </div>
+      <div style="display: inline-block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 50px; padding: 5px 16px; font-size: 11px; color: #38bdf8; font-weight: 600; margin-bottom: 12px;">
+        ✓ Seat Confirmed &amp; Reserved
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+        Present this Ticket ID or your registered email at the desk for verification. No QR scan required.
+      </div>
+    </div>
+    <!-- /Digital Event Confirmation Pass Card -->`;
+
+  const attendanceNote = includeQr
+    ? 'Please keep your digital pass and QR code handy when arriving at the venue. Check-in desks open 15 minutes prior to the start time.'
+    : 'Please save your Ticket ID and confirmation details for verification upon arrival. Check-in desks open 15 minutes prior to the start time.';
+
+  const ctaText = includeQr
+    ? 'View Digital Pass Online &rarr;'
+    : 'View Event Pass Online &rarr;';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Event Registration Confirmed - ${safeEventTitle}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
+  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
+    <!-- Google 4-Color Accent Header -->
+    <div style="background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%); height: 6px;"></div>
+
+    <!-- Header Branding -->
+    <div style="padding: 28px 32px 18px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+      <div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+        <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
+      </div>
+      <div style="font-size: 11px; font-weight: 700; color: #4285F4; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">
+        Registration Confirmed
+      </div>
+    </div>
+
+    <!-- Main Content Body -->
+    <div style="padding: 32px; color: #334155; font-size: 15px; line-height: 1.6;">
+      <h2 style="font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
+        Welcome to ${safeEventTitle}!
+      </h2>
+
+      <p style="margin: 0 0 16px 0;">
+        Hi <strong>${safeAttendeeName}</strong>,
+      </p>
+
+      <p style="margin: 0 0 16px 0;">
+        Your registration for <strong>${safeEventTitle}</strong> has been officially confirmed. We are thrilled to have you join our developer session!
+      </p>
+
+      <!-- Key Event Details Card -->
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 24px 0;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+          Key Event Details
+        </div>
+        <div style="font-size: 14px; margin-bottom: 8px;">
+          📅 <strong>Date:</strong> ${safeDate}
+        </div>
+        <div style="font-size: 14px; margin-bottom: 8px;">
+          ⏰ <strong>Time:</strong> ${safeTime}
+        </div>
+        <div style="font-size: 14px; margin-bottom: 8px;">
+          📍 <strong>Venue:</strong> ${safeVenue}
+        </div>
+        <div style="font-size: 14px; color: #0284c7;">
+          🎟️ <strong>Ticket ID:</strong> <code>${safeTicketId}</code>
+        </div>
+      </div>
+
+      ${passCardHtml}
+
+      <!-- Important Notice / Links Section -->
+      <p style="margin: 0 0 16px 0;">
+        ${attendanceNote}
+      </p>
+
+      <!-- Call to Action Button -->
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${safePassLink}" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 14px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+          ${ctaText}
+        </a>
+      </div>
+    </div>
+
+    <!-- Footer (No organizer details) -->
+    <div style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 12px; color: #94a3b8;">
+      <p style="margin: 0 0 4px 0; font-weight: 600; color: #64748b;">Google Developer Groups On Campus</p>
+      <p style="margin: 0;">Automated confirmation email &bull; No reply needed</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Template 2: Simple Custom Message Template (with Presets)
+ * Used when organizers write a simple custom note or pick a preset.
+ * Highlights the organizer note, displays pass card (QR or No-QR), and event details.
+ * Contains no organizer footer details.
+ */
+function buildSimpleCustomEmailHtml({
+  attendeeName,
+  eventTitle,
+  ticketId,
+  eventDateFormatted,
+  eventTimeFormatted,
+  eventVenue,
+  digitalPassLink,
+  customMessage = '',
+  includeQr = true,
+}) {
+  const safeAttendeeName = escapeHtml(attendeeName || 'Attendee');
+  const safeEventTitle = escapeHtml(eventTitle || 'GDG Event');
+  const safeTicketId = escapeHtml(ticketId || 'CONFIRMED');
+  const safeDate = escapeHtml(eventDateFormatted || 'TBA');
+  const safeTime = escapeHtml(eventTimeFormatted || 'TBA');
+  const safeVenue = escapeHtml(eventVenue || 'Campus Venue / TBA');
+  const safePassLink = escapeHtml(digitalPassLink || '#');
+
+  const formattedMsg = formatOrganizerMessageToHtml(customMessage, safeEventTitle);
+
+  // Check if online session (e.g. Google Meet preset, Zoom, or virtual venue)
+  const isOnlineSession =
+    /meet\.google\.com|zoom\.us|online workshop|gmeet/i.test(customMessage || '') ||
+    /google meet|online|virtual|zoom/i.test(eventVenue || '');
+
+  const passCardHtml = (includeQr && !isOnlineSession)
+    ? `
+    <!-- Digital Pass QR Card -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Digital Event Pass
+      </div>
+      <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
+        ${safeTicketId}
+      </div>
+      <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+        <img src="cid:ticket-qr-code" alt="Pass QR - ${safeTicketId}" width="190" height="190" style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;" />
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+        📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
+      </div>
+    </div>
+    <!-- /Digital Pass QR Card -->`
+    : (!isOnlineSession ? `
+    <!-- Digital Event Confirmation Pass Card (Without QR) -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 26px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Event Pass
+      </div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+        ${safeTicketId}
+      </div>
+      <div style="display: inline-block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 50px; padding: 5px 16px; font-size: 11px; color: #38bdf8; font-weight: 600; margin-bottom: 12px;">
+        ✓ Seat Confirmed &amp; Reserved
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+        Present this Ticket ID or your registered email at the desk for verification. No QR scan required.
+      </div>
+    </div>
+    <!-- /Digital Event Confirmation Pass Card -->` : '');
+
+  const keyEventDetailsHtml = isOnlineSession ? '' : `
+      <!-- Key Event Details Card -->
+      <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 20px 0;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+          Key Event Details
+        </div>
+        <div style="font-size: 13px; margin-bottom: 6px;">📅 <strong>Date:</strong> ${safeDate}</div>
+        <div style="font-size: 13px; margin-bottom: 6px;">⏰ <strong>Time:</strong> ${safeTime}</div>
+        <div style="font-size: 13px; margin-bottom: 6px;">📍 <strong>Venue:</strong> ${safeVenue}</div>
+        <div style="font-size: 13px; color: #0284c7;">🎟️ <strong>Ticket ID:</strong> <code>${safeTicketId}</code></div>
+      </div>`;
+
+  const ctaButtonHtml = isOnlineSession ? '' : `
+      <!-- Call to Action Button -->
+      <div style="text-align: center; margin: 26px 0 10px 0;">
+        <a href="${safePassLink}" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+          ${includeQr ? 'View Digital Pass Online &rarr;' : 'View Event Pass Online &rarr;'}
+        </a>
+      </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>Event Registration Confirmed - ${safeEventTitle}</title>
+</head>
+<body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
+  <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
+    <!-- Google 4-Color Accent Header -->
+    <div style="background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%); height: 6px;"></div>
+
+    <!-- Header Branding -->
+    <div style="padding: 28px 32px 18px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+      <div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+        <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
+      </div>
+      <div style="font-size: 11px; font-weight: 700; color: #4285F4; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">
+        Registration Confirmed
+      </div>
+    </div>
+
+    <!-- Main Content Body -->
+    <div style="padding: 28px 32px; color: #334155; font-size: 15px; line-height: 1.6;">
+      <h2 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
+        Welcome to ${safeEventTitle}!
+      </h2>
+
+      <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b;">
+        Hi <strong>${safeAttendeeName}</strong>, ${isOnlineSession ? 'your registration has been confirmed!' : 'your seat has been reserved!'}
+      </p>
+
+      <!-- Organizer Custom Message Callout -->
+      <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 18px 20px; margin: 18px 0;">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #166534; margin-bottom: 10px;">
+          📢 Organizer Message
+        </div>
+        ${formattedMsg}
+      </div>
+
+      ${passCardHtml}
+      ${keyEventDetailsHtml}
+      ${ctaButtonHtml}
+    </div>
+
+    <!-- Footer (No organizer details) -->
+    <div style="padding: 18px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
+      <p style="margin: 0 0 4px 0; font-weight: 600; color: #64748b;">Google Developer Groups On Campus</p>
+      <p style="margin: 0;">Automated confirmation email &bull; No reply needed</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Builds a clean, responsive HTML wrapper for Advanced HTML custom email drafts.
+ * Uses the exact same card structure as Template 1.
+ * Supports swapping pass card based on includeQr and strips any organizer footer details.
  */
 function buildCustomHtmlEmail({
   customBody,
@@ -40,92 +383,143 @@ function buildCustomHtmlEmail({
   digitalPassLink,
   includeQr = true,
 }) {
-  const qrSection = includeQr ? `
+  const safeTicketId = escapeHtml(ticketId || 'CONFIRMED');
+
+  const passCardSection = includeQr ? `
     <!-- Digital Pass QR Card -->
     <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
         Official Digital Event Pass
       </div>
-      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
-        ${ticketId}
+      <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
+        ${safeTicketId}
       </div>
-      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
-        <img
-          src="cid:ticket-qr-code"
-          alt="Ticket QR - ${ticketId}"
-          width="160"
-          height="160"
-          style="display: block; width: 160px; height: 160px; border: 0; outline: none; border-radius: 8px; margin: 0 auto;"
-        />
+      <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+        <img src="cid:ticket-qr-code" alt="Pass QR - ${safeTicketId}" width="190" height="190" style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;" />
       </div>
-      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
-        📱 Present this QR pass at the venue entrance desk for verification.
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+        📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
       </div>
     </div>
     <!-- /Digital Pass QR Card -->
-  ` : '';
+  ` : `
+    <!-- Digital Event Confirmation Pass Card (Without QR) -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 26px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Event Pass
+      </div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+        ${safeTicketId}
+      </div>
+      <div style="display: inline-block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 50px; padding: 5px 16px; font-size: 11px; color: #38bdf8; font-weight: 600; margin-bottom: 12px;">
+        ✓ Seat Confirmed &amp; Reserved
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+        Present this Ticket ID or your registered email at the desk for verification. No QR scan required.
+      </div>
+    </div>
+    <!-- /Digital Event Confirmation Pass Card -->
+  `;
 
   let trimmed = (customBody || '').trim();
 
-  // 1. If explicit {{qr_code}} placeholder is provided, replace it directly in that exact location
-  if (/\{\{\s*qr_code\s*\}\}/i.test(trimmed)) {
-    trimmed = trimmed.replace(/\{\{\s*qr_code\s*\}\}/gi, qrSection);
-  } else if (!includeQr) {
-    // 2. If QR is disabled, strip any existing QR card from template
-    trimmed = trimmed
-      .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, '')
-      .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, '');
-  } else {
-    // 3. QR is enabled: check if the template already has a QR pass card
-    const alreadyHasQrCard =
-      trimmed.includes('<!-- Digital Pass QR Card -->') ||
-      trimmed.includes('Official Digital Event Pass') ||
-      trimmed.includes('cid:ticket-qr-code') ||
-      trimmed.includes('create-qr-code');
-
-    if (!alreadyHasQrCard) {
-      // Insert in the same spot as default email (before notice, CTA, or footer)
-      if (trimmed.includes('<!-- Important Notice')) {
-        trimmed = trimmed.replace('<!-- Important Notice', `${qrSection}\n\n    <!-- Important Notice`);
-      } else if (trimmed.includes('<!-- Call to Action')) {
-        trimmed = trimmed.replace('<!-- Call to Action', `${qrSection}\n\n    <!-- Call to Action`);
-      } else if (trimmed.includes('<!-- Footer')) {
-        trimmed = trimmed.replace('<!-- Footer', `${qrSection}\n\n  <!-- Footer`);
-      } else if (trimmed.includes('</div>\n  </div>')) {
-        trimmed = trimmed.replace('</div>\n  </div>', `${qrSection}\n  </div>\n  </div>`);
-      } else if (trimmed.includes('</body>')) {
-        trimmed = trimmed.replace('</body>', `${qrSection}\n</body>`);
-      } else {
-        trimmed = `${trimmed}\n${qrSection}`;
-      }
-    } else {
-      // Already has QR card: replace external preview QR image URL with cid:ticket-qr-code for reliable inline email delivery
-      trimmed = trimmed.replace(
-        /https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/gi,
-        'cid:ticket-qr-code'
-      );
-    }
+  // If empty, return standard Template 1
+  if (!trimmed) {
+    return buildOfficialPassEmailHtml({
+      attendeeName,
+      eventTitle,
+      ticketId,
+      eventDateFormatted,
+      eventTimeFormatted,
+      eventVenue,
+      digitalPassLink,
+      includeQr,
+    });
   }
 
-  // Check if trimmed is already a full email document or complete styled card (like DEFAULT_EMAIL_HTML_DRAFT)
+  // Check if trimmed is already a full email document or complete styled card
   const isFullDoc = trimmed.toLowerCase().includes('<html') || trimmed.toLowerCase().startsWith('<!doctype');
-  if (isFullDoc) {
-    return trimmed;
-  }
-
   const isCardContainer =
     trimmed.includes('max-width: 600px') ||
     trimmed.includes('Registration Confirmed') ||
     trimmed.startsWith('<div style="font-family:');
 
-  if (isCardContainer) {
-    // Wrap cleanly in standard email HTML doctype and body without nested double tables or duplicate QR
+  if (isFullDoc || isCardContainer) {
+    // 1. If explicit {{qr_code}} placeholder is provided, replace it directly
+    if (/\{\{\s*qr_code\s*\}\}/i.test(trimmed)) {
+      trimmed = trimmed.replace(/\{\{\s*qr_code\s*\}\}/gi, passCardSection);
+    } else if (!includeQr) {
+      // 2. If QR is disabled, first check if the template already has the No-QR pass card
+      if (
+        trimmed.includes('<!-- Digital Event Confirmation Pass Card') ||
+        trimmed.includes('Official Event Pass') ||
+        trimmed.includes('Seat Confirmed & Reserved')
+      ) {
+        trimmed = trimmed.replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      } else {
+        const hadExistingQrCard =
+          trimmed.includes('<!-- Digital Pass QR Card -->') ||
+          trimmed.includes('Official Digital Event Pass') ||
+          trimmed.includes('cid:ticket-qr-code') ||
+          trimmed.includes('create-qr-code');
+
+        if (hadExistingQrCard) {
+          trimmed = trimmed
+            .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, passCardSection)
+            .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, passCardSection);
+        } else {
+          if (trimmed.includes('<!-- Important Notice')) {
+            trimmed = trimmed.replace('<!-- Important Notice', `${passCardSection}\n\n    <!-- Important Notice`);
+          } else if (trimmed.includes('<!-- Call to Action')) {
+            trimmed = trimmed.replace('<!-- Call to Action', `${passCardSection}\n\n    <!-- Call to Action`);
+          } else if (trimmed.includes('<!-- Footer')) {
+            trimmed = trimmed.replace('<!-- Footer', `${passCardSection}\n\n  <!-- Footer`);
+          } else if (trimmed.includes('</div>\n  </div>')) {
+            trimmed = trimmed.replace('</div>\n  </div>', `${passCardSection}\n  </div>\n  </div>`);
+          } else {
+            trimmed = `${trimmed}\n${passCardSection}`;
+          }
+        }
+        trimmed = trimmed.replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+    } else {
+      // 3. QR is enabled: check if the template already has a QR pass card
+      const alreadyHasQrCard =
+        trimmed.includes('<!-- Digital Pass QR Card -->') ||
+        trimmed.includes('Official Digital Event Pass') ||
+        trimmed.includes('cid:ticket-qr-code') ||
+        trimmed.includes('create-qr-code');
+
+      if (!alreadyHasQrCard) {
+        if (trimmed.includes('<!-- Important Notice')) {
+          trimmed = trimmed.replace('<!-- Important Notice', `${passCardSection}\n\n    <!-- Important Notice`);
+        } else if (trimmed.includes('<!-- Call to Action')) {
+          trimmed = trimmed.replace('<!-- Call to Action', `${passCardSection}\n\n    <!-- Call to Action`);
+        } else if (trimmed.includes('<!-- Footer')) {
+          trimmed = trimmed.replace('<!-- Footer', `${passCardSection}\n\n  <!-- Footer`);
+        } else if (trimmed.includes('</div>\n  </div>')) {
+          trimmed = trimmed.replace('</div>\n  </div>', `${passCardSection}\n  </div>\n  </div>`);
+        } else if (trimmed.includes('</body>')) {
+          trimmed = trimmed.replace('</body>', `${passCardSection}\n</body>`);
+        } else {
+          trimmed = `${trimmed}\n${passCardSection}`;
+        }
+      } else {
+        trimmed = trimmed.replace(
+          /https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/gi,
+          'cid:ticket-qr-code'
+        );
+      }
+    }
+
+    if (isFullDoc) return trimmed;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${eventTitle}</title>
+  <title>${escapeHtml(eventTitle)}</title>
 </head>
 <body style="margin: 0; padding: 24px 12px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
   ${trimmed}
@@ -133,137 +527,20 @@ function buildCustomHtmlEmail({
 </html>`;
   }
 
-  // 1. Auto-link any plain URLs (e.g. Google Meet links) that are not already wrapped in <a> tags
-  let autoLinked = trimmed.replace(
-    /(^|[^">])(https?:\/\/[^\s<"']+)/g,
-    '$1<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #4285F4; font-weight: 700; text-decoration: underline; word-break: break-all;">$2</a>'
-  );
-
-  // 2. If a Google Meet or Zoom link is present without an explicit action button, add a prominent button
-  if (
-    /https:\/\/meet\.google\.com\/[a-z0-9-]+/i.test(autoLinked) &&
-    !/Join Google Meet/i.test(autoLinked)
-  ) {
-    const meetMatch = autoLinked.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
-    if (meetMatch) {
-      const meetUrl = meetMatch[0];
-      const buttonHtml = `\n\n<div style="margin: 14px 0 18px 0;"><a href="${meetUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 12px 28px; border-radius: 8px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">Join Google Meet Session &rarr;</a></div>\n\n`;
-      autoLinked = autoLinked.replace(
-        new RegExp(`(<a[^>]*>${meetUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/a>)`),
-        `$1${buttonHtml}`
-      );
-    }
-  }
-
-  // 3. Normalize newlines and preserve all line breaks so lines never collapse continuously into one
-  const normalized = autoLinked.replace(/\r\n/g, '\n');
-  const blocks = normalized.split(/\n{2,}/);
-
-  const formattedBody = blocks
-    .map((block) => {
-      const trimmedBlock = block.trim();
-      if (!trimmedBlock) return '';
-      if (/^<(?:div|table|ul|ol|h[1-6]|blockquote)[\s>]/i.test(trimmedBlock)) {
-        return trimmedBlock.replace(/\n/g, '<br/>');
-      }
-      if (/^<p[\s>]/i.test(trimmedBlock)) {
-        return trimmedBlock.replace(/\n/g, '<br/>');
-      }
-      const withBr = trimmedBlock.replace(/\n/g, '<br/>');
-      return `<p style="margin: 0 0 16px 0; line-height: 1.6; color: #334155; font-size: 14px;">${withBr}</p>`;
-    })
-    .filter(Boolean)
-    .join('');
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${eventTitle}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
-  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f1f5f9; padding: 24px 12px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
-          <!-- Top Accent Bar -->
-          <tr>
-            <td style="background: linear-gradient(90deg, #4285F4, #EA4335, #FBBC04, #34A853); height: 5px; font-size: 0; line-height: 0;">&nbsp;</td>
-          </tr>
-          <!-- Header -->
-          <tr>
-            <td style="padding: 24px 32px 16px 32px; border-bottom: 1px solid #f1f5f9;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr>
-                  <td>
-                    <span style="font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
-                      <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
-                    </span>
-                  </td>
-                  <td align="right">
-                    <span style="font-size: 12px; font-weight: 600; color: #64748b; background: #f1f5f9; padding: 4px 12px; border-radius: 50px;">
-                      Registration Update
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <!-- Content Body -->
-          <tr>
-            <td style="padding: 32px; font-size: 15px; line-height: 1.6; color: #334155;">
-              <h2 style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
-                Welcome to ${eventTitle}!
-              </h2>
-              <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b;">
-                Hi <strong>${attendeeName || 'Attendee'}</strong>, your registration has been confirmed.
-              </p>
-              ${formattedBody}
-              ${!trimmed.includes(eventVenue) ? `
-              <!-- Event Schedule & Venue -->
-              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 24px 0;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
-                  Event Schedule & Venue
-                </div>
-                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
-                  📅 <strong>Date:</strong> ${eventDateFormatted}
-                </div>
-                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
-                  ⏰ <strong>Time:</strong> ${eventTimeFormatted}
-                </div>
-                <div style="font-size: 13px; margin-bottom: 6px; color: #334155;">
-                  📍 <strong>Venue:</strong> ${eventVenue}
-                </div>
-                <div style="font-size: 13px; color: #0284c7;">
-                  🎟️ <strong>Ticket ID:</strong> <code style="font-family: monospace; font-weight: 700;">${ticketId}</code>
-                </div>
-              </div>` : ''}
-              ${!trimmed.includes(digitalPassLink) ? `
-              <!-- View Digital Pass CTA -->
-              <div style="text-align: center; margin: 24px 0 10px 0;">
-                <a href="${digitalPassLink}" target="_blank" style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 13px 30px; border-radius: 50px; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
-                  View & Download Digital Pass Online →
-                </a>
-              </div>` : ''}
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 12px; color: #94a3b8;">
-              <p style="margin: 0 0 4px 0;">Google Developer Groups (GDG) On Campus</p>
-              <p style="margin: 0;">Need help? Reply directly to this email or reach out to your campus leads.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `;
+  // Fallback for simple message snippet: route to Template 2
+  return buildSimpleCustomEmailHtml({
+    attendeeName,
+    eventTitle,
+    ticketId,
+    eventDateFormatted,
+    eventTimeFormatted,
+    eventVenue,
+    digitalPassLink,
+    customMessage: trimmed,
+    includeQr,
+  });
 }
+
 
 
 /**
@@ -411,7 +688,10 @@ const EmailService = {
 
       // Check whether QR ticket pass should be included in email
       const emailConfig = form?.schema?.email_config || {};
-      const isQrIncluded = Boolean(
+      const isOnlineSession =
+        /meet\.google\.com|zoom\.us|online workshop|gmeet/i.test(emailConfig?.custom_message || '') ||
+        /google meet|online|virtual|zoom/i.test(eventDetails?.location || eventDetails?.venue || '');
+      const isQrIncluded = !isOnlineSession && Boolean(
         emailConfig.include_qr !== false &&
         eventDetails.include_qr !== false &&
         form?.schema?.include_qr !== false
@@ -496,304 +776,45 @@ const EmailService = {
         }
 
         qrBuffer = await generateBrandedQrBuffer(fullQrText, {
-          width: 320,
+          width: 440,
           margin: 2,
           dark: '#0f172a',
           light: '#ffffff',
         });
       }
 
-      // Render custom answers summary table for HTML email
-      const customAnswersRows = fields
-        .filter((f) => f.name !== 'email' && f.name !== 'full_name' && f.name !== 'ticket_id' && f.name !== 'email_sent' && answers[f.name])
-        .map(
-          (f) => `
-            <tr>
-              <td style="padding: 8px 14px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #f1f3f4; font-weight: 500;">
-                ${escapeHtml(f.label || f.name)}
-              </td>
-              <td style="padding: 8px 14px; font-size: 12px; color: #202124; border-bottom: 1px solid #f1f3f4; font-weight: 600; word-break: break-word;">
-                ${escapeHtml(String(answers[f.name]))}
-              </td>
-            </tr>
-          `
-        )
-        .join('');
-
-      // Build Ticket Pass Card HTML (with scannable QR if enabled, or clean confirmation card if QR is excluded)
-      const ticketPassCardHtml = isQrIncluded
-        ? `
-          <!-- Digital Ticket Pass Card (With Inline Scannable QR) -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden; text-align: center; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-                <tr>
-                  <td style="padding: 28px 20px 24px 20px; color: #ffffff;">
-                    <!-- Badge -->
-                    <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 50px; margin-bottom: 12px;">
-                      Official Digital Event Pass
-                    </div>
-
-                    <!-- Unique Ticket ID -->
-                    <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 20px;">
-                      ${ticketId}
-                    </div>
-
-                    <!-- Clean Inline Embedded QR Code Pass -->
-                    <div style="background-color: #ffffff; padding: 14px; border-radius: 18px; display: inline-block; margin-bottom: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.3);">
-                      <img
-                        src="cid:ticket-qr-code"
-                        alt="Event Pass QR - ${ticketId}"
-                        width="200"
-                        height="200"
-                        style="display: block; width: 200px; height: 200px; border: 0; outline: none; border-radius: 10px;"
-                      />
-                    </div>
-
-                    <!-- Check-in Instruction -->
-                    <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 380px; margin: 0 auto;">
-                      📱 <strong>Entrance Check-in:</strong> Present this QR code on your phone at the registration desk for verification.
-                    </div>
-
-                    <!-- Spam / Image Blocking Fallback Notice -->
-                    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #94a3b8; line-height: 1.4; max-width: 420px; margin-left: auto; margin-right: auto;">
-                      💡 <em>Image blocked? Click <strong>"Report Not Spam"</strong> or <strong>"Show Images"</strong> in your mail toolbar, or access your live pass below.</em>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`
-        : `
-          <!-- Registration Confirmed Pass Card (No QR Code Included) -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 20px; overflow: hidden; text-align: center; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-                <tr>
-                  <td style="padding: 28px 20px 24px 20px; color: #ffffff;">
-                    <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2.5px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.1); padding: 4px 12px; border-radius: 50px; margin-bottom: 12px;">
-                      Registration Confirmed
-                    </div>
-                    <div style="font-size: 24px; font-weight: 800; letter-spacing: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
-                      ${ticketId}
-                    </div>
-                    <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
-                      ✓ Your seat has been reserved! Please save this Ticket ID for verification at the event entrance.
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>`;
-
-      const htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <title>Event Registration Confirmed - ${eventTitle}</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
-  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 24px 12px;">
-    <tr>
-      <td align="center">
-        <!-- Main Card Container -->
-        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
-          
-          <!-- Google 4-Color Brand Bar -->
-          <tr>
-            <td style="height: 6px; background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%);"></td>
-          </tr>
-
-          <!-- Header Section -->
-          <tr>
-            <td style="padding: 32px 32px 20px 32px; text-align: center;">
-              <!-- GDG Branding -->
-              <div style="font-size: 21px; font-weight: 800; letter-spacing: -0.5px; color: #0f172a; margin-bottom: 2px;">
-                Google Developer Groups
-              </div>
-              <div style="font-size: 11px; font-weight: 700; color: #4285F4; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 18px;">
-                On Campus Community
-              </div>
-
-              <!-- Status Badge -->
-              <div style="display: inline-block; background-color: #dcfce7; color: #15803d; padding: 6px 18px; border-radius: 50px; font-size: 12px; font-weight: 700; border: 1px solid #bbf7d0;">
-                ✓ Registration Confirmed
-              </div>
-
-              <!-- Event Title -->
-              <h1 style="font-size: 24px; font-weight: 800; color: #0f172a; margin: 16px 0 6px 0; line-height: 1.3;">
-                ${eventTitle}
-              </h1>
-              <p style="font-size: 13px; color: #64748b; margin: 0; line-height: 1.5;">
-                Hello <strong>${safeAttendeeName}</strong>, your seat has been reserved!
-              </p>
-            </td>
-          </tr>
-
-          ${ticketPassCardHtml}
-
-          <!-- Event Schedule & Location Grid -->
-          <tr>
-            <td style="padding: 0 24px 20px 24px;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
-                <tr>
-                  <td style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
-                    <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px;">
-                      Event Schedule & Venue
-                    </div>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 16px 20px;">
-                    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
-                      <tr>
-                        <td style="padding: 5px 0; font-size: 13px; color: #64748b; width: 85px; vertical-align: top;">
-                          📅 <strong>Date:</strong>
-                        </td>
-                        <td style="padding: 5px 0; font-size: 13px; color: #0f172a; font-weight: 600;">
-                          ${eventDateFormatted}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 5px 0; font-size: 13px; color: #64748b; vertical-align: top;">
-                          ⏰ <strong>Time:</strong>
-                        </td>
-                        <td style="padding: 5px 0; font-size: 13px; color: #0f172a; font-weight: 600;">
-                          ${eventTimeFormatted}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 5px 0; font-size: 13px; color: #64748b; vertical-align: top;">
-                          📍 <strong>Venue:</strong>
-                        </td>
-                        <td style="padding: 5px 0; font-size: 13px; color: #0f172a; font-weight: 600;">
-                          ${eventVenue}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding: 5px 0; font-size: 13px; color: #64748b; vertical-align: top;">
-                          🏷️ <strong>Category:</strong>
-                        </td>
-                        <td style="padding: 5px 0; font-size: 13px; color: #0f172a; font-weight: 600;">
-                          ${eventCategory}
-                        </td>
-                      </tr>
-                    </table>
-
-                    ${
-                      eventDescription
-                        ? `
-                      <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
-                        <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">About:</div>
-                        <p style="font-size: 12px; color: #334155; line-height: 1.5; margin: 0;">
-                          ${eventDescription}
-                        </p>
-                      </div>
-                    `
-                        : ''
-                    }
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Attendee Registration Summary -->
-          <tr>
-            <td style="padding: 0 24px 24px 24px;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden;">
-                <tr>
-                  <td colspan="2" style="padding: 12px 16px; background-color: #f8fafc; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0;">
-                    Registration Record
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #f1f3f4; font-weight: 500; width: 140px;">
-                    Ticket ID
-                  </td>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #0f172a; border-bottom: 1px solid #f1f3f4; font-weight: 700; font-family: monospace;">
-                    ${ticketId}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #f1f3f4; font-weight: 500;">
-                    Name
-                  </td>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #0f172a; border-bottom: 1px solid #f1f3f4; font-weight: 600;">
-                    ${safeAttendeeName}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #5f6368; border-bottom: 1px solid #f1f3f4; font-weight: 500;">
-                    Email
-                  </td>
-                  <td style="padding: 8px 14px; font-size: 12px; color: #0f172a; border-bottom: 1px solid #f1f3f4; font-weight: 600; word-break: break-word;">
-                    ${safeRecipientEmail}
-                  </td>
-                </tr>
-                ${customAnswersRows}
-              </table>
-            </td>
-          </tr>
-
-          <!-- Primary CTA Button -->
-          <tr>
-            <td style="padding: 0 24px 32px 24px; text-align: center;">
-              <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
-                <tr>
-                  <td align="center" style="border-radius: 50px; background-color: #4285F4;">
-                    <a
-                      href="${digitalPassLink}"
-                      target="_blank"
-                      style="display: inline-block; background-color: #4285F4; color: #ffffff; text-decoration: none; font-size: 13px; font-weight: 700; padding: 14px 32px; border-radius: 50px; letter-spacing: 0.2px;"
-                    >
-                      View & Download Digital Pass Online →
-                    </a>
-                  </td>
-                </tr>
-              </table>
-              <p style="font-size: 11px; color: #94a3b8; margin: 12px 0 0 0;">
-                You can also view this ticket pass anytime in your GDG account.
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 22px 24px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #64748b; line-height: 1.6;">
-              <div style="font-weight: 700; color: #334155; margin-bottom: 4px;">
-                Google Developer Groups On Campus
-              </div>
-              <div>
-                Building developers, connecting communities, and inspiring tech innovation.
-              </div>
-              <div style="margin-top: 8px; font-size: 10px; color: #94a3b8;">
-                This is an automated confirmation email regarding your registration. No reply is needed.
-              </div>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-      `;
+      // Dynamically resolve authentic sender name & photo from Google OAuth
+      const senderProfile = await GmailApiService.getSenderProfile().catch(() => ({
+        name: 'GDG On Campus REC',
+        photoUrl: '',
+        email: senderEmail || 'gdg@rajalakshmi.edu.in',
+      }));
 
       // Check for Custom Email Draft Configuration
-      const isCustomMode = emailConfig.mode === 'custom' && (emailConfig.subject || emailConfig.custom_message || emailConfig.html || emailConfig.body);
+      const isCustomMode = Boolean(
+        emailConfig.mode === 'custom' &&
+        (emailConfig.subject || emailConfig.custom_message || emailConfig.html || emailConfig.body)
+      );
 
-      let finalHtml = htmlContent;
+      let finalHtml = '';
       let finalSubject = `Registration Confirmed: ${eventTitle} (Ticket ${ticketId})`;
       let finalText = isQrIncluded
         ? `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your digital pass and QR code online: ${digitalPassLink}\n\nGDG On Campus`
         : `Your registration for ${eventTitle} is confirmed!\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nTime: ${eventTimeFormatted}\nVenue: ${eventVenue}\n\nAccess your registration details online: ${digitalPassLink}\n\nGDG On Campus`;
 
-      if (isCustomMode) {
+      if (!isCustomMode) {
+        // Template 1: Unified Official Registration Pass Template (Default QR Pass section)
+        finalHtml = buildOfficialPassEmailHtml({
+          attendeeName: safeAttendeeName,
+          eventTitle,
+          ticketId,
+          eventDateFormatted,
+          eventTimeFormatted,
+          eventVenue,
+          digitalPassLink,
+          includeQr: isQrIncluded,
+        });
+      } else {
         const customVars = {
           name: attendeeName || 'Attendee',
           email: to,
@@ -804,33 +825,56 @@ const EmailService = {
           time: formatEmailTime(eventDetails.startTime || eventDetails.start_time, eventDetails.endTime || eventDetails.end_time),
           ticket_link: digitalPassLink,
           event_link: eventLink,
+          sender_name: senderProfile.name,
+          sender_photo: senderProfile.photoUrl,
+          sender_email: senderProfile.email,
         };
 
         if (emailConfig.subject) {
           finalSubject = interpolateVariables(emailConfig.subject, customVars);
         }
 
-        let rawBody = '';
-        if (emailConfig.custom_message && emailConfig.custom_message.trim()) {
-          rawBody = emailConfig.custom_message.trim();
+        const isSimpleMode =
+          emailConfig.edit_mode === 'simple' ||
+          (!emailConfig.edit_mode && emailConfig.custom_message);
+
+        if (isSimpleMode) {
+          // Template 2: Dedicated Simple Custom Message Template (with Presets)
+          const rawMessage = emailConfig.custom_message || emailConfig.body || '';
+          const populatedMsg = interpolateVariables(rawMessage, customVars);
+
+          finalHtml = buildSimpleCustomEmailHtml({
+            attendeeName: safeAttendeeName,
+            eventTitle,
+            ticketId,
+            eventDateFormatted,
+            eventTimeFormatted,
+            eventVenue,
+            digitalPassLink,
+            customMessage: populatedMsg,
+            includeQr: isQrIncluded,
+          });
+
+          finalText = `${populatedMsg.replace(/<[^>]+>/g, '')}\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nVenue: ${eventVenue}\nPass: ${digitalPassLink}`;
         } else {
-          rawBody = emailConfig.html || emailConfig.body || '';
+          // Template 1: Advanced HTML Draft Mode
+          const rawBody = emailConfig.body || emailConfig.html || emailConfig.custom_message || '';
+          const populatedBody = interpolateVariables(rawBody, customVars);
+
+          finalHtml = buildCustomHtmlEmail({
+            customBody: populatedBody,
+            eventTitle,
+            ticketId,
+            attendeeName: safeAttendeeName,
+            eventDateFormatted,
+            eventTimeFormatted,
+            eventVenue,
+            digitalPassLink,
+            includeQr: isQrIncluded,
+          });
+
+          finalText = `${populatedBody.replace(/<[^>]+>/g, '')}\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nVenue: ${eventVenue}\nPass: ${digitalPassLink}`;
         }
-        const populatedBody = interpolateVariables(rawBody, customVars);
-
-        finalHtml = buildCustomHtmlEmail({
-          customBody: populatedBody,
-          eventTitle,
-          ticketId,
-          attendeeName: safeAttendeeName,
-          eventDateFormatted,
-          eventTimeFormatted,
-          eventVenue,
-          digitalPassLink,
-          includeQr: isQrIncluded,
-        });
-
-        finalText = `${populatedBody.replace(/<[^>]+>/g, '')}\n\nTicket ID: ${ticketId}\nDate: ${eventDateFormatted}\nVenue: ${eventVenue}\nPass: ${digitalPassLink}`;
       }
 
       // 1. Primary Dispatch Method: Official Google Gmail REST API (Scope: https://www.googleapis.com/auth/gmail.send)
@@ -924,6 +968,7 @@ const EmailService = {
       }
     }
   },
+  buildCustomHtmlEmail,
 };
 
 module.exports = EmailService;

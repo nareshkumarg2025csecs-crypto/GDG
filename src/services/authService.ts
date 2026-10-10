@@ -246,6 +246,8 @@ export interface GmailStatusResponse {
   message: string;
   status: 'alive' | 'expired' | 'rate_limited' | 'not_configured' | 'error';
   email?: string;
+  senderName?: string;
+  senderPhoto?: string | null;
   expiresIn?: number;
   sessionMinsLeft?: number;
   testModeDaysLeft?: number | null;

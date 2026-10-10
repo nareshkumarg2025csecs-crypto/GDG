@@ -1075,15 +1075,24 @@ export const StudentDashboardPage: React.FC = () => {
                             )}
 
                             <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedTicketData({ event, submission })}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                                title="View and Download Ticket QR Code"
-                              >
-                                <QrCode className="w-3.5 h-3.5 text-google-blue" />
-                                <span>QR Pass</span>
-                              </button>
+                              {(() => {
+                                const hasQr = (event.details as any)?.include_qr !== false;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTicketData({ event, submission })}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                                    title={hasQr ? "View and Download Ticket QR Code" : "View Ticket Pass"}
+                                  >
+                                    {hasQr ? (
+                                      <QrCode className="w-3.5 h-3.5 text-google-blue" />
+                                    ) : (
+                                      <ShieldCheck className="w-3.5 h-3.5 text-google-green" />
+                                    )}
+                                    <span>{hasQr ? 'QR Pass' : 'Ticket Pass'}</span>
+                                  </button>
+                                );
+                              })()}
 
                               <Link
                                 to={`/events/${event.id}`}
@@ -1348,15 +1357,24 @@ export const StudentDashboardPage: React.FC = () => {
                       {/* Card Footer */}
                       <div className="p-3.5 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedTicketData({ event, submission })}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                            title="View and Download Ticket QR Code"
-                          >
-                            <QrCode className="w-3.5 h-3.5 text-google-green" />
-                            <span>QR Pass</span>
-                          </button>
+                          {(() => {
+                            const hasQr = (event.details as any)?.include_qr !== false;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTicketData({ event, submission })}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
+                                title={hasQr ? "View and Download Ticket QR Code" : "View Ticket Pass"}
+                              >
+                                {hasQr ? (
+                                  <QrCode className="w-3.5 h-3.5 text-google-green" />
+                                ) : (
+                                  <ShieldCheck className="w-3.5 h-3.5 text-google-green" />
+                                )}
+                                <span>{hasQr ? 'QR Pass' : 'Ticket Pass'}</span>
+                              </button>
+                            );
+                          })()}
 
                           {submission.attended && submission.certificate_sent && (
                             <button

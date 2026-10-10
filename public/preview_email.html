@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GDG On Campus - Email Template Preview</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      background-color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .email-client-shell {
+      width: 100%;
+      max-width: 660px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
+    .client-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid #334155;
+      background: #1e293b;
+    }
+    .window-controls {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .meta-row:last-child {
+      margin-bottom: 0;
+    }
+    .meta-label {
+      width: 60px;
+      font-weight: 700;
+      font-family: monospace;
+      text-transform: uppercase;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .sender-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(66, 133, 244, 0.12);
+      border: 1px solid rgba(66, 133, 244, 0.3);
+      padding: 3px 12px 3px 4px;
+      border-radius: 9999px;
+    }
+    .sender-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 1.5px solid #4285F4;
+    }
+    .sender-name {
+      font-weight: 700;
+      color: #f8fafc;
+      font-size: 12px;
+    }
+    .sender-email {
+      color: #94a3b8;
+      font-size: 11px;
+      font-family: monospace;
+    }
+    .meta-subject {
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .email-body-wrapper {
+      padding: 32px 20px;
+      background: #f1f5f9;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="email-client-shell">
+    <!-- Email Client Header Chrome -->
+    <div class="client-header">
+      <div class="window-controls">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-label">From:</span>
+        <div class="sender-badge">
+          <img
+            src="https://lh3.googleusercontent.com/a-/ALV-UjX689StSx5cTFaSlytCdhRAPyH1fYR6Ne_HDausYnDD4h4Befk=s96-c"
+            alt="GDG On Campus REC"
+            class="sender-avatar"
+          />
+          <span class="sender-name">GDG On Campus REC</span>
+          <span class="sender-email">&lt;gdg@rajalakshmi.edu.in&gt;</span>
+        </div>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-label">To:</span>
+        <span style="font-size: 12px; color: #cbd5e1; font-family: monospace;">alex.johnson@campus.edu</span>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-label">Subject:</span>
+        <span class="meta-subject">Registration Confirmed: Google Cloud Gen AI &amp; Agentic Hackathon 2026 (Ticket TKT-GDG8492)</span>
+      </div>
+    </div>
+
+    <!-- Rendered HTML Email Content -->
+    <div class="email-body-wrapper">
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
+        <!-- Google 4-Color Accent Header -->
+        <div style="background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%); height: 6px;"></div>
+
+        <!-- Header Branding -->
+        <div style="padding: 28px 32px 18px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+          <div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+            <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
+          </div>
+          <div style="font-size: 11px; font-weight: 700; color: #4285F4; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px;">
+            Registration Confirmed
+          </div>
+        </div>
+
+        <!-- Main Content Body -->
+        <div style="padding: 32px; color: #334155; font-size: 15px; line-height: 1.6;">
+          <h2 style="font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 12px 0;">
+            Welcome to Google Cloud Gen AI &amp; Agentic Hackathon 2026!
+          </h2>
+
+          <p style="margin: 0 0 16px 0;">
+            Hi <strong>Alex Johnson</strong>,
+          </p>
+
+          <p style="margin: 0 0 16px 0;">
+            Your registration for <strong>Google Cloud Gen AI &amp; Agentic Hackathon 2026</strong> has been officially confirmed. We are thrilled to have you join our developer session!
+          </p>
+
+          <!-- Event Quick Details Card -->
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 24px 0;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+              Key Event Details
+            </div>
+            <div style="font-size: 14px; margin-bottom: 8px;">
+              📅 <strong>Date:</strong> Saturday, Oct 14, 2026
+            </div>
+            <div style="font-size: 14px; margin-bottom: 8px;">
+              ⏰ <strong>Time:</strong> 10:00 AM - 1:00 PM
+            </div>
+            <div style="font-size: 14px; margin-bottom: 8px;">
+              📍 <strong>Venue:</strong> Main Campus Auditorium &amp; Tech Labs
+            </div>
+            <div style="font-size: 14px; color: #0284c7;">
+              🎟️ <strong>Ticket ID:</strong> <code>TKT-GDG8492</code>
+            </div>
+          </div>
+
+          <!-- Digital Pass QR Card -->
+          <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+            <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+              Official Digital Event Pass
+            </div>
+            <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
+              TKT-GDG8492
+            </div>
+            <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+              <img
+                src="https://api.qrserver.com/v1/create-qr-code/?size=190x190&amp;format=png&amp;margin=4&amp;data=GDG-PASS%7CTKT-GDG8492"
+                alt="Ticket QR - TKT-GDG8492"
+                width="190"
+                height="190"
+                style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;"
+              />
+            </div>
+            <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+              📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
+            </div>
+          </div>
+
+          <!-- Important Notice / Links Section -->
+          <p style="margin: 0 0 16px 0;">
+            Please keep your digital pass and QR code handy when arriving at the venue. Check-in desks open 15 minutes prior to the start time.
+          </p>
+
+          <!-- Call to Action Button -->
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://gdg-rec-five.vercel.app/events/register?ticket=TKT-GDG8492" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 14px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+              View Digital Pass Online &rarr;
+            </a>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 12px; color: #94a3b8;">
+          <p style="margin: 0 0 4px 0; font-weight: 600; color: #64748b;">Google Developer Groups On Campus</p>
+          <p style="margin: 0;">Automated confirmation email &bull; No reply needed</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -3,11 +3,13 @@ const MailComposer = require('nodemailer/lib/mail-composer');
 
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid';
 
-// In-memory token cache to minimize OAuth exchange roundtrips
+// In-memory token & sender profile cache to minimize OAuth exchange roundtrips
 let cachedAccessToken = null;
 let tokenExpiresAt = 0;
+let cachedSenderProfile = null;
+let senderProfileExpiresAt = 0;
 
 /**
  * Service to send emails directly via Google's official Gmail REST API.
@@ -82,6 +84,8 @@ class GmailApiService {
     // Reset memory cache
     cachedAccessToken = null;
     tokenExpiresAt = 0;
+    cachedSenderProfile = null;
+    senderProfileExpiresAt = 0;
 
     try {
       await supabaseAdmin
@@ -95,6 +99,81 @@ class GmailApiService {
       console.log('[GmailApiService] Refresh token saved to gmail_service_tokens table');
     } catch (dbErr) {
       console.warn('[GmailApiService] Could not save to gmail_service_tokens table:', dbErr.message);
+    }
+  }
+
+  /**
+   * Fetches the authentic sender profile (name, photo/avatar URL, email) directly from Google UserInfo.
+   * Caches in memory to minimize external roundtrips during high-volume email dispatch.
+   *
+   * @param {boolean} [forceRefresh=false]
+   * @returns {Promise<{ name: string, photoUrl: string, email: string }>}
+   */
+  static async getSenderProfile(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && cachedSenderProfile && senderProfileExpiresAt > now) {
+      return cachedSenderProfile;
+    }
+
+    const defaultEmail = process.env.GOOGLE_SENDER_EMAIL || process.env.EMAIL_ID || 'gdg@rajalakshmi.edu.in';
+    const fallbackProfile = {
+      name: process.env.EMAIL_FROM_NAME || 'GDG On Campus REC',
+      photoUrl: '',
+      email: defaultEmail,
+    };
+
+    try {
+      const accessToken = await this.getValidAccessToken();
+      if (!accessToken) {
+        return fallbackProfile;
+      }
+
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        console.warn('[GmailApiService] Could not fetch Google userinfo:', res.status, res.statusText);
+        return fallbackProfile;
+      }
+
+      const info = await res.json();
+      const accountEmail = info.email || defaultEmail;
+
+      // Determine display name from Google or graceful context-aware fallback
+      let resolvedName = info.name || [info.given_name, info.family_name].filter(Boolean).join(' ');
+      if (!resolvedName || resolvedName.trim() === '' || resolvedName === accountEmail) {
+        if (process.env.EMAIL_FROM_NAME) {
+          resolvedName = process.env.EMAIL_FROM_NAME;
+        } else if (accountEmail.toLowerCase().startsWith('gdg')) {
+          resolvedName = 'GDG On Campus REC';
+        } else {
+          resolvedName = 'GDG On Campus';
+        }
+      }
+
+      const profile = {
+        name: resolvedName.trim(),
+        photoUrl: info.picture || info.photo || '',
+        email: accountEmail,
+      };
+
+      // Cache for 1 hour
+      cachedSenderProfile = profile;
+      senderProfileExpiresAt = now + 60 * 60 * 1000;
+
+      // Update gmail_service_tokens table with authentic connected email if missing
+      try {
+        await supabaseAdmin
+          .from('gmail_service_tokens')
+          .update({ email: accountEmail })
+          .eq('id', 'default');
+      } catch (_) {}
+
+      return profile;
+    } catch (err) {
+      console.warn('[GmailApiService] getSenderProfile exception:', err.message);
+      return fallbackProfile;
     }
   }
 
@@ -285,10 +364,15 @@ class GmailApiService {
         }
       }
 
+      // Dynamically fetch authentic sender profile (name and avatar photo)
+      const senderProfile = await this.getSenderProfile().catch(() => null);
+
       return {
         status: 'alive',
         isRealCheck: true,
-        email: infoData.email || process.env.EMAIL_ID || process.env.GOOGLE_SENDER_EMAIL || 'Configured Sender',
+        email: senderProfile?.email || infoData.email || process.env.EMAIL_ID || process.env.GOOGLE_SENDER_EMAIL || 'Configured Sender',
+        senderName: senderProfile?.name || 'GDG On Campus REC',
+        senderPhoto: senderProfile?.photoUrl || null,
         expiresIn: expiresInSec,
         sessionMinsLeft: accessMins,
         testModeDaysLeft: daysLeft,
@@ -342,8 +426,6 @@ class GmailApiService {
         };
       }
 
-      const fromAddress = senderEmail || process.env.EMAIL_ID || 'me';
-
       // Normalize attachments: ensure buffer contents serialized as JSON ({ type: 'Buffer', data: [...] }) are restored as real Buffers
       const normalizedAttachments = (Array.isArray(attachments) ? attachments : []).map((att) => {
         if (!att || typeof att !== 'object') return att;
@@ -388,9 +470,20 @@ class GmailApiService {
       const safeHtml = typeof html === 'string' ? html : `<p>${safeText || 'GDG Notification'}</p>`;
       const safeSubject = typeof subject === 'string' ? subject : 'GDG On Campus Notification';
 
+      // Dynamically resolve authentic sender name & photo from the connected Google account
+      const senderProfile = await this.getSenderProfile().catch(() => ({
+        name: 'GDG On Campus REC',
+        photoUrl: '',
+        email: senderEmail || process.env.EMAIL_ID || 'me',
+      }));
+
+      const displayName = senderProfile.name || 'GDG On Campus REC';
+      const fromAddress = senderProfile.email || senderEmail || process.env.EMAIL_ID || 'me';
+      const finalFrom = `"${displayName}" <${fromAddress}>`;
+
       // Compile full RFC 2822 MIME message including headers, HTML, and inline CID images
       const composer = new MailComposer({
-        from: `"GDG On Campus" <${fromAddress}>`,
+        from: finalFrom,
         replyTo: fromAddress,
         to,
         subject: safeSubject,

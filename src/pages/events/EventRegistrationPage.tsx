@@ -469,6 +469,7 @@ export const EventRegistrationPage: React.FC = () => {
     if (form?.schema?.email_config && form?.schema?.email_config.enabled === false) return false;
     return true;
   }, [details, form]);
+  const isEmailEnabled = isEmailMode;
 
   // Resolve whether QR code ticket pass is enabled for attendees
   // Must be false if email is OFF. If email is ON, follows include_qr setting.
@@ -556,7 +557,9 @@ export const EventRegistrationPage: React.FC = () => {
       toast({
         title: 'Registration Confirmed 🎉',
         description: wasEmailDispatched
-          ? `You have registered for "${event?.title}". A confirmation email with your QR pass has been sent!`
+          ? (isQrEnabled
+              ? `You have registered for "${event?.title}". A confirmation email with your QR pass has been sent!`
+              : `You have registered for "${event?.title}". A confirmation email with your Ticket ID has been sent!`)
           : `You have registered for "${event?.title}"! Your seat has been reserved.`,
       });
     } catch (err: any) {
@@ -703,10 +706,10 @@ export const EventRegistrationPage: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          An automated confirmation email with your event details and schedule has been dispatched to{' '}
+                          An automated confirmation email with your Ticket ID and event schedule has been dispatched to{' '}
                           <strong className="text-foreground font-semibold break-all [word-break:break-all]">
                             {submittedEmail}
-                          </strong>.
+                          </strong>. Present your Ticket ID at the desk for entry verification.
                         </>
                       )}
                     </p>
@@ -742,9 +745,16 @@ export const EventRegistrationPage: React.FC = () => {
                     Confirmed Registration
                   </span>
                 </div>
-                <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-google-green/10 text-google-green border border-google-green/20">
-                  Seat Reserved ✓
-                </span>
+                <div className="flex items-center gap-2">
+                  {submissionId && (
+                    <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-google-blue/10 text-google-blue border border-google-blue/20">
+                      {submissionId.startsWith('TKT-') ? submissionId : `TKT-${submissionId.slice(0, 8).toUpperCase()}`}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-google-green/10 text-google-green border border-google-green/20">
+                    Seat Reserved ✓
+                  </span>
+                </div>
               </div>
 
               {/* Event Overview */}
@@ -1440,7 +1450,11 @@ export const EventRegistrationPage: React.FC = () => {
                 <Mail className="w-3.5 h-3.5" />
               </div>
               <span className="leading-normal">
-                You will automatically receive a confirmation email with your digital check-in QR pass after registering.
+                {isEmailEnabled
+                  ? (isQrEnabled
+                      ? 'You will automatically receive a confirmation email with your digital check-in QR pass after registering.'
+                      : 'You will automatically receive a confirmation email with your Ticket ID and registration details after registering.')
+                  : 'Your registration response and seat reservation will be confirmed on-screen immediately after registering.'}
               </span>
             </div>
 

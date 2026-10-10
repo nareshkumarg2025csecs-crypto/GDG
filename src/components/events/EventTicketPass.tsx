@@ -77,6 +77,7 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
   }, [isModal, onClose]);
 
   const details = event.details || {};
+  const isQrEnabled = details.include_qr !== false && (details.email_config?.include_qr !== false);
   const eventDate = formatEventDate(details.startTime || details.start_time);
   const eventTime = formatEventTimeRange(
     details.startTime || details.start_time,
@@ -176,8 +177,9 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
     'Google Developer Groups',
   ].join('\n');
 
-  // Generate Branded QR Code data URL with GDG logo icon
+  // Generate Branded QR Code data URL with GDG logo icon only when enabled
   useEffect(() => {
+    if (!isQrEnabled) return;
     generateBrandedQrDataUrl(qrTextContent, {
       width: 512,
       margin: 2,
@@ -186,7 +188,7 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
     })
       .then((url) => setQrDataUrl(url))
       .catch((err) => console.error('Error generating ticket QR:', err));
-  }, [qrTextContent]);
+  }, [qrTextContent, isQrEnabled]);
 
   // Close modal on Escape key press
   useEffect(() => {
@@ -289,22 +291,47 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
       const qrBoxX = (width - qrBoxSize) / 2;
       const qrBoxY = 142;
 
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 16);
-      ctx.fill();
+      if (isQrEnabled && qrDataUrl) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 16);
+        ctx.fill();
 
-      // Load QR Image onto canvas
-      const qrImg = new Image();
-      qrImg.crossOrigin = 'anonymous';
-      await new Promise<void>((resolve, reject) => {
-        qrImg.onload = () => resolve();
-        qrImg.onerror = reject;
-        qrImg.src = qrDataUrl;
-      });
-      ctx.drawImage(qrImg, qrBoxX + 10, qrBoxY + 10, qrBoxSize - 20, qrBoxSize - 20);
+        // Load QR Image onto canvas
+        const qrImg = new Image();
+        qrImg.crossOrigin = 'anonymous';
+        await new Promise<void>((resolve, reject) => {
+          qrImg.onload = () => resolve();
+          qrImg.onerror = reject;
+          qrImg.src = qrDataUrl;
+        });
+        ctx.drawImage(qrImg, qrBoxX + 10, qrBoxY + 10, qrBoxSize - 20, qrBoxSize - 20);
+      } else {
+        // Digital Pass Card (No QR)
+        ctx.fillStyle = '#1E293B';
+        ctx.beginPath();
+        ctx.roundRect(qrBoxX, qrBoxY, qrBoxSize, qrBoxSize, 16);
+        ctx.fill();
 
-      // 6. Ticket ID pill below QR
+        ctx.fillStyle = '#34D399';
+        ctx.font = 'bold 36px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('✓', width / 2, qrBoxY + 65);
+
+        ctx.fillStyle = '#F8FAFC';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.fillText('OFFICIAL PASS', width / 2, qrBoxY + 110);
+
+        ctx.fillStyle = '#38BDF8';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('SEAT CONFIRMED', width / 2, qrBoxY + 140);
+
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillText('DESK CHECK-IN', width / 2, qrBoxY + 170);
+      }
+
+      // 6. Ticket ID pill below QR / badge
       ctx.fillStyle = '#FEF08A';
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
@@ -313,7 +340,11 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
       // 7. Security verification hint
       ctx.fillStyle = '#94A3B8';
       ctx.font = '11px Inter, sans-serif';
-      ctx.fillText('Scan for Official Entry Verification', width / 2, qrBoxY + qrBoxSize + 52);
+      ctx.fillText(
+        isQrEnabled ? 'Scan for Official Entry Verification' : 'Present Ticket ID or email at registration desk',
+        width / 2,
+        qrBoxY + qrBoxSize + 52
+      );
       ctx.textAlign = 'left';
 
       // 8. Dashed separator line (Ticket stub look)
@@ -486,28 +517,36 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
             - Mobile: Sleek compact vertical stack
         */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4 items-center">
-          {/* Left Column (Desktop: 5 cols) / Top (Mobile): QR & Ticket ID */}
+          {/* Left Column (Desktop: 5 cols) / Top (Mobile): QR / Badge & Ticket ID */}
           <div className="sm:col-span-5 flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/25 border border-border/80 text-center">
-            <div className="p-2 rounded-xl bg-white shadow-md border border-border shrink-0 flex items-center justify-center">
-              {qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt="Registration QR Code"
-                  className="w-28 h-28 sm:w-36 sm:h-36 object-contain rounded"
-                />
-              ) : (
-                <div className="w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center">
-                  <div className="w-7 h-7 border-2 border-google-blue/30 border-t-google-blue rounded-full animate-spin" />
-                </div>
-              )}
-            </div>
+            {isQrEnabled ? (
+              <div className="p-2 rounded-xl bg-white shadow-md border border-border shrink-0 flex items-center justify-center">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="Registration QR Code"
+                    className="w-28 h-28 sm:w-36 sm:h-36 object-contain rounded"
+                  />
+                ) : (
+                  <div className="w-28 h-28 sm:w-36 sm:h-36 flex items-center justify-center">
+                    <div className="w-7 h-7 border-2 border-google-blue/30 border-t-google-blue rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white flex flex-col items-center justify-center p-3 shadow-md border border-slate-700/50">
+                <ShieldCheck className="w-9 h-9 sm:w-11 sm:h-11 text-google-green mb-1" />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">Verified Pass</span>
+                <span className="text-xs font-mono font-extrabold text-sky-400 mt-0.5">Seat Reserved ✓</span>
+              </div>
+            )}
             <div className="mt-2 flex flex-col items-center">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-google-yellow/15 text-google-yellow border border-google-yellow/30 text-[11px] font-mono font-bold">
                 <span>Ticket ID:</span>
                 <span className="text-foreground font-extrabold">{ticketId}</span>
               </div>
               <span className="text-[10px] text-muted-foreground mt-0.5">
-                Scan for verification at venue
+                {isQrEnabled ? 'Scan for verification at venue' : 'Show Ticket ID at desk for verification'}
               </span>
             </div>
           </div>
@@ -577,19 +616,21 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
               <span>{isDownloadingPass ? 'Generating...' : 'Download Pass (PNG)'}</span>
             </button>
 
-            {/* Button 2: Download Standalone QR Code */}
-            <button
-              type="button"
-              disabled={!qrDataUrl}
-              onClick={handleDownloadQR}
-              aria-label="Download QR code only"
-              className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-border bg-background hover:bg-muted font-semibold text-xs text-foreground transition-all shadow-sm disabled:opacity-50"
-              title="Download QR code only"
-            >
-              <QrCode className="w-3.5 h-3.5 text-google-green" aria-hidden="true" />
-              <span className="hidden sm:inline">QR Only</span>
-              <span className="sm:hidden">QR</span>
-            </button>
+            {/* Button 2: Download Standalone QR Code (only if QR enabled) */}
+            {isQrEnabled && (
+              <button
+                type="button"
+                disabled={!qrDataUrl}
+                onClick={handleDownloadQR}
+                aria-label="Download QR code only"
+                className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-border bg-background hover:bg-muted font-semibold text-xs text-foreground transition-all shadow-sm disabled:opacity-50"
+                title="Download QR code only"
+              >
+                <QrCode className="w-3.5 h-3.5 text-google-green" aria-hidden="true" />
+                <span className="hidden sm:inline">QR Only</span>
+                <span className="sm:hidden">QR</span>
+              </button>
+            )}
           </div>
 
           {/* Copy Details */}

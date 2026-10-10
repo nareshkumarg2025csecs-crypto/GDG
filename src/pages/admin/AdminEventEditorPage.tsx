@@ -58,9 +58,11 @@ import {
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
 import {
   DEFAULT_EMAIL_HTML_DRAFT,
+  DEFAULT_EMAIL_NO_QR_HTML_DRAFT,
   DEFAULT_QR_PAYLOAD_PRESET,
   QR_PAYLOAD_PRESETS,
 } from '@/lib/emailTemplates';
+import { generateBrandedQrDataUrl } from '@/lib/qrCodeUtil';
 import { DriveStorageAuthCard } from '@/components/admin/DriveStorageAuthCard';
 
 export interface EmailDraftConfig {
@@ -508,6 +510,14 @@ export const AdminEventEditorPage: React.FC = () => {
     return 'Confirmed Response';
   };
 
+  // Helper to get production-ready preview pass link without localhost
+  const getPreviewPassUrl = () => {
+    if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
+      return `${window.location.origin}/events/register?ticket=TKT-GDG8492`;
+    }
+    return 'https://gdg-rec-five.vercel.app/events/register?ticket=TKT-GDG8492';
+  };
+
   // Helper to populate sample QR payload with attendee, form answers, and event details
   const populateSampleQrPayload = (template: string) => {
     let res = template || '';
@@ -519,7 +529,7 @@ export const AdminEventEditorPage: React.FC = () => {
       .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
       .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
       .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492')
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl())
       .replace(/\{\{\s*registered_at\s*\}\}/gi, new Date().toLocaleString('en-US'));
 
     // All form answers block
@@ -546,6 +556,36 @@ export const AdminEventEditorPage: React.FC = () => {
     return res;
   };
 
+  // Branded QR Data URL state with official centered favicon logo for email preview
+  const [previewBrandedQrUrl, setPreviewBrandedQrUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    const rawQrTemplate =
+      qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
+        ? qrConfig.content
+        : DEFAULT_QR_PAYLOAD_PRESET;
+    const populated = populateSampleQrPayload(rawQrTemplate);
+
+    generateBrandedQrDataUrl(populated, {
+      width: 440,
+      margin: 2,
+      logoSrc: '/favicon.png',
+    })
+      .then((url) => {
+        if (isMounted) {
+          setPreviewBrandedQrUrl(url);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to generate preview branded QR', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [qrConfig.mode, qrConfig.content, title, location, startTime, endTime, formFields]);
+
   // Helper to format organizer custom message with proper paragraphs, line breaks, auto-linking, and session buttons
   const formatOrganizerMessageToHtml = (customMsg: string, fallbackTitle: string = 'GDG Tech Summit 2026') => {
     let msg = (customMsg || '').trim();
@@ -562,7 +602,10 @@ export const AdminEventEditorPage: React.FC = () => {
       .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
       .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
       .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl())
+      .replace(/\{\{\s*sender_name\s*\}\}/gi, 'GDG On Campus REC')
+      .replace(/\{\{\s*sender_email\s*\}\}/gi, 'gdg@rajalakshmi.edu.in')
+      .replace(/\{\{\s*sender_photo\s*\}\}/gi, 'https://lh3.googleusercontent.com/a-/ALV-UjX689StSx5cTFaSlytCdhRAPyH1fYR6Ne_HDausYnDD4h4Befk=s96-c');
 
     // 1. Auto-link any plain URLs (e.g. Google Meet links) that are not already wrapped in <a> tags
     let autoLinked = msg.replace(
@@ -611,6 +654,11 @@ export const AdminEventEditorPage: React.FC = () => {
   const buildSimpleCustomEmailHtml = (customMsg: string, includeQr: boolean) => {
     const formattedCustomMsg = formatOrganizerMessageToHtml(customMsg, title || 'GDG Tech Summit 2026');
 
+    // Check if online session (e.g. Google Meet preset, Zoom, or virtual venue)
+    const isOnlineSession =
+      /meet\.google\.com|zoom\.us|online workshop|gmeet/i.test(customMsg || '') ||
+      (location && /google meet|online|virtual|zoom/i.test(location));
+
     const rawQrTemplate =
       qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
         ? qrConfig.content
@@ -618,32 +666,72 @@ export const AdminEventEditorPage: React.FC = () => {
     const populatedQrContent = populateSampleQrPayload(rawQrTemplate);
     const qrPayload = encodeURIComponent(populatedQrContent);
 
-    const qrCardMarkup = includeQr ? `
+    const qrImageSrc =
+      previewBrandedQrUrl ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=190x190&amp;format=png&amp;margin=4&amp;data=${qrPayload}`;
+
+    const qrCardMarkup = (includeQr && !isOnlineSession) ? `
+    <!-- Digital Pass QR Card -->
     <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
         Official Digital Event Pass
       </div>
-      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
+      <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
         TKT-GDG8492
       </div>
-      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
+      <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
         <img
-          src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}"
+          src="${qrImageSrc}"
           alt="Ticket QR - TKT-GDG8492"
-          width="150"
-          height="150"
-          style="display: block; border-radius: 8px; margin: 0 auto;"
+          width="190"
+          height="190"
+          style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;"
         />
       </div>
-      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
-        📱 Present this QR pass at the venue entrance desk for verification.
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+        📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
       </div>
-    </div>` : '';
+    </div>
+    <!-- /Digital Pass QR Card -->` : (!isOnlineSession ? `
+    <!-- Digital Event Confirmation Pass Card (Without QR) -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 26px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Event Pass
+      </div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+        TKT-GDG8492
+      </div>
+      <div style="display: inline-block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 50px; padding: 5px 16px; font-size: 11px; color: #38bdf8; font-weight: 600; margin-bottom: 12px;">
+        ✓ Seat Confirmed &amp; Reserved
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+        Present this Ticket ID or your registered email at the desk for verification. No QR scan required.
+      </div>
+    </div>
+    <!-- /Digital Event Confirmation Pass Card -->` : '');
+
+    const keyEventDetailsHtml = isOnlineSession ? '' : `
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 20px 0;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
+            Key Event Details
+          </div>
+          <div style="font-size: 13px; margin-bottom: 6px;">📅 <strong>Date:</strong> ${startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'}</div>
+          <div style="font-size: 13px; margin-bottom: 6px;">⏰ <strong>Time:</strong> ${startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}</div>
+          <div style="font-size: 13px; margin-bottom: 6px;">📍 <strong>Venue:</strong> ${location || 'Campus Main Auditorium'}</div>
+          <div style="font-size: 13px; color: #0284c7;">🎟️ <strong>Ticket ID:</strong> <code>TKT-GDG8492</code></div>
+        </div>`;
+
+    const ctaButtonHtml = isOnlineSession ? '' : `
+        <div style="text-align: center; margin: 26px 0 10px 0;">
+          <a href="${getPreviewPassUrl()}" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
+            ${includeQr ? 'View Digital Pass Online &rarr;' : 'View Event Pass Online &rarr;'}
+          </a>
+        </div>`;
 
     return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.07); border: 1px solid #e2e8f0;">
       <div style="background: linear-gradient(90deg, #4285F4 25%, #EA4335 25% 50%, #FBBC04 50% 75%, #34A853 75%); height: 6px;"></div>
-      <div style="padding: 24px 32px 16px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+      <div style="padding: 28px 32px 18px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
         <div style="font-size: 20px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
           <span style="color: #4285F4;">G</span><span style="color: #EA4335;">D</span><span style="color: #FBBC04;">G</span> On Campus
         </div>
@@ -656,29 +744,17 @@ export const AdminEventEditorPage: React.FC = () => {
           Welcome to ${title || 'GDG Tech Summit 2026'}!
         </h2>
         <p style="margin: 0 0 16px 0; font-size: 14px; color: #64748b;">
-          Hi <strong>Alex Johnson</strong>, your seat has been reserved!
+          Hi <strong>Alex Johnson</strong>, ${isOnlineSession ? 'your registration has been confirmed!' : 'your seat has been reserved!'}
         </p>
-        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 16px 20px; margin: 18px 0;">
-          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #166534; margin-bottom: 8px;">
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 18px 20px; margin: 18px 0;">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #166534; margin-bottom: 10px;">
             📢 Organizer Message
           </div>
           ${formattedCustomMsg}
         </div>
         ${qrCardMarkup}
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 22px; margin: 20px 0;">
-          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #475569; margin-bottom: 10px;">
-            Key Event Details
-          </div>
-          <div style="font-size: 13px; margin-bottom: 6px;">📅 <strong>Date:</strong> ${startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'}</div>
-          <div style="font-size: 13px; margin-bottom: 6px;">⏰ <strong>Time:</strong> ${startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}</div>
-          <div style="font-size: 13px; margin-bottom: 6px;">📍 <strong>Venue:</strong> ${location || 'Campus Main Auditorium'}</div>
-          <div style="font-size: 13px; color: #0284c7;">🎟️ <strong>Ticket ID:</strong> <code>TKT-GDG8492</code></div>
-        </div>
-        <div style="text-align: center; margin: 26px 0 10px 0;">
-          <a href="http://localhost:8081/events/register?ticket=TKT-GDG8492" style="display: inline-block; background-color: #4285F4; color: #ffffff; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 50px; text-decoration: none; box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);">
-            View Digital Pass Online &rarr;
-          </a>
-        </div>
+        ${keyEventDetailsHtml}
+        ${ctaButtonHtml}
       </div>
       <div style="padding: 18px 32px; background-color: #f8fafc; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
         <p style="margin: 0 0 4px 0; font-weight: 600; color: #64748b;">Google Developer Groups On Campus</p>
@@ -704,7 +780,10 @@ export const AdminEventEditorPage: React.FC = () => {
       .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
       .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
       .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+      .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl())
+      .replace(/\{\{\s*sender_name\s*\}\}/gi, 'GDG On Campus REC')
+      .replace(/\{\{\s*sender_email\s*\}\}/gi, 'gdg@rajalakshmi.edu.in')
+      .replace(/\{\{\s*sender_photo\s*\}\}/gi, 'https://lh3.googleusercontent.com/a-/ALV-UjX689StSx5cTFaSlytCdhRAPyH1fYR6Ne_HDausYnDD4h4Befk=s96-c');
 
     const rawQrTemplate =
       qrConfig.mode === 'manual' && qrConfig.content && qrConfig.content.trim()
@@ -714,44 +793,103 @@ export const AdminEventEditorPage: React.FC = () => {
     const populatedQrContent = populateSampleQrPayload(rawQrTemplate);
     const qrPayload = encodeURIComponent(populatedQrContent);
 
+    const qrImageSrc =
+      previewBrandedQrUrl ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=190x190&amp;format=png&amp;margin=4&amp;data=${qrPayload}`;
+
     // EXACT same official dark gradient pass card design as default email
     const qrCardMarkup = `
     <!-- Digital Pass QR Card -->
     <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 24px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
-      <div style="font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
         Official Digital Event Pass
       </div>
-      <div style="font-size: 20px; font-weight: 800; letter-spacing: 2px; font-family: monospace; color: #38bdf8; margin-bottom: 14px;">
+      <div style="font-size: 22px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 14px;">
         TKT-GDG8492
       </div>
-      <div style="background-color: #ffffff; padding: 12px; border-radius: 14px; display: inline-block; margin-bottom: 12px;">
+      <div style="background-color: #ffffff; padding: 14px; border-radius: 14px; display: inline-block; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
         <img
-          src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}"
+          src="${qrImageSrc}"
           alt="Ticket QR - TKT-GDG8492"
-          width="150"
-          height="150"
-          style="display: block; border-radius: 8px; margin: 0 auto;"
+          width="190"
+          height="190"
+          style="display: block; width: 190px; height: 190px; border: 0; outline: none; border-radius: 10px; margin: 0 auto;"
         />
       </div>
-      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
-        📱 Present this QR pass at the venue entrance desk for verification.
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.4; max-width: 380px; margin: 0 auto;">
+        📱 <strong>Entrance Check-in:</strong> Present this QR pass on your phone at the registration desk for verification.
       </div>
     </div>
     <!-- /Digital Pass QR Card -->`;
 
+    // Standard dark pass card when QR is disabled
+    const noQrPassCardMarkup = `
+    <!-- Digital Event Confirmation Pass Card (Without QR) -->
+    <div style="background: linear-gradient(145deg, #0f172a, #1e293b); border-radius: 16px; padding: 26px 20px; text-align: center; color: #ffffff; margin: 24px 0; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);">
+      <div style="display: inline-block; font-size: 10px; font-family: monospace; letter-spacing: 2px; color: #94a3b8; text-transform: uppercase; background-color: rgba(255,255,255,0.08); padding: 4px 12px; border-radius: 50px; margin-bottom: 10px;">
+        Official Event Pass
+      </div>
+      <div style="font-size: 24px; font-weight: 800; letter-spacing: 2.5px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; color: #38bdf8; margin-bottom: 12px;">
+        TKT-GDG8492
+      </div>
+      <div style="display: inline-block; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 50px; padding: 5px 16px; font-size: 11px; color: #38bdf8; font-weight: 600; margin-bottom: 12px;">
+        ✓ Seat Confirmed &amp; Reserved
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5; max-width: 420px; margin: 0 auto;">
+        Present this Ticket ID or your registered email at the desk for verification. No QR scan required.
+      </div>
+    </div>
+    <!-- /Digital Event Confirmation Pass Card -->`;
+
     // 1. If explicit {{qr_code}} placeholder is present, replace it in place
     if (/\{\{\s*qr_code\s*\}\}/i.test(content)) {
-      return content.replace(/\{\{\s*qr_code\s*\}\}/gi, includeQr ? qrCardMarkup : '');
+      const replaced = content.replace(/\{\{\s*qr_code\s*\}\}/gi, includeQr ? qrCardMarkup : noQrPassCardMarkup);
+      return includeQr ? replaced : replaced.replace(/View Digital Pass Online/gi, 'View Event Pass Online');
     }
 
-    // 2. If QR is disabled, strip any existing QR card from template markup
+    // 2. If QR is disabled:
     if (!includeQr) {
-      return content
-        .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, '')
-        .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, '');
+      // First check if template ALREADY contains the No-QR pass card
+      if (
+        content.includes('<!-- Digital Event Confirmation Pass Card') ||
+        content.includes('Official Event Pass') ||
+        content.includes('Seat Confirmed & Reserved')
+      ) {
+        return content.replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+
+      // If it had a QR card, replace it with noQrPassCardMarkup
+      const hadExistingQrCard =
+        content.includes('<!-- Digital Pass QR Card -->') ||
+        content.includes('Official Digital Event Pass') ||
+        content.includes('create-qr-code') ||
+        content.includes('cid:ticket-qr-code');
+
+      if (hadExistingQrCard) {
+        return content
+          .replace(/<!-- Digital Pass QR Card -->[\s\S]*?<!-- \/Digital Pass QR Card -->/gi, noQrPassCardMarkup)
+          .replace(/<div[^>]*style="[^"]*linear-gradient\(145deg,\s*#0f172a,\s*#1e293b\)[\s\S]*?<\/div>\s*<\/div>/gi, noQrPassCardMarkup)
+          .replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+
+      // Otherwise insert before Important Notice, CTA, or Footer (never append after container)
+      if (content.includes('<!-- Important Notice')) {
+        return content.replace('<!-- Important Notice', `${noQrPassCardMarkup}\n\n    <!-- Important Notice`).replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+      if (content.includes('<!-- Call to Action')) {
+        return content.replace('<!-- Call to Action', `${noQrPassCardMarkup}\n\n    <!-- Call to Action`).replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+      if (content.includes('<!-- Footer')) {
+        return content.replace('<!-- Footer', `${noQrPassCardMarkup}\n\n  <!-- Footer`).replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+      if (content.includes('</div>\n  </div>')) {
+        return content.replace('</div>\n  </div>', `${noQrPassCardMarkup}\n  </div>\n  </div>`).replace(/View Digital Pass Online/gi, 'View Event Pass Online');
+      }
+
+      return `${content}\n${noQrPassCardMarkup}`.replace(/View Digital Pass Online/gi, 'View Event Pass Online');
     }
 
-    // 3. If QR is enabled and already has the digital pass card, update its payload with all details and return without injecting another
+    // 3. If QR is enabled and already has the digital pass card, update its payload with branded QR and return without injecting another
     if (
       content.includes('<!-- Digital Pass QR Card -->') ||
       content.includes('Official Digital Event Pass') ||
@@ -760,14 +898,19 @@ export const AdminEventEditorPage: React.FC = () => {
     ) {
       let updated = content;
       if (updated.includes('cid:ticket-qr-code')) {
-        updated = updated.replace(/cid:ticket-qr-code/g, `https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}`);
+        updated = updated.replace(/cid:ticket-qr-code/g, qrImageSrc);
       }
       if (/https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/i.test(updated)) {
         updated = updated.replace(
           /https:\/\/api\.qrserver\.com\/v1\/create-qr-code\/[^\s"']+/gi,
-          `https://api.qrserver.com/v1/create-qr-code/?size=160x160&amp;format=png&amp;margin=4&amp;data=${qrPayload}`
+          qrImageSrc
         );
       }
+      // Ensure dimensions are 190x190
+      updated = updated
+        .replace(/width="160"/g, 'width="190"')
+        .replace(/height="160"/g, 'height="190"')
+        .replace(/width:\s*160px;\s*height:\s*160px/g, 'width: 190px; height: 190px');
       return updated;
     }
 
@@ -3274,10 +3417,11 @@ export const AdminEventEditorPage: React.FC = () => {
                               onClick={() => {
                                 setEmailConfig((prev) => ({
                                   ...prev,
+                                  include_qr: false,
                                   custom_message:
                                     `Hi {{name}},\n\nThank you for registering for {{event_title}}!\n\n🎥 Online Workshop / Google Meet Details:\n- Date: {{date}}\n- Time: {{time}}\n- Platform: Google Meet\n- Direct Meeting Link: https://meet.google.com/xyz-abcd-efg\n\nPlease join 5 minutes early to test your audio and video. Looking forward to having you with us!`,
                                 }));
-                                toast({ title: 'Template Loaded', description: 'Google Meet workshop notice with clickable link loaded.' });
+                                toast({ title: 'Template Loaded', description: 'Google Meet workshop notice loaded (online session without digital pass).' });
                               }}
                               className="px-2 py-1 rounded-md bg-google-blue/10 hover:bg-google-blue/20 text-google-blue border border-google-blue/30 text-[10px] font-semibold transition-colors"
                             >
@@ -3327,6 +3471,7 @@ export const AdminEventEditorPage: React.FC = () => {
                             { tag: '{{time}}', label: 'Time' },
                             { tag: '{{venue}}', label: 'Venue' },
                             { tag: '{{ticket_link}}', label: 'Link' },
+                            { tag: '{{sender_name}}', label: 'Organizer' },
                           ].map(({ tag, label }) => (
                             <button
                               key={tag}
@@ -3404,6 +3549,7 @@ export const AdminEventEditorPage: React.FC = () => {
                               { tag: '{{time}}', label: 'Event Time' },
                               { tag: '{{venue}}', label: 'Venue' },
                               { tag: '{{ticket_link}}', label: 'Digital Pass URL' },
+                              { tag: '{{sender_name}}', label: 'Sender Name' },
                             ].map(({ tag, label }) => (
                               <button
                                 key={tag}
@@ -3436,7 +3582,7 @@ export const AdminEventEditorPage: React.FC = () => {
                                 onClick={() => {
                                   setEmailConfig((prev) => ({
                                     ...prev,
-                                    body: DEFAULT_EMAIL_HTML_DRAFT,
+                                    body: prev.include_qr !== false ? DEFAULT_EMAIL_HTML_DRAFT : DEFAULT_EMAIL_NO_QR_HTML_DRAFT,
                                   }));
                                   toast({
                                     title: 'Default Structure Loaded',
@@ -4051,31 +4197,52 @@ Pass: {{ticket_link}}`,
                 </button>
               </div>
 
-              {/* Subject Bar */}
-              <div className="px-6 py-3 border-b border-border/60 bg-background/50 text-xs flex items-center gap-2">
-                <span className="font-semibold text-muted-foreground uppercase font-mono text-[10px]">Subject:</span>
-                <span className="font-medium text-foreground">
-                  {emailConfig.mode === 'custom' && emailConfig.subject
-                    ? emailConfig.subject
-                        .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
-                        .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
-                        .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
-                        .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
-                        .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
-                        .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-                        .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492')
-                    : `Registration Confirmed: ${title || 'GDG Tech Summit 2026'} (Ticket TKT-GDG8492)`}
-                </span>
+              {/* Sender & Subject Bar */}
+              <div className="px-6 py-3 border-b border-border/60 bg-background/50 text-xs space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-muted-foreground uppercase font-mono text-[10px] w-14 shrink-0">From:</span>
+                  <div className="inline-flex items-center gap-2">
+                    <img
+                      src="https://lh3.googleusercontent.com/a-/ALV-UjX689StSx5cTFaSlytCdhRAPyH1fYR6Ne_HDausYnDD4h4Befk=s96-c"
+                      alt="GDG On Campus REC"
+                      className="w-4 h-4 rounded-full object-cover ring-1 ring-google-blue"
+                    />
+                    <span className="font-bold text-foreground">GDG On Campus REC</span>
+                    <span className="font-mono text-muted-foreground text-[11px]">&lt;gdg@rajalakshmi.edu.in&gt;</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-muted-foreground uppercase font-mono text-[10px] w-14 shrink-0">Subject:</span>
+                  <span className="font-medium text-foreground">
+                    {emailConfig.mode === 'custom' && emailConfig.subject
+                      ? emailConfig.subject
+                          .replace(/\{\{\s*name\s*\}\}/gi, 'Alex Johnson')
+                          .replace(/\{\{\s*event_title\s*\}\}/gi, title || 'GDG Tech Summit 2026')
+                          .replace(/\{\{\s*ticket_id\s*\}\}/gi, 'TKT-GDG8492')
+                          .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
+                          .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
+                          .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
+                          .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl())
+                          .replace(/\{\{\s*sender_name\s*\}\}/gi, 'GDG On Campus REC')
+                          .replace(/\{\{\s*sender_email\s*\}\}/gi, 'gdg@rajalakshmi.edu.in')
+                      : `Registration Confirmed: ${title || 'GDG Tech Summit 2026'} (Ticket TKT-GDG8492)`}
+                  </span>
+                </div>
               </div>
 
               {/* Email Content Container */}
               <div className="p-6 overflow-y-auto space-y-4 bg-muted/20 text-foreground font-sans max-h-[70vh]">
                 {(() => {
+                  const isQrIncludedInEmail =
+                    emailConfig.mode === 'default'
+                      ? emailConfig.include_qr !== false
+                      : Boolean(emailConfig.include_qr);
+
                   const draftContent =
                     emailConfig.mode === 'default'
-                      ? (DEFAULT_EMAIL_HTML_DRAFT || emailConfig.body)
+                      ? (isQrIncludedInEmail ? DEFAULT_EMAIL_HTML_DRAFT : DEFAULT_EMAIL_NO_QR_HTML_DRAFT)
                       : (emailConfig.edit_mode === 'simple'
-                          ? buildSimpleCustomEmailHtml(emailConfig.custom_message || '', emailConfig.include_qr)
+                          ? buildSimpleCustomEmailHtml(emailConfig.custom_message || '', isQrIncludedInEmail)
                           : (emailConfig.body || ''));
 
                   const hasHtmlMarkup = /<\/?[a-z][\s\S]*>/i.test(draftContent);
@@ -4089,7 +4256,9 @@ Pass: {{ticket_link}}`,
                       .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
                       .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
                       .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-                      .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+                      .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl())
+                      .replace(/\{\{\s*sender_name\s*\}\}/gi, 'GDG On Campus REC')
+                      .replace(/\{\{\s*sender_email\s*\}\}/gi, 'gdg@rajalakshmi.edu.in');
 
                   const hasEmbeddedQr = /create-qr-code|ticket-qr-code|<img[^>]*qr/i.test(draftContent);
                   const rawQrTemplate =
@@ -4105,7 +4274,7 @@ Pass: {{ticket_link}}`,
                     .replace(/\{\{\s*venue\s*\}\}/gi, location || 'Main Campus Auditorium')
                     .replace(/\{\{\s*date\s*\}\}/gi, startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026')
                     .replace(/\{\{\s*time\s*\}\}/gi, startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM')
-                    .replace(/\{\{\s*ticket_link\s*\}\}/gi, 'http://localhost:8081/events/register?ticket=TKT-GDG8492');
+                    .replace(/\{\{\s*ticket_link\s*\}\}/gi, getPreviewPassUrl());
 
                   const qrPayloadData = encodeURIComponent(populatedQrContent);
 
@@ -4116,7 +4285,7 @@ Pass: {{ticket_link}}`,
                           dangerouslySetInnerHTML={{
                             __html: buildVisualEmailHtml(
                               draftContent,
-                              emailConfig.mode === 'default' || emailConfig.include_qr
+                              isQrIncludedInEmail
                             ),
                           }}
                         />
@@ -4143,42 +4312,66 @@ Pass: {{ticket_link}}`,
                       <div className="text-xs sm:text-sm text-foreground/90 leading-relaxed whitespace-pre-line">
                         {replaceVariables(
                           draftContent ||
-                            `Hi Alex Johnson,\n\nYour registration for ${title || 'GDG Tech Summit 2026'} has been confirmed! Below is your official digital pass.`
+                            `Hi Alex Johnson,\n\nYour registration for ${title || 'GDG Tech Summit 2026'} has been confirmed! Below is your official pass details.`
                         )}
                       </div>
 
-                      {/* QR Pass Card (Same Official Design as Default Pass) */}
-                      {(emailConfig.mode === 'default' || emailConfig.include_qr) && !hasEmbeddedQr && (
-                        <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white text-center space-y-3 shadow-lg border border-slate-700">
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-mono">
-                            Official Digital Event Pass
+                      {/* Pass Card (Same Official Design as Default Pass) */}
+                      {!hasEmbeddedQr && !(emailConfig.mode === 'custom' && emailConfig.edit_mode === 'simple' && /meet\.google\.com|zoom\.us|online workshop|gmeet/i.test(emailConfig.custom_message || '')) && (
+                        isQrIncludedInEmail ? (
+                          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white text-center space-y-3 shadow-lg border border-slate-700">
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-mono">
+                              Official Digital Event Pass
+                            </div>
+                            <div className="text-xl font-bold font-mono tracking-widest text-sky-400">
+                              TKT-GDG8492
+                            </div>
+                            <div className="inline-block p-3.5 rounded-xl bg-white border border-border shadow-xs">
+                              <img
+                                src={previewBrandedQrUrl || `https://api.qrserver.com/v1/create-qr-code/?size=190x190&format=png&margin=4&data=${qrPayloadData}`}
+                                alt="Event Pass QR"
+                                className="w-48 h-48 mx-auto rounded-lg"
+                              />
+                            </div>
+                            <div className="text-xs text-slate-300 space-y-0.5">
+                              <p>
+                                📅 {startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'} &bull; ⏰{' '}
+                                {startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}
+                              </p>
+                              <p>📍 {location || 'Main Campus Auditorium'}</p>
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              📱 Present this QR pass at the venue entrance desk for verification.
+                            </div>
                           </div>
-                          <div className="text-xl font-bold font-mono tracking-widest text-sky-400">
-                            TKT-GDG8492
+                        ) : (
+                          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white text-center space-y-2.5 shadow-lg border border-slate-700">
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-mono">
+                              Official Event Pass
+                            </div>
+                            <div className="text-xl font-bold font-mono tracking-widest text-sky-400">
+                              TKT-GDG8492
+                            </div>
+                            <div className="inline-block px-3.5 py-1 rounded-full bg-sky-500/10 border border-sky-400/30 text-xs font-semibold text-sky-300">
+                              ✓ Seat Confirmed &amp; Reserved
+                            </div>
+                            <div className="text-xs text-slate-300 space-y-0.5">
+                              <p>
+                                📅 {startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'} &bull; ⏰{' '}
+                                {startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}
+                              </p>
+                              <p>📍 {location || 'Main Campus Auditorium'}</p>
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              Present this Ticket ID at the desk for verification. No QR scan required.
+                            </div>
                           </div>
-                          <div className="inline-block p-3 rounded-xl bg-white border border-border shadow-xs">
-                            <img
-                              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&format=png&margin=4&data=${qrPayloadData}`}
-                              alt="Ticket QR Demo"
-                              className="w-36 h-36 mx-auto rounded-lg"
-                            />
-                          </div>
-                          <div className="text-xs text-slate-300 space-y-0.5">
-                            <p>
-                              📅 {startTime ? formatEventDate(startTime) : 'Saturday, Oct 14, 2026'} &bull; ⏰{' '}
-                              {startTime ? formatEventTimeRange(startTime, endTime) : '10:00 AM - 1:00 PM'}
-                            </p>
-                            <p>📍 {location || 'Main Campus Auditorium'}</p>
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            📱 Present this QR pass at the venue entrance desk for verification.
-                          </div>
-                        </div>
+                        )
                       )}
 
                       {/* Footer note */}
                       <div className="pt-4 border-t border-border/50 text-center text-[11px] text-muted-foreground">
-                        Google Developer Groups On Campus &bull; Need help? Reply to this email.
+                        Google Developer Groups On Campus &bull; Automated confirmation email
                       </div>
                     </div>
                   );
