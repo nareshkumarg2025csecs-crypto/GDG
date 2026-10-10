@@ -1299,14 +1299,35 @@ const syncGoogleProfile = async (req, res) => {
 };
 
 /**
+ * Helper to determine the exact redirect URI for Google OAuth flows.
+ * Normalizes 127.0.0.1 to localhost to prevent Google 400 redirect_uri_mismatch errors,
+ * and allows explicit override via GMAIL_REDIRECT_URI / GOOGLE_REDIRECT_URI.
+ */
+const getGoogleOAuthRedirectUri = (req, endpoint = 'gmail-callback') => {
+  if (process.env.GMAIL_REDIRECT_URI && endpoint === 'gmail-callback') {
+    return process.env.GMAIL_REDIRECT_URI;
+  }
+  if (process.env.GOOGLE_REDIRECT_URI) {
+    return process.env.GOOGLE_REDIRECT_URI;
+  }
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  let host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:5000';
+  if (host.includes(',')) {
+    host = host.split(',')[0].trim();
+  }
+  if (host.startsWith('127.0.0.1')) {
+    host = host.replace('127.0.0.1', 'localhost');
+  }
+  return `${protocol}://${host}/api/auth/google/${endpoint}`;
+};
+
+/**
  * GET /api/auth/google/gmail-auth-url
  * Generates and returns/redirects to Google's consent page requesting https://www.googleapis.com/auth/gmail.send
  */
 const getGmailOAuthUrl = async (req, res) => {
   try {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.get('host') || 'localhost:5000';
-    const redirectUri = `${protocol}://${host}/api/auth/google/gmail-callback`;
+    const redirectUri = getGoogleOAuthRedirectUri(req, 'gmail-callback');
     const url = GmailApiService.getAuthUrl(redirectUri);
 
     if (req.query.redirect === 'true') {
@@ -1354,9 +1375,7 @@ const handleGmailOAuthCallback = async (req, res) => {
       `);
     }
 
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.get('host') || 'localhost:5000';
-    const redirectUri = `${protocol}://${host}/api/auth/google/gmail-callback`;
+    const redirectUri = getGoogleOAuthRedirectUri(req, 'gmail-callback');
 
     const tokens = await GmailApiService.exchangeCodeForTokens(code, redirectUri);
     const refreshToken = tokens.refresh_token;
@@ -1508,14 +1527,12 @@ const validateAdminCode = async (req, res) => {
  */
 const getDriveOAuthUrl = async (req, res) => {
   try {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.get('host') || 'localhost:5000';
     // Use the pre-authorized gmail-callback with state=drive to avoid redirect_uri_mismatch in Google Console.
     // Also allows dedicated drive-callback if explicitly requested (?dedicated=true).
     const useDedicated = req.query.dedicated === 'true';
     const redirectUri = useDedicated
-      ? `${protocol}://${host}/api/auth/google/drive-callback`
-      : `${protocol}://${host}/api/auth/google/gmail-callback`;
+      ? getGoogleOAuthRedirectUri(req, 'drive-callback')
+      : getGoogleOAuthRedirectUri(req, 'gmail-callback');
     const state = useDedicated ? null : 'drive';
 
     const url = GoogleDriveService.getAuthUrl(redirectUri, state);
@@ -1559,12 +1576,10 @@ const handleDriveOAuthCallback = async (req, res) => {
       `);
     }
 
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.get('host') || 'localhost:5000';
     // Match the redirectUri used during the authorization request
     const redirectUri = (state === 'drive' || req.originalUrl.includes('gmail-callback'))
-      ? `${protocol}://${host}/api/auth/google/gmail-callback`
-      : `${protocol}://${host}/api/auth/google/drive-callback`;
+      ? getGoogleOAuthRedirectUri(req, 'gmail-callback')
+      : getGoogleOAuthRedirectUri(req, 'drive-callback');
 
     const tokens = await GoogleDriveService.exchangeCodeForTokens(code, redirectUri);
     const refreshToken = tokens.refresh_token;
