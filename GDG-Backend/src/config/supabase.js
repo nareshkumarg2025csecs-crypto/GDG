@@ -56,7 +56,26 @@ const supabaseAdmin = createClient(
   }
 );
 
+/**
+ * Factory for creating lightweight isolated auth clients per request.
+ * Prevents concurrency collisions and shared session mutation.
+ */
+const createIsolatedAuthClient = () => {
+  return createClient(
+    supabaseUrl || 'https://placeholder.supabase.co',
+    supabaseAnonKey || 'placeholder-anon-key',
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    }
+  );
+};
+
 module.exports = {
   supabase,
   supabaseAdmin,
+  createIsolatedAuthClient,
 };

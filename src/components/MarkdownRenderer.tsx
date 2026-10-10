@@ -6,20 +6,21 @@ interface MarkdownRendererProps {
 }
 
 /**
- * Lightweight, zero-dependency Markdown renderer supporting:
- * - Headers (#, ##, ###)
- * - Bold (**text**) & Italics (*text* or _text_)
+ * Lightweight, zero-dependency Markdown & Rich Docs renderer supporting:
+ * - Headers (#, ##, ###, ####) with whitespace preservation
+ * - Bold (**text**), Italics (*text* or _text_), Underline (<u>text</u>), Strikethrough (~~text~~)
  * - Inline code (`code`) and Code blocks (```code```)
- * - Bullet lists (- item, * item) and Numbered lists (1. item)
+ * - Bullet lists (- item, * item), Numbered lists (1. item), Checklist / Task lists (- [ ] item)
  * - Blockquotes (> quote)
  * - Links ([text](url))
- * - Paragraphs and Linebreaks
+ * - Tables (| Header 1 | Header 2 |)
+ * - Text alignments (<div align="center">...</div>)
+ * - Preserves spacing, whitespace and intentional line breaks exactly as written
  */
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className = '' }) => {
   if (!content) return null;
 
   const renderInline = (text: string): React.ReactNode => {
-    // Split by links, bold, italics, inline code
     const parts: React.ReactNode[] = [];
     let remaining = text;
     let key = 0;
@@ -106,6 +107,19 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         continue;
       }
 
+      // 7. Highlight / Mark: ==text== or <mark>text</mark>
+      const markMatch = remaining.match(/^(?:==(.*?)==|<mark>(.*?)<\/mark>)/i);
+      if (markMatch) {
+        const markedContent = markMatch[1] || markMatch[2];
+        parts.push(
+          <mark key={key++} className="bg-yellow-200 dark:bg-yellow-900/40 text-inherit px-1 rounded">
+            {renderInline(markedContent)}
+          </mark>
+        );
+        remaining = remaining.slice(markMatch[0].length);
+        continue;
+      }
+
       // Plain character
       parts.push(remaining[0]);
       remaining = remaining.slice(1);
@@ -115,17 +129,18 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
   };
 
   // Split lines into blocks
-  const lines = content.split('\n');
+  const rawLines = content.split('\n');
   const blocks: React.ReactNode[] = [];
   let inCodeBlock = false;
   let codeBlockBuffer: string[] = [];
   let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
+  let currentTable: { headers: string[]; rows: string[][] } | null = null;
 
   const flushList = () => {
     if (currentList) {
       if (currentList.type === 'ul') {
         blocks.push(
-          <ul key={`list_${blocks.length}`} className="list-disc list-inside space-y-1.5 my-2 pl-2 text-muted-foreground">
+          <ul key={`list_${blocks.length}`} className="list-disc list-inside space-y-1.5 my-2 pl-2 text-muted-foreground whitespace-pre-wrap">
             {currentList.items.map((item, i) => (
               <li key={i}>{renderInline(item)}</li>
             ))}
@@ -133,7 +148,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         );
       } else {
         blocks.push(
-          <ol key={`list_${blocks.length}`} className="list-decimal list-inside space-y-1.5 my-2 pl-2 text-muted-foreground">
+          <ol key={`list_${blocks.length}`} className="list-decimal list-inside space-y-1.5 my-2 pl-2 text-muted-foreground whitespace-pre-wrap">
             {currentList.items.map((item, i) => (
               <li key={i}>{renderInline(item)}</li>
             ))}
@@ -144,7 +159,46 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     }
   };
 
-  lines.forEach((line, index) => {
+  const flushTable = () => {
+    if (currentTable) {
+      blocks.push(
+        <div key={`table_${blocks.length}`} className="overflow-x-auto my-3 rounded-xl border border-border shadow-xs">
+          <table className="min-w-full divide-y divide-border text-xs sm:text-sm">
+            {currentTable.headers.length > 0 && (
+              <thead className="bg-muted/60 font-semibold text-foreground">
+                <tr>
+                  {currentTable.headers.map((h, i) => (
+                    <th key={i} className="px-3.5 py-2.5 text-left border-r border-border/60 last:border-r-0 whitespace-nowrap">
+                      {renderInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody className="divide-y divide-border/60 bg-card">
+              {currentTable.rows.map((row, rIdx) => (
+                <tr key={rIdx} className="hover:bg-muted/30 transition-colors">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="px-3.5 py-2 text-muted-foreground border-r border-border/60 last:border-r-0 whitespace-pre-wrap">
+                      {renderInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      currentTable = null;
+    }
+  };
+
+  const flushAll = () => {
+    flushList();
+    flushTable();
+  };
+
+  rawLines.forEach((line, index) => {
     // Code block toggle
     if (line.trim().startsWith('```')) {
       if (inCodeBlock) {
@@ -159,7 +213,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
         codeBlockBuffer = [];
         inCodeBlock = false;
       } else {
-        flushList();
+        flushAll();
         inCodeBlock = true;
       }
       return;
@@ -170,29 +224,60 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
       return;
     }
 
-    // Headers
-    if (line.startsWith('### ')) {
+    // Markdown Table parsing: line starts and ends with | or contains |
+    const isTableRow = line.trim().startsWith('|') && line.trim().endsWith('|');
+    const isTableDivider = isTableRow && /^\|(\s*:?-+:?\s*\|)+$/.test(line.trim());
+
+    if (isTableDivider) {
+      // Ignored separator row
+      return;
+    }
+
+    if (isTableRow) {
       flushList();
+      const cells = line.trim().slice(1, -1).split('|').map((c) => c.trim());
+      if (!currentTable) {
+        currentTable = { headers: cells, rows: [] };
+      } else {
+        currentTable.rows.push(cells);
+      }
+      return;
+    } else {
+      flushTable();
+    }
+
+    // Headers
+    if (line.startsWith('#### ')) {
+      flushAll();
       blocks.push(
-        <h3 key={index} className="text-base font-bold text-foreground mt-4 mb-1.5 font-sans">
+        <h4 key={index} className="text-sm font-bold text-foreground mt-3 mb-1 font-sans whitespace-pre-wrap">
+          {renderInline(line.slice(5))}
+        </h4>
+      );
+      return;
+    }
+    if (line.startsWith('### ')) {
+      flushAll();
+      blocks.push(
+        <h3 key={index} className="text-base font-bold text-foreground mt-4 mb-1.5 font-sans whitespace-pre-wrap">
           {renderInline(line.slice(4))}
         </h3>
       );
       return;
     }
     if (line.startsWith('## ')) {
-      flushList();
+      flushAll();
       blocks.push(
-        <h2 key={index} className="text-lg font-bold text-foreground mt-5 mb-2 font-sans">
+        <h2 key={index} className="text-lg font-bold text-foreground mt-5 mb-2 font-sans whitespace-pre-wrap">
           {renderInline(line.slice(3))}
         </h2>
       );
       return;
     }
     if (line.startsWith('# ')) {
-      flushList();
+      flushAll();
       blocks.push(
-        <h1 key={index} className="text-xl font-extrabold text-foreground mt-6 mb-2.5 font-sans">
+        <h1 key={index} className="text-xl font-extrabold text-foreground mt-6 mb-2.5 font-sans whitespace-pre-wrap">
           {renderInline(line.slice(2))}
         </h1>
       );
@@ -201,11 +286,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
 
     // Blockquote
     if (line.startsWith('> ')) {
-      flushList();
+      flushAll();
       blocks.push(
         <blockquote
           key={index}
-          className="border-l-4 border-google-blue pl-4 py-1.5 my-2 italic text-muted-foreground bg-muted/20 rounded-r-lg"
+          className="border-l-4 border-google-blue pl-4 py-1.5 my-2 italic text-muted-foreground bg-muted/20 rounded-r-lg whitespace-pre-wrap"
         >
           {renderInline(line.slice(2))}
         </blockquote>
@@ -215,7 +300,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
 
     // Horizontal Rule (---, ***, ___)
     if (/^(\s*[-*_]\s*){3,}$/.test(line.trim())) {
-      flushList();
+      flushAll();
       blocks.push(<hr key={index} className="my-4 border-t border-border/80" />);
       return;
     }
@@ -223,10 +308,10 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     // Task List (- [ ] or - [x])
     const taskMatch = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.+)/);
     if (taskMatch) {
-      flushList();
+      flushAll();
       const isChecked = taskMatch[2].toLowerCase() === 'x';
       blocks.push(
-        <div key={index} className="flex items-start gap-2.5 my-1.5 text-xs sm:text-sm pl-1">
+        <div key={index} className="flex items-start gap-2.5 my-1.5 text-xs sm:text-sm pl-1 whitespace-pre-wrap">
           <input
             type="checkbox"
             checked={isChecked}
@@ -245,7 +330,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     const ulMatch = line.match(/^(\s*)[-*]\s+(.+)/);
     if (ulMatch) {
       if (!currentList || currentList.type !== 'ul') {
-        flushList();
+        flushAll();
         currentList = { type: 'ul', items: [] };
       }
       currentList.items.push(ulMatch[2]);
@@ -256,29 +341,49 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
     const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
     if (olMatch) {
       if (!currentList || currentList.type !== 'ol') {
-        flushList();
+        flushAll();
         currentList = { type: 'ol', items: [] };
       }
       currentList.items.push(olMatch[2]);
       return;
     }
 
-    // Empty line
+    // Empty line - preserve space intentionally!
     if (!line.trim()) {
-      flushList();
+      flushAll();
+      blocks.push(<div key={`spacer_${index}`} className="h-3.5 sm:h-4" aria-hidden="true" />);
       return;
     }
 
-    // Regular paragraph
-    flushList();
+    // Alignment tags: <div align="center">...</div> or <center>...</center>
+    const centerMatch = line.match(/^(?:<div align="(center|right|left)">|<(center)>)(.*?)(?:<\/div>|<\/center>)?$/i);
+    if (centerMatch) {
+      flushAll();
+      const align = (centerMatch[1] || 'center').toLowerCase();
+      const innerText = centerMatch[3] || '';
+      blocks.push(
+        <p
+          key={index}
+          className={`text-sm leading-relaxed text-muted-foreground my-1.5 whitespace-pre-wrap ${
+            align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'
+          }`}
+        >
+          {renderInline(innerText)}
+        </p>
+      );
+      return;
+    }
+
+    // Regular paragraph (preserves exact line spaces and indentation)
+    flushAll();
     blocks.push(
-      <p key={index} className="text-sm leading-relaxed text-muted-foreground my-1.5">
+      <p key={index} className="text-sm leading-relaxed text-muted-foreground my-1.5 whitespace-pre-wrap">
         {renderInline(line)}
       </p>
     );
   });
 
-  flushList();
+  flushAll();
 
   return <div className={`space-y-1 ${className}`}>{blocks}</div>;
 };

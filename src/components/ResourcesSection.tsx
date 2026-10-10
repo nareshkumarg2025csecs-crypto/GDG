@@ -250,7 +250,7 @@ const ResourcesSection = () => {
                         boxShadow: isDark ? `0 0 20px ${res.color}25` : 'none',
                       }}
                     >
-                      <res.icon className="w-5 h-5" style={{ color: res.color }} />
+                      <res.icon className="w-5 h-5" style={{ color: !isDark && res.color === '#FBBC04' ? '#b06000' : res.color }} />
                     </div>
 
                     <button
@@ -262,7 +262,7 @@ const ResourcesSection = () => {
                         window.open(res.href, '_blank', 'noopener,noreferrer');
                       }}
                       aria-label={`Open official external link for ${res.name}`}
-                      className="p-2 rounded-lg opacity-60 hover:opacity-100 transition-opacity text-foreground hover:bg-black/5 dark:hover:bg-white/10 z-20"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg opacity-70 hover:opacity-100 transition-opacity text-foreground hover:bg-black/5 dark:hover:bg-white/10 z-20 cursor-pointer"
                     >
                       <ExternalLink className="w-4 h-4" />
                     </button>
@@ -275,7 +275,7 @@ const ResourcesSection = () => {
                         className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full"
                         style={{
                           backgroundColor: `${res.color}15`,
-                          color: res.color,
+                          color: !isDark && res.color === '#FBBC04' ? '#b06000' : res.color,
                           border: `1px solid ${res.color}30`,
                         }}
                       >
@@ -287,14 +287,14 @@ const ResourcesSection = () => {
                       className="font-display mb-2"
                       style={{
                         fontSize: 'clamp(1.5rem, 3vw, 2rem)',
-                        color: res.color,
+                        color: !isDark && res.color === '#FBBC04' ? '#b06000' : res.color,
                       }}
                     >
                       {res.name}
                     </h4>
                     <p
                       className="text-sm leading-relaxed"
-                      style={{ color: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(31,31,31,0.55)' }}
+                      style={{ color: isDark ? 'rgba(255,255,255,0.6)' : 'rgba(31,31,31,0.7)' }}
                     >
                       {res.description}
                     </p>
@@ -303,13 +303,13 @@ const ResourcesSection = () => {
                     <div className="mt-4 flex items-center gap-1.5 overflow-hidden h-5">
                       <span
                         className="text-xs font-semibold uppercase tracking-widest opacity-0 group-hover:opacity-100 translate-x-[-8px] group-hover:translate-x-0 transition-all duration-300"
-                        style={{ color: res.color }}
+                        style={{ color: !isDark && res.color === '#FBBC04' ? '#b06000' : res.color }}
                       >
                         Explore Hub
                       </span>
                       <ArrowRight
                         className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300"
-                        style={{ color: res.color }}
+                        style={{ color: !isDark && res.color === '#FBBC04' ? '#b06000' : res.color }}
                       />
                     </div>
                   </div>

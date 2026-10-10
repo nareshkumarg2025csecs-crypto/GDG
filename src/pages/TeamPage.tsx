@@ -8,11 +8,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Link } from 'react-router-dom'
 import { useTheme } from '@/contexts/ThemeContext'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
-import { Linkedin, Mail, ArrowLeft, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react'
+import { Linkedin, Mail, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react'
 import {
     TeamMember,
     TeamSection,
@@ -100,7 +99,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                 className="relative cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-2xl"
             >
                 <div
-                    className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden transition-colors duration-300"
+                    className="relative w-full aspect-[4/5] rounded-2xl overflow-hidden transition-colors duration-300"
                     style={{
                         background: `linear-gradient(145deg, ${member.color}15, ${member.color}05, var(--card-bg))`,
                         border: `1px solid ${member.color}${isHovered ? '80' : '30'}`,
@@ -140,7 +139,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                                 loading="lazy"
                                 decoding="async"
                                 onError={() => setImgError(true)}
-                                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                                className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
                             />
                         ) : (
                             <motion.div
@@ -199,8 +198,10 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                                 )}
                                 {member.email ? (
                                     <a
-                                        href={`mailto:${member.email}`}
-                                        title={`Email ${member.name}`}
+                                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(member.email)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={`Email ${member.name} via Gmail`}
                                         className="p-1.5 rounded-full bg-white/10 hover:bg-[#EA4335] transition-colors backdrop-blur-sm group/icon"
                                     >
                                         <Mail className="w-3.5 h-3.5 text-white/80 group-hover/icon:text-white" />
@@ -217,9 +218,13 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                         </div>
                     </div>
 
-                    {/* Corner decorations */}
-                    <div className="absolute top-0 left-0 w-8 h-8 pointer-events-none z-10" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
-                    <div className="absolute bottom-0 right-0 w-8 h-8 pointer-events-none z-10" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
+                    {/* Corner decorations (shown for monogram cards) */}
+                    {!member.image && (
+                        <>
+                            <div className="absolute top-0 left-0 w-8 h-8 pointer-events-none z-10" style={{ borderTop: `2px solid ${member.color}50`, borderLeft: `2px solid ${member.color}50` }} />
+                            <div className="absolute bottom-0 right-0 w-8 h-8 pointer-events-none z-10" style={{ borderBottom: `2px solid ${member.color}50`, borderRight: `2px solid ${member.color}50` }} />
+                        </>
+                    )}
                 </div>
             </div>
         </motion.div>
@@ -427,7 +432,19 @@ function TeamSectionHorizontal({ section, members }: TeamSectionHorizontalProps)
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseLeave}
-                    className={`flex items-center overflow-x-auto py-4 px-4 sm:px-6 md:px-10 snap-x snap-mandatory md:snap-none select-none ${
+                    onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft') {
+                            e.preventDefault();
+                            scrollByAmount('left');
+                        } else if (e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            scrollByAmount('right');
+                        }
+                    }}
+                    tabIndex={0}
+                    role="region"
+                    aria-label={`${section.name} Operatives Carousel`}
+                    className={`flex items-center overflow-x-auto py-4 px-4 sm:px-6 md:px-10 snap-x snap-mandatory md:snap-none select-none focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 rounded-2xl ${
                         isDragging ? 'cursor-grabbing' : 'cursor-grab'
                     }`}
                     style={{
@@ -483,18 +500,17 @@ export default function TeamPage() {
     const { theme } = useTheme()
     const [activeSection, setActiveSection] = useState('leads')
     const [showBackToTop, setShowBackToTop] = useState(false)
-
     // Separate leads from other teams
     const leadsMembers = teamMembers.filter(m => m.team === 'leads')
     const otherSections = teamSections.filter(s => s.id !== 'leads')
 
-    // Navigation sections list
+    // Navigation sections list with operative counts
     const navSections = [
-        { id: 'leads', name: 'Leadership', color: '#9E9E9E' },
-        { id: 'logistics', name: 'Events & Ops', color: '#34A853' },
-        { id: 'design', name: 'Design', color: '#EA4335' },
-        { id: 'media', name: 'Media', color: '#FBBC04' },
-        { id: 'techops', name: 'Tech Ops', color: '#4285F4' },
+        { id: 'leads', name: 'Leadership', color: '#9E9E9E', count: leadsMembers.length },
+        { id: 'logistics', name: 'Events & Ops', color: '#34A853', count: teamMembers.filter(m => m.team === 'logistics').length },
+        { id: 'design', name: 'Design', color: '#EA4335', count: teamMembers.filter(m => m.team === 'design').length },
+        { id: 'media', name: 'Media', color: '#FBBC04', count: teamMembers.filter(m => m.team === 'media').length },
+        { id: 'techops', name: 'Tech Ops', color: '#4285F4', count: teamMembers.filter(m => m.team === 'techops').length },
     ]
 
     // Scroll listener for active section indicator and Back to Top button
@@ -503,11 +519,12 @@ export default function TeamPage() {
             setShowBackToTop(window.scrollY > 400)
 
             const sectionIds = ['leads', 'logistics', 'design', 'media', 'techops']
+            const triggerOffset = window.innerWidth < 640 ? 100 : 120
             for (const id of sectionIds) {
                 const el = document.getElementById(`team-${id}`)
                 if (el) {
                     const rect = el.getBoundingClientRect()
-                    if (rect.top <= 240 && rect.bottom >= 240) {
+                    if (rect.top <= triggerOffset && rect.bottom >= triggerOffset) {
                         setActiveSection(id)
                         break
                     }
@@ -522,7 +539,7 @@ export default function TeamPage() {
     const scrollToTeam = (teamId: string) => {
         const el = document.getElementById(`team-${teamId}`)
         if (el) {
-            const headerOffset = 90
+            const headerOffset = window.innerWidth < 640 ? 80 : 90
             const elementPosition = el.getBoundingClientRect().top
             const offsetPosition = elementPosition + window.pageYOffset - headerOffset
 
@@ -546,7 +563,8 @@ export default function TeamPage() {
 
             <main id="main-content">
                 {/* Hero Section */}
-                <section className="pt-28 pb-14 md:pt-36 md:pb-20 relative overflow-hidden bg-background transition-colors duration-300">
+                <section className="pt-24 pb-8 sm:pt-28 sm:pb-12 md:pt-36 md:pb-16 relative overflow-hidden bg-background transition-colors duration-300">
+                    {/* Cyber Grid Texture */}
                     <div
                         className="absolute inset-0 opacity-[0.03]"
                         style={{
@@ -555,56 +573,84 @@ export default function TeamPage() {
                         }}
                     />
 
-                    <div className="container mx-auto px-4 md:px-6 relative z-10">
-                        {/* Top Back Navigation */}
-                        <div className="mb-6 md:mb-8">
-                            <Link
-                                to="/"
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card hover:bg-muted text-xs sm:text-sm font-semibold text-foreground transition-all shadow-sm group"
-                            >
-                                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-google-blue" />
-                                <span>Back to Home</span>
-                            </Link>
-                        </div>
+                    {/* Ambient Glow Accent */}
+                    {theme === 'dark' && (
+                        <div
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[500px] h-[220px] sm:h-[300px] rounded-full blur-[100px] opacity-20 pointer-events-none"
+                            style={{ background: 'radial-gradient(circle, #4285F4, transparent 70%)' }}
+                        />
+                    )}
 
-                        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="mb-8 md:mb-12 text-center">
-                            <div className="flex items-center gap-3 mb-4 justify-center">
-                                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                <p className="text-[10px] md:text-xs font-mono tracking-[0.3em] text-red-500/80">RESTRICTED ACCESS // CLEARANCE LEVEL: CORE</p>
+                    <div className="container mx-auto px-4 md:px-6 relative z-10">
+                        <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-3xl mx-auto">
+                            {/* Clearance Badge */}
+                            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-red-500/30 bg-red-500/10 backdrop-blur-md mb-3 max-w-full">
+                                <span className="relative flex h-2 w-2 shrink-0">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                                </span>
+                                <p className="text-[10px] sm:text-xs font-mono tracking-[0.16em] sm:tracking-[0.25em] text-red-400 font-semibold uppercase truncate">
+                                    RESTRICTED ACCESS // LEVEL: CORE
+                                </p>
                             </div>
-                            <h1 className="text-4xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 transition-colors duration-300">
+
+                            {/* Main Title */}
+                            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-display text-foreground mb-2 sm:mb-3 transition-colors duration-300">
                                 CORE <span style={{ color: theme === 'light' ? 'hsl(var(--foreground))' : '#4285F4', textShadow: theme === 'light' ? 'none' : `0 0 40px #4285F460` }}>TEAM</span>
                             </h1>
-                            <p className="text-muted-foreground font-mono text-xs md:text-sm transition-colors duration-300">SELECTED // {teamMembers.length} OPERATIVES ASSIGNED</p>
-                        </motion.div>
 
-                        {/* Sticky / Quick Team Jump Navigation Pills */}
-                        <div className="flex items-center justify-center gap-2 overflow-x-auto py-2 px-1 max-w-full scrollbar-none">
-                            {navSections.map((item) => {
-                                const isActive = activeSection === item.id
-                                return (
-                                    <button
-                                        key={item.id}
-                                        type="button"
-                                        onClick={() => scrollToTeam(item.id)}
-                                        className={`px-3.5 py-1.5 rounded-full text-xs font-mono font-semibold transition-all duration-200 whitespace-nowrap flex items-center gap-2 border ${
-                                            isActive
-                                                ? 'bg-card text-foreground shadow-sm scale-105'
-                                                : 'bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent'
-                                        }`}
-                                        style={{
-                                            borderColor: isActive ? item.color : undefined,
-                                        }}
-                                    >
-                                        <span
-                                            className="w-1.5 h-1.5 rounded-full"
-                                            style={{ backgroundColor: item.color }}
-                                        />
-                                        {item.name}
-                                    </button>
-                                )
-                            })}
-                        </div>
+                            {/* Tactical Micro Stats */}
+                            <div className="inline-flex items-center gap-2 sm:gap-3 text-muted-foreground font-mono text-[11px] sm:text-xs tracking-wider transition-colors duration-300 mb-6 sm:mb-8">
+                                <span>STATUS: ACTIVE</span>
+                                <span className="text-border/60">/</span>
+                                <span>{teamMembers.length} OPERATIVES</span>
+                                <span className="text-border/60">/</span>
+                                <span>5 DIVISIONS</span>
+                            </div>
+
+                            {/* Quick Team Jump Navigation Filters (Static - scrolls away naturally with hero, never covers cards) */}
+                            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 max-w-4xl mx-auto px-1">
+                                {navSections.map((item) => {
+                                    const isActive = activeSection === item.id
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            type="button"
+                                            onClick={() => scrollToTeam(item.id)}
+                                            aria-current={isActive ? 'true' : undefined}
+                                            className={`group relative px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-mono transition-all duration-200 flex items-center gap-1.5 sm:gap-2 select-none border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                                                isActive
+                                                    ? 'bg-card text-foreground font-semibold shadow-sm scale-[1.02]'
+                                                    : 'bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70 border-transparent'
+                                            }`}
+                                            style={{
+                                                borderColor: isActive ? item.color : undefined,
+                                                boxShadow: isActive ? `0 0 16px ${item.color}35, inset 0 0 8px ${item.color}15` : undefined,
+                                            }}
+                                        >
+                                            <span
+                                                className="w-1.5 h-1.5 rounded-full shrink-0 transition-transform duration-200"
+                                                style={{
+                                                    backgroundColor: item.color,
+                                                    boxShadow: isActive ? `0 0 8px ${item.color}` : 'none',
+                                                    transform: isActive ? 'scale(1.25)' : 'scale(1)',
+                                                }}
+                                            />
+                                            <span className="whitespace-nowrap">{item.name}</span>
+                                            <span
+                                                className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-full font-sans transition-colors ${
+                                                    isActive
+                                                        ? 'bg-foreground/10 text-foreground font-semibold'
+                                                        : 'bg-muted/60 text-muted-foreground/80 group-hover:text-muted-foreground'
+                                                }`}
+                                            >
+                                                {item.count}
+                                            </span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </motion.div>
                     </div>
                 </section>
 

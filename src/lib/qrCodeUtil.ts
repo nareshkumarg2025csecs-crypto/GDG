@@ -23,7 +23,7 @@ export async function generateBrandedQrDataUrl(
     margin = 2,
     darkColor = '#0f172a',
     lightColor = '#ffffff',
-    logoSrc = '/gdg-logo-icon.png',
+    logoSrc = '/favicon.png',
   } = options;
 
   if (typeof document === 'undefined') {

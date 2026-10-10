@@ -50,22 +50,32 @@ export function formatStarForkCount(count: number): string {
 /**
  * Robust cross-device clipboard copy supporting iOS Safari, Android, mobile HTTP, and desktop browsers
  */
-export function copyTextToClipboard(text: string): boolean {
+export function copyTextToClipboard(text: string, container?: HTMLElement | null): boolean {
   if (typeof window === 'undefined' || !text) return false;
 
   let success = false;
 
-  // 1. Synchronous DOM fallback FIRST - this guarantees execution within the user-gesture callstack
-  // which is strictly required by iOS Safari and older mobile browsers.
+  // 1. Try modern async navigator.clipboard if available in secure context
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      navigator.clipboard.writeText(text).catch(() => {
+        // Fallback handled below
+      });
+    } catch {
+      // Ignored
+    }
+  }
+
+  // 2. Synchronous DOM fallback - engineered for mobile Android Chrome, iOS Safari, and modals
   try {
     const isIOS = typeof navigator !== 'undefined' && /ipad|iphone|ipod/i.test(navigator.userAgent || '');
     const textArea = document.createElement('textarea');
     textArea.value = text;
 
     // Mobile Safari & WebKit critical styling:
-    // - Must NOT be off-screen (-9999px) or display:none, otherwise iOS considers it unrendered and refuses selection.
-    // - Must have fontSize >= 16px to prevent viewport auto-zoom on iOS.
-    // - Must be positioned in viewport with fixed coords and tiny/invisible footprint.
+    // - Must NOT be pointer-events: none (which blocks selection in modern mobile Chrome)
+    // - Must have fontSize >= 16px to prevent viewport auto-zoom on iOS
+    // - Must be positioned in viewport with tiny footprint and high z-index
     textArea.style.fontSize = '16px';
     textArea.style.position = 'fixed';
     textArea.style.top = '0';
@@ -77,16 +87,16 @@ export function copyTextToClipboard(text: string): boolean {
     textArea.style.outline = 'none';
     textArea.style.boxShadow = 'none';
     textArea.style.background = 'transparent';
-    textArea.style.opacity = '0.001';
-    textArea.style.pointerEvents = 'none';
-    textArea.style.zIndex = '-9999';
+    textArea.style.opacity = '0.01';
+    textArea.style.zIndex = '999999';
+
+    // Append to modal container if inside a modal dialog, otherwise document.body
+    const targetParent = container || document.body;
+    targetParent.appendChild(textArea);
 
     if (isIOS) {
-      // On iOS WebKit, an element with 'readonly' CANNOT be selected via setSelectionRange.
-      // We explicitly make it editable, select contents via Range, and select range.
       textArea.contentEditable = 'true';
       textArea.readOnly = false;
-      document.body.appendChild(textArea);
 
       const range = document.createRange();
       range.selectNodeContents(textArea);
@@ -98,7 +108,6 @@ export function copyTextToClipboard(text: string): boolean {
       textArea.setSelectionRange(0, 999999);
     } else {
       textArea.setAttribute('readonly', '');
-      document.body.appendChild(textArea);
       textArea.focus({ preventScroll: true });
       textArea.select();
       textArea.setSelectionRange(0, textArea.value.length);
@@ -110,19 +119,10 @@ export function copyTextToClipboard(text: string): boolean {
     if (window.getSelection()) {
       window.getSelection()?.removeAllRanges();
     }
-    document.body.removeChild(textArea);
+    targetParent.removeChild(textArea);
   } catch (err) {
-    console.warn('Synchronous execCommand copy error:', err);
+    console.warn('DOM execCommand copy error:', err);
     success = false;
-  }
-
-  // 2. Also trigger modern navigator.clipboard.writeText if available (Desktop & HTTPS mobile)
-  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    navigator.clipboard.writeText(text).then(() => {
-      success = true;
-    }).catch(() => {
-      // Ignored if execCommand already handled it
-    });
   }
 
   return success;

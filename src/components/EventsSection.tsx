@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Calendar, MapPin, Tag, Clock, ChevronRight, User, Users } from 'lucide-react';
-import { eventService } from '@/services/eventService';
+import { useQuery } from '@tanstack/react-query';
+import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
 import { useAuth } from '@/hooks/useAuth';
 import { formatEventDate, formatEventTimeRange, stripMarkdown, type ClubEvent } from '@/lib/formUtils';
 
@@ -20,25 +21,19 @@ const EventsSection = () => {
     const y1 = useTransform(scrollYProgress, [0, 1], [100, -100]);
     const y2 = useTransform(scrollYProgress, [0, 1], [50, -50]);
 
-    const [liveEvents, setLiveEvents] = useState<ClubEvent[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const { data: eventsRes, isLoading } = useQuery({
+        queryKey: EVENT_QUERY_KEYS.list(),
+        queryFn: () => eventService.listEvents(),
+        staleTime: 5 * 60 * 1000,
+        gcTime: 15 * 60 * 1000,
+    });
 
-    useEffect(() => {
-        const fetch = async () => {
-            try {
-                const { events } = await eventService.listEvents();
-                const published = (events || []).filter(
-                    (e) => e.details?.status === 'published' || e.details?.published === true
-                );
-                setLiveEvents(published.slice(0, 6)); // max 6 on homepage
-            } catch {
-                // silently fail — no events shown
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetch();
-    }, []);
+    const liveEvents = useMemo(() => {
+        const published = (eventsRes?.events || []).filter(
+            (e) => e.details?.status === 'published' || e.details?.published === true
+        );
+        return published.slice(0, 6);
+    }, [eventsRes]);
 
     return (
         <section ref={containerRef} id="events" className="py-24 relative overflow-hidden bg-background">
@@ -110,7 +105,7 @@ const EventsSection = () => {
                         {liveEvents.map((event, i) => {
                             const details = event.details || {};
                             const accentColor = details.theme_color || THEME_COLORS[i % THEME_COLORS.length];
-                            const banner = details.banner_url || details.coverImage || details.cover_image;
+                            const banner = details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image;
                             const category = details.category || 'Event';
                             const description = stripMarkdown(
                                 details.description ||
@@ -139,10 +134,12 @@ const EventsSection = () => {
                                     >
                                         {/* Card Background */}
                                         {banner ? (
-                                            <div className="relative h-44 bg-black overflow-hidden">
+                                            <div className="relative h-44 bg-black overflow-hidden aspect-[16/10]">
                                                 <img
                                                     src={banner}
                                                     alt={event.title}
+                                                    loading="lazy"
+                                                    decoding="async"
                                                     className="w-full h-full object-cover opacity-60 group-hover:opacity-75 group-hover:scale-105 transition-all duration-500"
                                                     onError={(e) => {
                                                         (e.target as HTMLImageElement).style.display = 'none';

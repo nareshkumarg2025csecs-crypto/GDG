@@ -25,13 +25,37 @@ export interface SubmissionsListResponse {
 }
 
 let cachedFormsSummary: { data: { message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }; expiresAt: number } | null = null;
+let cachedMySubmissions: { data: SubmissionsListResponse; expiresAt: number } | null = null;
+let inFlightMySubmissions: Promise<SubmissionsListResponse> | null = null;
+const cachedFormsByEvent = new Map<string, { data: FormsListResponse; expiresAt: number }>();
+
+export const FORM_QUERY_KEYS = {
+  all: ['forms'] as const,
+  summary: () => ['forms', 'summary'] as const,
+  byEvent: (eventId: string) => ['forms', 'event', eventId] as const,
+  detail: (id: string) => ['forms', 'detail', id] as const,
+  mySubmissions: () => ['forms', 'my-submissions'] as const,
+  submissions: (formId: string) => ['forms', 'submissions', formId] as const,
+};
 
 export function clearFormsSummaryCache() {
   cachedFormsSummary = null;
 }
 
+export function clearMySubmissionsCache() {
+  cachedMySubmissions = null;
+}
+
+export function clearFormsCache() {
+  cachedFormsSummary = null;
+  cachedMySubmissions = null;
+  cachedFormsByEvent.clear();
+}
+
 export const formService = {
   clearFormsSummaryCache,
+  clearMySubmissionsCache,
+  clearFormsCache,
 
   async getFormsSummary(forceRefresh = false): Promise<{ message: string; formsByEvent: Record<string, EventForm>; cached?: boolean }> {
     if (!forceRefresh && cachedFormsSummary && cachedFormsSummary.expiresAt > Date.now()) {
@@ -44,16 +68,28 @@ export const formService = {
 
     cachedFormsSummary = {
       data,
-      expiresAt: Date.now() + 60 * 1000,
+      expiresAt: Date.now() + 300 * 1000,
     };
 
     return data;
   },
 
-  async getFormsByEvent(eventId: string): Promise<FormsListResponse> {
-    return apiRequest<FormsListResponse>(`/api/events/${eventId}/forms`, {
+  async getFormsByEvent(eventId: string, forceRefresh = false): Promise<FormsListResponse> {
+    const cached = cachedFormsByEvent.get(eventId);
+    if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const data = await apiRequest<FormsListResponse>(`/api/events/${eventId}/forms`, {
       method: 'GET',
     });
+
+    cachedFormsByEvent.set(eventId, {
+      data,
+      expiresAt: Date.now() + 300 * 1000,
+    });
+
+    return data;
   },
 
   async getFormById(id: string): Promise<SingleFormResponse> {
@@ -75,7 +111,7 @@ export const formService = {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    cachedFormsSummary = null;
+    clearFormsCache();
     return res;
   },
 
@@ -94,7 +130,7 @@ export const formService = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
-    cachedFormsSummary = null;
+    clearFormsCache();
     return res;
   },
 
@@ -102,7 +138,7 @@ export const formService = {
     const res = await apiRequest<{ message: string; deleted_form: EventForm }>(`/api/forms/${id}`, {
       method: 'DELETE',
     });
-    cachedFormsSummary = null;
+    clearFormsCache();
     return res;
   },
 
@@ -111,14 +147,37 @@ export const formService = {
       method: 'POST',
       body: JSON.stringify({ answers }),
     });
-    cachedFormsSummary = null;
+    clearFormsCache();
     return res;
   },
 
-  async getMySubmissions(): Promise<SubmissionsListResponse> {
-    return apiRequest<SubmissionsListResponse>('/api/forms/submissions/my', {
-      method: 'GET',
-    });
+  async getMySubmissions(forceRefresh = false): Promise<SubmissionsListResponse> {
+    if (!forceRefresh && cachedMySubmissions && cachedMySubmissions.expiresAt > Date.now()) {
+      return cachedMySubmissions.data;
+    }
+
+    if (!forceRefresh && inFlightMySubmissions) {
+      return inFlightMySubmissions;
+    }
+
+    inFlightMySubmissions = (async () => {
+      try {
+        const data = await apiRequest<SubmissionsListResponse>('/api/forms/submissions/my', {
+          method: 'GET',
+        });
+
+        cachedMySubmissions = {
+          data,
+          expiresAt: Date.now() + 300 * 1000,
+        };
+
+        return data;
+      } finally {
+        inFlightMySubmissions = null;
+      }
+    })();
+
+    return inFlightMySubmissions;
   },
 
   async getFormSubmissions(formId: string): Promise<SubmissionsListResponse> {
@@ -131,13 +190,15 @@ export const formService = {
     submissionId: string,
     attended: boolean
   ): Promise<{ message: string; submission: FormSubmission }> {
-    return apiRequest<{ message: string; submission: FormSubmission }>(
+    const res = await apiRequest<{ message: string; submission: FormSubmission }>(
       `/api/forms/submissions/${submissionId}/attendance`,
       {
         method: 'PATCH',
         body: JSON.stringify({ attended }),
       }
     );
+    clearMySubmissionsCache();
+    return res;
   },
 
   async getTicketPass(ticketId: string): Promise<{
