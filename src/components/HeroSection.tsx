@@ -5,37 +5,6 @@ import { useTheme } from '@/contexts/ThemeContext';
 
 const FluidCanvas = lazy(() => import('./FluidCanvas'));
 
-const CountUp = ({ end, duration = 2, suffix = '' }: { end: number; duration?: number; suffix?: string }) => {
-  const [count, setCount] = useState(0);
-  const [started, setStarted] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setStarted(true); },
-      { threshold: 0.3 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!started) return;
-    let startTime: number;
-    const step = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / (duration * 1000), 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.floor(eased * end));
-      if (progress < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [started, end, duration]);
-
-  return <span ref={ref}>{count}{suffix}</span>;
-};
 
 const CanvasLoader = () => (
   <div className="absolute inset-0 flex items-center justify-center bg-background">
@@ -89,12 +58,6 @@ const HeroSection = () => {
   const line1y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : -50]);
   const line2y = useTransform(scrollYProgress, [0, 1], [0, isMobile ? 0 : -20]);
 
-  const stats = [
-    { value: 50, suffix: '+', label: 'Events Hosted', color: '#4285F4' },
-    { value: 1200, suffix: '+', label: 'Members', color: '#EA4335' },
-    { value: 20, suffix: '', label: 'Workshops', color: '#FBBC04' },
-    { value: 5, suffix: '', label: 'Years Active', color: '#34A853' },
-  ];
 
   const isDark = theme === 'dark';
 
@@ -149,13 +112,13 @@ const HeroSection = () => {
         </div>
       )}
 
-      {/* Main content — editorial split */}
+      {/* Main content */}
       <motion.div
         style={isMobile ? undefined : { y, opacity, scale }}
-        className="relative z-20 flex-1 flex flex-col lg:flex-row items-center lg:items-end px-5 sm:px-8 md:px-12 lg:px-16 pb-28 sm:pb-32 pt-24 md:pt-28 max-w-[1600px] mx-auto w-full gap-8 lg:gap-0"
+        className="relative z-20 flex-1 flex flex-col justify-center px-5 sm:px-8 md:px-12 lg:px-16 pb-28 sm:pb-32 pt-24 md:pt-28 max-w-[1600px] mx-auto w-full"
       >
-        {/* Left: editorial giant headline (7/12 cols) */}
-        <div className="flex-1 min-w-0">
+        {/* Editorial giant headline */}
+        <div className="w-full max-w-5xl">
           {/* Eyebrow */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
@@ -249,50 +212,6 @@ const HeroSection = () => {
             </a>
           </motion.div>
         </div>
-
-        {/* Right: vertical stat rail (5/12 cols) */}
-        <motion.div
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 1.2, duration: 0.9, ease: [0.23, 1, 0.32, 1] }}
-          className="w-full lg:w-auto grid grid-cols-2 lg:flex lg:flex-col gap-2.5 sm:gap-3 lg:gap-4 lg:pl-12 lg:border-l shrink-0"
-          style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(31,31,31,0.1)' }}
-        >
-          {stats.map((stat, i) => (
-            <motion.div
-              key={stat.label}
-              whileHover={{ x: 6 }}
-              transition={{ type: 'spring', stiffness: 400 }}
-              className="flex-1 lg:flex-none group"
-              data-physics
-            >
-              <div className="flex flex-col sm:flex-row lg:items-center gap-1 sm:gap-2 lg:gap-4 p-3.5 sm:p-4 rounded-xl transition-all duration-300"
-                style={{
-                  backgroundColor: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.8)',
-                  border: `1px solid ${stat.color}${isDark ? '22' : '18'}`,
-                  boxShadow: isDark ? 'none' : '0 1px 4px rgba(0,0,0,0.04)',
-                }}
-              >
-                <span
-                  className="font-display leading-none tabular-nums"
-                  style={{
-                    fontSize: 'clamp(2rem, 5vw, 3.5rem)',
-                    color: stat.color,
-                    textShadow: isDark ? `0 0 30px ${stat.color}60` : 'none',
-                  }}
-                >
-                  <CountUp end={stat.value} suffix={stat.suffix} duration={1.8 + i * 0.15} />
-                </span>
-                <span
-                  className="text-[10px] uppercase tracking-widest font-semibold"
-                  style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.5)' }}
-                >
-                  {stat.label}
-                </span>
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
       </motion.div>
 
       {/* Marquee ticker */}

@@ -3,18 +3,21 @@ const { supabaseAdmin, supabase } = require('../config/supabase');
 const { getScannerTokenSecret } = require('../config/authConfig');
 const { BoundedMap } = require('../utils/boundedCache');
 
-// Cache validated tokens + profiles for 5 minutes (300s) to slash Supabase Auth + PostgREST egress
-const AUTH_CACHE_TTL = 300 * 1000;
+// Cache validated tokens + profiles for up to 60s to reduce Supabase Auth egress while respecting fast revocation
+const AUTH_CACHE_TTL = 60 * 1000;
 const authCache = new BoundedMap(1000);
 
-const invalidateAuthCache = (userId = null) => {
+const invalidateAuthCache = (userId = null, token = null) => {
+  if (token) {
+    authCache.delete(token);
+  }
   if (!userId) {
-    authCache.clear();
+    if (!token) authCache.clear();
     return;
   }
-  for (const [token, entry] of authCache.entries()) {
+  for (const [t, entry] of authCache.entries()) {
     if (entry.user?.id === userId) {
-      authCache.delete(token);
+      authCache.delete(t);
     }
   }
 };
@@ -104,7 +107,6 @@ const requireAuth = async (req, res, next) => {
     if (authError || !userData || !userData.user) {
       return res.status(401).json({
         error: 'Unauthorized: Invalid or expired token.',
-        details: authError ? authError.message : undefined,
       });
     }
 
@@ -120,16 +122,29 @@ const requireAuth = async (req, res, next) => {
     if (profileError || !profile) {
       return res.status(404).json({
         error: 'Profile not found for authenticated user.',
-        details: profileError ? profileError.message : undefined,
       });
     }
 
-    // Store in cache for 60s
-    authCache.set(token, {
-      user,
-      profile,
-      expiresAt: now + AUTH_CACHE_TTL,
-    });
+    // Cap cache expiration to the token's cryptographic exp claim
+    let jwtExpMs = now + AUTH_CACHE_TTL;
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        if (payload.exp && typeof payload.exp === 'number') {
+          jwtExpMs = payload.exp * 1000;
+        }
+      }
+    } catch (_) {}
+
+    const cacheExpiresAt = Math.min(now + AUTH_CACHE_TTL, jwtExpMs);
+    if (cacheExpiresAt > now) {
+      authCache.set(token, {
+        user,
+        profile,
+        expiresAt: cacheExpiresAt,
+      });
+    }
 
     // Attach user information and profile to the request object
     req.user = {

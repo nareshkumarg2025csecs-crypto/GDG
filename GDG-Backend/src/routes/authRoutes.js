@@ -118,11 +118,12 @@ router.post(
   scannerAdminEmailLogin
 );
 
-// Common Logout Route
-router.post('/logout', requireAuth, logout);
+// Common Logout Route (optionalAuth allows graceful cleanup even if access token is expired)
+router.post('/logout', optionalAuth, logout);
 
 // Session Refresh Route (Silently refreshes access token using refresh_token)
 router.post('/refresh', studentLoginLimiter, refreshToken);
+router.post('/refresh-token', studentLoginLimiter, refreshToken);
 
 // Google OAuth Sign-in & Profile Sync
 router.get('/google/url', getGoogleOAuthUrl);

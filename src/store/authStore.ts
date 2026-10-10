@@ -18,6 +18,7 @@ export interface AuthState {
     user?: { id: string; email: string } | null;
     profile: UserProfile;
   }) => void;
+  updateTokens: (accessToken: string, refreshToken?: string | null) => void;
   updateProfile: (profile: Partial<UserProfile>) => void;
   clearAuthSession: () => void;
   setLoading: (loading: boolean) => void;
@@ -34,16 +35,29 @@ export const useAuthStore = create<AuthState>()(
       role: null,
       isLoading: false,
 
-      setAuthSession: ({ access_token, refresh_token = null, user = null, profile }) => {
-        set({
+      setAuthSession: ({ access_token, refresh_token, user = null, profile }) => {
+        set((state) => ({
           accessToken: access_token,
-          refreshToken: refresh_token,
+          // CRITICAL: Preserve existing refreshToken if not explicitly provided
+          refreshToken: refresh_token !== undefined ? refresh_token : state.refreshToken,
           user: user || { id: profile.id, email: profile.email },
           profile,
           role: profile.role,
-          isAuthenticated: Boolean(access_token || profile.id),
+          // CRITICAL: True ONLY when a valid access token is present
+          isAuthenticated: Boolean(access_token),
           isLoading: false,
-        });
+        }));
+      },
+
+      updateTokens: (newAccessToken: string, newRefreshToken?: string | null) => {
+        set((state) => ({
+          accessToken: newAccessToken,
+          refreshToken:
+            newRefreshToken !== undefined && newRefreshToken !== null
+              ? newRefreshToken
+              : state.refreshToken,
+          isAuthenticated: Boolean(newAccessToken),
+        }));
       },
 
       updateProfile: (updatedFields) => {
@@ -78,6 +92,24 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         role: state.role,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Enforce that session is authenticated only if valid tokens actually exist
+        if (state) {
+          const hasAccessToken = Boolean(state.accessToken && state.accessToken.trim());
+          const hasRefreshToken = Boolean(state.refreshToken && state.refreshToken.trim());
+
+          if (!hasAccessToken && !hasRefreshToken) {
+            state.isAuthenticated = false;
+            state.accessToken = null;
+            state.refreshToken = null;
+          } else if (!hasAccessToken && hasRefreshToken) {
+            // Can be silently refreshed upon the first API call
+            state.isAuthenticated = true;
+          } else {
+            state.isAuthenticated = hasAccessToken;
+          }
+        }
+      },
     }
   )
 );

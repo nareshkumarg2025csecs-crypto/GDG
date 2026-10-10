@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { supabase, supabaseAdmin } = require('../config/supabase');
+const { supabase, supabaseAdmin, createIsolatedAuthClient } = require('../config/supabase');
 const { validateAdminSignupCode, getScannerTokenSecret } = require('../config/authConfig');
 const securityConfig = require('../config/securityConfig');
 const { logActivity } = require('../services/activityLogService');
@@ -356,7 +356,7 @@ const handleSignup = async (req, res, fixedRole) => {
       });
 
       return res.status(500).json({
-        error: `Failed to create user profile in database: ${profileError.message}`,
+        error: 'Failed to create user profile in database.',
       });
     }
 
@@ -938,11 +938,41 @@ const adminLogin = async (req, res) => {
 
 /**
  * POST /api/auth/logout
+ * Revokes the server-side Supabase user session, clears the backend auth cache,
+ * and logs the logout event.
  */
 const logout = async (req, res) => {
   try {
     const userId = req.user?.id;
+    const authHeader = req.headers.authorization;
+    const token = authHeader && /^bearer\s+/i.test(authHeader)
+      ? authHeader.replace(/^bearer\s+/i, '').trim()
+      : null;
 
+    // 1. Evict any in-memory cached session for this user and token
+    if (userId || token) {
+      try {
+        const { invalidateAuthCache } = require('../middleware/auth');
+        invalidateAuthCache(userId, token);
+      } catch (cacheErr) {
+        console.warn('Non-fatal: Invalidate auth cache notice:', cacheErr?.message);
+      }
+    }
+
+    // 2. Invalidate / revoke user session on Supabase
+    if (token) {
+      try {
+        if (typeof supabaseAdmin.auth?.admin?.signOut === 'function') {
+          await supabaseAdmin.auth.admin.signOut(token);
+        } else if (typeof supabase.auth?.signOut === 'function') {
+          await supabase.auth.signOut();
+        }
+      } catch (revokeErr) {
+        console.warn('Non-fatal: Supabase session revocation notice:', revokeErr?.message);
+      }
+    }
+
+    // 3. Log audit event
     await logActivity(req, {
       user_id: userId,
       action: 'logout',
@@ -963,7 +993,8 @@ const logout = async (req, res) => {
 /**
  * POST /api/auth/refresh
  * Exchanges a valid refresh_token for a new access_token and refresh_token pair.
- * Keeps the user session perpetually alive and prevents unexpected logouts.
+ * Uses an isolated per-request Supabase client to prevent concurrent user requests
+ * from polluting or interfering with shared in-memory session state.
  */
 const refreshToken = async (req, res) => {
   try {
@@ -974,14 +1005,28 @@ const refreshToken = async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase.auth.refreshSession({
+    // Isolated client instance per refresh request prevents cross-request session pollution
+    const refreshClient = typeof createIsolatedAuthClient === 'function'
+      ? createIsolatedAuthClient()
+      : require('@supabase/supabase-js').createClient(
+          process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
+          process.env.SUPABASE_ANON_KEY || 'placeholder-anon-key',
+          {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              detectSessionInUrl: false,
+            },
+          }
+        );
+
+    const { data, error } = await refreshClient.auth.refreshSession({
       refresh_token: refresh_token.trim(),
     });
 
     if (error || !data?.session) {
       return res.status(401).json({
         error: 'Invalid or expired refresh token. Please sign in again.',
-        details: error ? error.message : undefined,
       });
     }
 
@@ -1014,6 +1059,8 @@ const refreshToken = async (req, res) => {
 
 /**
  * GET /api/auth/google/url
+ * Generates the Supabase Google OAuth sign-in URL.
+ * Validates requested redirect destinations against an explicit allowlist.
  */
 const getGoogleOAuthUrl = async (req, res) => {
   try {
@@ -1033,26 +1080,54 @@ const getGoogleOAuthUrl = async (req, res) => {
       }
     }
 
-    let detectedClientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
-    if (req.headers.origin) {
+    const allowedOrigins = securityConfig.getAllowedOrigins();
+    const fallbackClientUrl = process.env.CLIENT_URL || 'http://localhost:8081';
+
+    // Validate origin from headers against allowlist
+    let detectedClientUrl = fallbackClientUrl;
+    if (req.headers.origin && allowedOrigins.includes(req.headers.origin)) {
       detectedClientUrl = req.headers.origin;
     } else if (req.headers.referer) {
       try {
-        detectedClientUrl = new URL(req.headers.referer).origin;
+        const refOrigin = new URL(req.headers.referer).origin;
+        if (allowedOrigins.includes(refOrigin)) {
+          detectedClientUrl = refOrigin;
+        }
       } catch {}
     }
 
-    // If the mobile app or web client supplies its direct redirect URI, use it directly!
-    const redirectUrl =
-      req.query.redirect_to ||
-      req.query.redirect_url ||
-      `${detectedClientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
+    // Strict validation of client-supplied redirect_to / redirect_url
+    const rawRedirect = req.query.redirect_to || req.query.redirect_url;
+    let validatedRedirectUrl = `${detectedClientUrl}/auth/callback${role === 'admin' ? '?role=admin' : ''}`;
 
-    console.log('[OAuth] Generated OAuth redirectTo:', redirectUrl);
+    if (rawRedirect && typeof rawRedirect === 'string') {
+      try {
+        if (rawRedirect.startsWith('/')) {
+          if (rawRedirect.startsWith('/auth/callback')) {
+            validatedRedirectUrl = `${detectedClientUrl}${rawRedirect}`;
+          }
+        } else {
+          const parsed = new URL(rawRedirect);
+          if (allowedOrigins.includes(parsed.origin) && parsed.pathname === '/auth/callback') {
+            validatedRedirectUrl = parsed.toString();
+          } else {
+            console.warn('[OAuth Security] Untrusted redirect_to origin rejected:', rawRedirect);
+            return res.status(400).json({
+              error: 'Bad Request: Untrusted redirect URL origin or invalid callback path.',
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[OAuth Security] Malformed redirect_to rejected:', rawRedirect);
+        return res.status(400).json({
+          error: 'Bad Request: Malformed redirect URL.',
+        });
+      }
+    }
+
+    console.log('[OAuth] Validated OAuth redirectTo:', validatedRedirectUrl);
 
     // Both Admin and Students use clean standard identity scopes (openid, email, profile).
-    // prompt is set to 'select_account' without 'consent' or 'offline' access so Google does NOT
-    // force a consent screen or verification warning for either admins or students.
     const scopesString = 'openid email profile';
     const requestedScopes = ['openid', 'email', 'profile'];
 
@@ -1063,7 +1138,7 @@ const getGoogleOAuthUrl = async (req, res) => {
         queryParams: {
           prompt: 'select_account',
         },
-        redirectTo: redirectUrl,
+        redirectTo: validatedRedirectUrl,
       },
     });
 
@@ -1170,7 +1245,6 @@ const syncGoogleProfile = async (req, res) => {
       if (createError) {
         return res.status(500).json({
           error: 'Failed to create profile for Google user.',
-          details: createError.message,
         });
       }
       profile = newProfile;
@@ -1220,7 +1294,6 @@ const syncGoogleProfile = async (req, res) => {
     console.error('syncGoogleProfile error:', error);
     return res.status(500).json({
       error: 'Internal server error while syncing Google profile.',
-      details: error.message,
     });
   }
 };

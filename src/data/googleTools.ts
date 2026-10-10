@@ -466,7 +466,7 @@ export const GOOGLE_TOOLS: GoogleTool[] = [
     badge: 'Trending',
     level: 'Advanced',
     officialUrl: 'https://developer.android.com/kotlin/multiplatform',
-    docsUrl: 'https://developer.android.com/kotlin/multiplatform/get-started',
+    docsUrl: 'https://developer.android.com/kotlin/multiplatform',
     tags: ['Cross-Platform', 'Kotlin', 'Android', 'iOS', 'Code Sharing'],
   },
   {
@@ -704,7 +704,7 @@ export const GOOGLE_TOOLS: GoogleTool[] = [
     badge: 'Popular',
     level: 'Beginner',
     officialUrl: 'https://material-foundation.github.io/material-theme-builder/',
-    docsUrl: 'https://m3.material.io/styles/color/the-color-system/customizing-color',
+    docsUrl: 'https://m3.material.io/styles/color/system/overview',
     tags: ['Figma Plugin', 'Color Palettes', 'Token Export', 'Theme Generator'],
   },
   {
@@ -861,7 +861,7 @@ export const GOOGLE_TOOLS: GoogleTool[] = [
     badge: 'Essential',
     level: 'Intermediate',
     officialUrl: 'https://developers.google.com/tink',
-    docsUrl: 'https://developers.google.com/tink/docs',
+    docsUrl: 'https://developers.google.com/tink',
     tags: ['Cryptography', 'Encryption', 'Security', 'HMAC', 'AES-GCM'],
   },
   {
@@ -1111,7 +1111,7 @@ export const GOOGLE_TOOLS: GoogleTool[] = [
     badge: 'Trending',
     level: 'Intermediate',
     officialUrl: 'https://genkit.dev/',
-    docsUrl: 'https://genkit.dev/docs/',
+    docsUrl: 'https://firebase.google.com/docs/genkit',
     tags: ['GenAI', 'LLM', 'TypeScript', 'Go', 'Firebase', 'Agents'],
   },
   {

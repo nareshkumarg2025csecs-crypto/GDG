@@ -61,6 +61,17 @@ export interface GoogleSyncResponse {
   google_tokens_saved: boolean;
 }
 
+export interface RefreshTokenResponse {
+  message: string;
+  access_token: string;
+  refresh_token: string;
+  user: {
+    id: string;
+    email: string;
+  };
+  profile: UserProfile | null;
+}
+
 export const authService = {
   async studentSignup(data: StudentSignupData): Promise<AuthResponse> {
     return apiRequest<AuthResponse>('/api/auth/student/signup', {
@@ -119,8 +130,8 @@ export const authService = {
     });
   },
 
-  async refreshToken(refreshToken: string): Promise<AuthResponse> {
-    return apiRequest<AuthResponse>('/api/auth/refresh', {
+  async refreshToken(refreshToken: string): Promise<RefreshTokenResponse> {
+    return apiRequest<RefreshTokenResponse>('/api/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
@@ -162,7 +173,6 @@ export const authService = {
     return apiRequest<GoogleSyncResponse>('/api/auth/google/sync-profile', {
       method: 'POST',
       token,
-      retries: 2,
       body: JSON.stringify({
         ...payload,
         access_token: token,

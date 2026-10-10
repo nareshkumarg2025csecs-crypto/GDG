@@ -137,7 +137,8 @@ export function useAuth() {
         role?: UserRole;
         admin_code?: string;
       },
-      token: string
+      token: string,
+      refreshTokenParam?: string | null
     ) => {
       setLoading(true);
       try {
@@ -145,6 +146,7 @@ export function useAuth() {
         if (response.profile) {
           setAuthSession({
             access_token: token,
+            refresh_token: refreshTokenParam || undefined,
             profile: response.profile,
             user: {
               id: response.profile.id,

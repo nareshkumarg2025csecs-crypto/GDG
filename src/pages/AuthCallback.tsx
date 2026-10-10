@@ -30,6 +30,10 @@ export const AuthCallback: React.FC = () => {
         const hashParams = new URLSearchParams(hash);
 
         const accessTokenFromUrl = hashParams.get('access_token') || searchParams.get('access_token');
+        const refreshTokenFromUrl =
+          hashParams.get('refresh_token') ||
+          searchParams.get('refresh_token') ||
+          undefined;
         const accessToken = accessTokenFromUrl || getStoredToken();
         const providerToken =
           hashParams.get('provider_token') ||
@@ -123,7 +127,8 @@ export const AuthCallback: React.FC = () => {
                 role: roleParam,
                 admin_code: adminCodeParam,
               },
-              accessToken
+              accessToken,
+              refreshTokenFromUrl
             );
 
             if (syncResponse?.profile) {

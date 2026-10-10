@@ -8,9 +8,10 @@ let cachedLogoPng = null;
 function getLogoPng() {
   if (cachedLogoPng) return cachedLogoPng;
   const possiblePaths = [
+    path.join(__dirname, '../assets/favicon.png'),
+    path.join(__dirname, '../../../public/favicon.png'),
     path.join(__dirname, '../assets/gdg-logo-icon.png'),
     path.join(__dirname, '../../../public/gdg-logo-icon.png'),
-    path.join(__dirname, '../../../public/gdg-logo-icon copy.png'),
   ];
   for (const p of possiblePaths) {
     if (fs.existsSync(p)) {

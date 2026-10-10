@@ -1,24 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar,
-  Clock,
-  MapPin,
-  Search,
-  CheckCircle2,
-  CalendarPlus,
-  CalendarCheck,
-  ArrowRight,
   Sparkles,
-  Layers,
-  Image as ImageIcon,
-  QrCode,
+  CalendarPlus,
   X as XIcon,
-  User,
-  Users,
+  RotateCcw,
 } from 'lucide-react';
 import Header from '@/components/Header';
+import Footer from '@/components/Footer';
 import { useQuery } from '@tanstack/react-query';
 import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
 import { formService, FORM_QUERY_KEYS } from '@/services/formService';
@@ -28,16 +19,17 @@ import { toast } from '@/hooks/use-toast';
 import { EventQrModal } from '@/components/EventQrModal';
 import {
   type ClubEvent,
-  type EventForm,
-  type FormSubmission,
-  getEventRegistrationState,
-  formatEventDateRange,
-  formatEventTimeRange,
-  stripMarkdown,
-  calculateRemainingTime,
+  parseEventDate,
 } from '@/lib/formUtils';
 
-const DEFAULT_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
+import { EventsHero } from '@/components/events/EventsHero';
+import {
+  EventsDiscoveryBar,
+  type TimeframeFilter,
+  type SortOption,
+} from '@/components/events/EventsDiscoveryBar';
+import { EventCard } from '@/components/events/EventCard';
+import { EventSkeletons } from '@/components/events/EventSkeletons';
 
 export const EventsPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
@@ -45,8 +37,12 @@ export const EventsPage: React.FC = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
+  // Filters State - Default: Upcoming Events first!
+  const [timeframe, setTimeframe] = useState<TimeframeFilter>('upcoming');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [sortOption, setSortOption] = useState<SortOption>('date-asc');
+
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
@@ -57,7 +53,6 @@ export const EventsPage: React.FC = () => {
   const {
     data: eventsRes,
     isLoading: isEventsLoading,
-    error: eventsError,
   } = useQuery({
     queryKey: EVENT_QUERY_KEYS.list(),
     queryFn: () => eventService.listEvents(),
@@ -93,7 +88,8 @@ export const EventsPage: React.FC = () => {
 
   const isLoading = isEventsLoading;
 
-  const events = useMemo(() => {
+  // Filter to published events only
+  const publishedEvents = useMemo(() => {
     const all = eventsRes?.events || [];
     return all.filter(
       (e) => e.details?.status === 'published' || e.details?.published === true
@@ -113,40 +109,116 @@ export const EventsPage: React.FC = () => {
     return Array.from(new Set([...fetched, ...localAddedCalendarEventIds]));
   }, [calRes, localAddedCalendarEventIds]);
 
+  const registeredFormIds = useMemo(() => {
+    return new Set(mySubmissions.map((s) => s.form_id));
+  }, [mySubmissions]);
+
+  // Total community registrations count
+  const totalRegistrationsCount = useMemo(() => {
+    let sum = 0;
+    Object.values(formsByEvent).forEach((form) => {
+      if (typeof form?.submission_count === 'number') {
+        sum += form.submission_count;
+      }
+    });
+    return sum;
+  }, [formsByEvent]);
+
+  // Page title
+  useEffect(() => {
+    document.title = 'Events & Workshops | Google Developer Groups on Campus';
+  }, []);
+
   // Restore scroll position after returning from event details
   useEffect(() => {
     const savedScroll = sessionStorage.getItem('gdg_events_scroll_y');
-    if (savedScroll && !isLoading && events.length > 0) {
+    if (savedScroll && !isLoading && publishedEvents.length > 0) {
       const scrollY = parseInt(savedScroll, 10);
       sessionStorage.removeItem('gdg_events_scroll_y');
       requestAnimationFrame(() => {
         window.scrollTo({ top: scrollY, behavior: 'instant' });
       });
     }
-  }, [isLoading, events.length]);
+  }, [isLoading, publishedEvents.length]);
 
   const handleEventCardNavigate = () => {
     sessionStorage.setItem('gdg_events_scroll_y', String(window.scrollY));
   };
 
-  const registeredFormIds = useMemo(() => {
-    return new Set(mySubmissions.map((s) => s.form_id));
-  }, [mySubmissions]);
+  // Helper: check if event has concluded
+  const isEventPast = (e: ClubEvent) => {
+    const end = e.details?.endTime || e.details?.end_time;
+    const start = e.details?.startTime || e.details?.start_time;
+    const target = end ? parseEventDate(end) : (start ? parseEventDate(start) : null);
+    if (!target) return false;
+    return new Date() > target;
+  };
 
+  // Counts by timeframe
+  const timeframeCounts = useMemo(() => {
+    let upcoming = 0;
+    let past = 0;
+    publishedEvents.forEach((e) => {
+      if (isEventPast(e)) {
+        past++;
+      } else {
+        upcoming++;
+      }
+    });
+    return {
+      upcoming,
+      past,
+      all: publishedEvents.length,
+    };
+  }, [publishedEvents]);
+
+  // Distinct categories
   const categories = useMemo(() => {
     const cats = new Set<string>();
-    events.forEach((e) => {
+    publishedEvents.forEach((e) => {
       if (e.details?.category) cats.add(e.details.category);
     });
     return ['all', ...Array.from(cats)];
-  }, [events]);
+  }, [publishedEvents]);
 
+  // Dynamic category counts (scoped to current timeframe)
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    categories.forEach((cat) => {
+      counts[cat] = 0;
+    });
+
+    publishedEvents.forEach((e) => {
+      const past = isEventPast(e);
+      if (timeframe === 'upcoming' && past) return;
+      if (timeframe === 'past' && !past) return;
+
+      counts.all = (counts.all || 0) + 1;
+      const cat = e.details?.category;
+      if (cat) {
+        counts[cat] = (counts[cat] || 0) + 1;
+      }
+    });
+
+    return counts;
+  }, [publishedEvents, categories, timeframe]);
+
+  // Filtered & Sorted Events - Prioritize Upcoming First!
   const filteredEvents = useMemo(() => {
-    return events.filter((event) => {
+    const filtered = publishedEvents.filter((event) => {
       const details = event.details || {};
+      const past = isEventPast(event);
+
+      // 1. Timeframe filter
+      if (timeframe === 'upcoming' && past) return false;
+      if (timeframe === 'past' && !past) return false;
+
+      // 2. Category filter
       if (selectedCategory !== 'all' && details.category !== selectedCategory) {
         return false;
       }
+
+      // 3. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const titleMatch = event.title.toLowerCase().includes(q);
@@ -159,16 +231,48 @@ export const EventsPage: React.FC = () => {
           .includes(q);
         return titleMatch || descMatch || venueMatch || sectionsMatch;
       }
+
       return true;
     });
-  }, [events, searchQuery, selectedCategory]);
 
+    // Sort events
+    return filtered.slice().sort((a, b) => {
+      if (sortOption === 'title-asc') {
+        return a.title.localeCompare(b.title);
+      }
+
+      const pastA = isEventPast(a);
+      const pastB = isEventPast(b);
+
+      // When "all" is selected, always show upcoming events first!
+      if (timeframe === 'all' && pastA !== pastB) {
+        return pastA ? 1 : -1;
+      }
+
+      const dateA = parseEventDate(a.details?.startTime || a.details?.start_time)?.getTime() || 0;
+      const dateB = parseEventDate(b.details?.startTime || b.details?.start_time)?.getTime() || 0;
+
+      // For past events, default to most recent first
+      if (timeframe === 'past') {
+        return sortOption === 'date-desc' ? dateA - dateB : dateB - dateA;
+      }
+
+      // For upcoming events: closest date first
+      if (sortOption === 'date-asc') {
+        return dateA - dateB;
+      }
+      return dateB - dateA;
+    });
+  }, [publishedEvents, timeframe, selectedCategory, searchQuery, sortOption]);
+
+  // Google Calendar Integration
   const handleAddToCalendar = async (eventId: string) => {
     if (!isAuthenticated) {
       toast({
         title: 'Sign in required',
-        description: 'Please sign in to add this event reminder to your Google Calendar.',
+        description: 'Please sign in to sync this event with your Google Calendar.',
       });
+      navigate(`/login?redirect=${encodeURIComponent('/events')}`);
       return;
     }
 
@@ -180,7 +284,6 @@ export const EventsPage: React.FC = () => {
         res.action_required === 'CONNECT_GOOGLE_CALENDAR' ||
         res.action_required === 'RECONNECT_GOOGLE_CALENDAR'
       ) {
-        // Show friendly modal instead of hard redirect
         try {
           const linkRes = await eventService.getGoogleLinkUrl();
           setCalendarConnectUrl(linkRes.url || null);
@@ -191,8 +294,8 @@ export const EventsPage: React.FC = () => {
         return;
       }
 
-      if (res.success) {
-        setAddedCalendarEventIds((prev) => [...prev, eventId]);
+      if (res.success || res.calendar_event_id) {
+        setLocalAddedCalendarEventIds((prev) => [...prev, eventId]);
         toast({
           title: 'Event Synced to Google Calendar',
           description: res.message || 'Check your primary Google Calendar.',
@@ -209,553 +312,197 @@ export const EventsPage: React.FC = () => {
     }
   };
 
+  const handleResetFilters = () => {
+    setTimeframe('upcoming');
+    setSearchQuery('');
+    setSelectedCategory('all');
+    setSortOption('date-asc');
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/30">
       <Header />
-      <main id="main-content" className="pt-24 sm:pt-28 pb-20 px-4 sm:px-6 lg:px-8">
-        {/* Background Decorative Ambient */}
+
+      <main id="main-content" className="flex-1 pt-24 sm:pt-28 pb-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        {/* Ambient background decoration */}
         <div
-          className="fixed inset-0 opacity-10 pointer-events-none"
+          className="fixed inset-0 opacity-[0.08] pointer-events-none -z-10"
           style={{
             backgroundImage: `
-              linear-gradient(rgba(66, 133, 244, 0.15) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(66, 133, 244, 0.15) 1px, transparent 1px)
+              linear-gradient(rgba(66, 133, 244, 0.2) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(66, 133, 244, 0.2) 1px, transparent 1px)
             `,
-            backgroundSize: '60px 60px',
+            backgroundSize: '64px 64px',
           }}
         />
 
-        <div className="max-w-7xl mx-auto space-y-8 relative z-10">
+        <div className="max-w-7xl mx-auto relative z-10">
           {/* Hero Section */}
-        <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-blue/10 text-google-blue border border-google-blue/20 font-mono">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>GDG Events & Workshops</span>
-          </div>
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold font-sans tracking-tight text-foreground">
-            Explore Upcoming Tech Events
-          </h1>
-          <p className="text-sm sm:text-base text-muted-foreground max-w-xl mx-auto">
-            Discover workshops, hackathons, and tech sessions. Register in seconds and sync reminders straight to your Google Calendar.
-          </p>
-        </div>
+          <EventsHero
+            totalEvents={publishedEvents.length}
+            upcomingCount={timeframeCounts.upcoming}
+            pastCount={timeframeCounts.past}
+            totalRegistrations={totalRegistrationsCount}
+          />
 
-        {/* Search & Category Filter Bar */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          {/* Search Box */}
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              aria-label="Search events by title, topic, or venue"
-              placeholder="Search events, topics, venues..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-input bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue transition-all"
-            />
-          </div>
+          {/* Discovery Control Center: Prominent Upcoming / Past filters */}
+          <EventsDiscoveryBar
+            timeframe={timeframe}
+            onTimeframeChange={setTimeframe}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            selectedCategory={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+            categories={categories}
+            categoryCounts={categoryCounts}
+            timeframeCounts={timeframeCounts}
+            sortOption={sortOption}
+            onSortChange={setSortOption}
+            filteredCount={filteredEvents.length}
+            totalEventsCount={publishedEvents.length}
+            onResetFilters={handleResetFilters}
+          />
 
-          {/* Category Filter Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1">
-            {categories.map((cat) => (
+          {/* Events Listings Grid (Upcoming First by Default) */}
+          {isLoading ? (
+            <EventSkeletons count={6} />
+          ) : filteredEvents.length === 0 ? (
+            <div className="text-center py-20 px-4 border border-dashed border-border rounded-3xl bg-card/40 max-w-xl mx-auto">
+              <div className="w-14 h-14 rounded-2xl bg-muted/80 flex items-center justify-center mx-auto mb-4 border border-border">
+                <Calendar className="w-7 h-7 text-muted-foreground" />
+              </div>
+              <h3 className="text-xl font-display font-bold text-foreground">
+                No events found
+              </h3>
+              <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
+                {searchQuery || selectedCategory !== 'all' || timeframe !== 'upcoming'
+                  ? 'No sessions match your active filters or search query.'
+                  : 'There are currently no sessions scheduled in this section.'}
+              </p>
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                  selectedCategory === cat
-                    ? 'bg-google-blue text-white shadow-sm'
-                    : 'bg-muted/70 hover:bg-muted text-muted-foreground hover:text-foreground'
-                }`}
+                type="button"
+                onClick={handleResetFilters}
+                className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-foreground text-background text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
               >
-                {cat === 'all' ? 'All Events' : cat}
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset All Filters</span>
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredEvents.map((event, idx) => {
+                const attachedForm = formsByEvent[event.id];
+                const isRegistered = attachedForm ? registeredFormIds.has(attachedForm.id) : false;
+                const isAddedToCal = addedCalendarEventIds.includes(event.id);
+
+                return (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    index={idx}
+                    attachedForm={attachedForm}
+                    isRegistered={isRegistered}
+                    isAddedToCal={isAddedToCal}
+                    isCalendarProcessing={calendarProcessingId === event.id}
+                    isAuthenticated={isAuthenticated}
+                    onAddToCalendar={handleAddToCalendar}
+                    onShareQr={setQrModalEvent}
+                    onNavigate={handleEventCardNavigate}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Events Display Grid (Poster-Style Design) */}
-        {isLoading ? (
-          <div className="py-24 flex flex-col items-center justify-center gap-3">
-            <div className="w-10 h-10 border-4 border-google-blue/30 border-t-google-blue rounded-full animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading GDG events...</p>
-          </div>
-        ) : filteredEvents.length === 0 ? (
-          <div className="text-center py-20 px-4 border border-dashed rounded-3xl bg-card/40">
-            <Calendar className="w-12 h-12 text-muted-foreground/40 mx-auto mb-3" />
-            <h3 className="text-lg font-bold">No events found</h3>
-            <p className="text-sm text-muted-foreground max-w-sm mx-auto mt-1">
-              {searchQuery || selectedCategory !== 'all'
-                ? 'Try adjusting your search or category filter.'
-                : 'No published events at the moment. Stay tuned!'}
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredEvents.map((event, idx) => {
-              const details = event.details || {};
-              const attachedForm = formsByEvent[event.id];
-              const isRegistered = attachedForm ? registeredFormIds.has(attachedForm.id) : false;
-              const opensAt = attachedForm?.opens_at || attachedForm?.schema?.opens_at;
-              const regState = attachedForm
-                ? getEventRegistrationState({
-                    isRegistered,
-                    isOpen: attachedForm.schema?.is_open !== false && details.is_registration_open !== false,
-                    opensAt,
-                    expiresAt: attachedForm.expires_at || attachedForm.schema?.expires_at,
-                    isFull: attachedForm.is_full,
-                    submissionLimit: attachedForm.submission_limit || attachedForm.schema?.submission_limit,
-                    submissionCount: attachedForm.submission_count,
-                  })
-                : 'hidden';
-
-              const accentColor = details.theme_color || DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
-              const banner = details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image;
-
-              return (
-                <motion.div
-                  key={event.id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col justify-between rounded-3xl border bg-card text-card-foreground shadow-md hover:shadow-xl transition-all overflow-hidden group relative"
-                  style={{
-                    borderColor: `${accentColor}30`,
-                  }}
-                >
-                  {/* Event Banner Image (if added by Admin) or Gradient Header */}
-                  {banner ? (
-                    <div className="relative h-48 sm:h-52 w-full overflow-hidden bg-black aspect-[16/10]">
-                      <img
-                        src={banner}
-                        alt={event.title}
-                        loading={idx < 3 ? 'eager' : 'lazy'}
-                        decoding="async"
-                        fetchPriority={idx === 0 ? 'high' : 'auto'}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" />
-                      
-                      {/* Top Overlay Badge */}
-                      <div className="absolute top-4 left-4 right-4 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md"
-                            style={{
-                              backgroundColor: `${accentColor}dd`,
-                              color: '#ffffff',
-                            }}
-                          >
-                            {details.category || 'Workshop'}
-                          </span>
-                          {details.participation_type && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold font-mono uppercase backdrop-blur-md bg-black/60 text-white border border-white/20 shadow-sm">
-                              {details.participation_type.toLowerCase() === 'team' ? (
-                                <>
-                                  <Users className="w-3 h-3 text-google-yellow" />
-                                  <span>Team</span>
-                                </>
-                              ) : (
-                                <>
-                                  <User className="w-3 h-3 text-google-blue" />
-                                  <span>Individual</span>
-                                </>
-                              )}
-                            </span>
-                          )}
-                        </div>
-
-                        {regState === 'registered' && (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-google-green text-white font-mono shadow-sm">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Registered</span>
-                          </span>
-                        )}
-
-                        {regState === 'upcoming' && (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500 text-white font-mono shadow-sm">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
-                          </span>
-                        )}
-
-                        {regState === 'full' && (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500 text-white font-mono shadow-sm">
-                            <Users className="w-3.5 h-3.5" />
-                            <span>Slots Full</span>
-                          </span>
-                        )}
-
-                        {regState === 'closed' && (
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-google-yellow text-black font-mono shadow-sm">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Closed</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Title on Banner */}
-                      <div className="absolute bottom-4 left-4 right-4">
-                        <Link
-                          to={`/events/${event.id}`}
-                          onClick={handleEventCardNavigate}
-                          className="text-lg sm:text-xl font-bold font-sans text-white hover:underline line-clamp-1"
-                        >
-                          {event.title}
-                        </Link>
-                      </div>
+        {/* ── Google Calendar Connect Modal ── */}
+        <AnimatePresence>
+          {showCalendarConnectModal && (
+            <motion.div
+              key="cal-connect-modal"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-[998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
+              onClick={() => setShowCalendarConnectModal(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 16 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 16 }}
+                transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center shrink-0">
+                      <CalendarPlus className="w-5 h-5 text-google-blue" />
                     </div>
-                  ) : (
-                    /* Gradient Mesh Poster Header if no banner provided */
-                    <div
-                      className="p-6 pb-4 relative overflow-hidden"
-                      style={{
-                        background: `radial-gradient(circle at 80% 20%, ${accentColor}40 0%, transparent 70%)`,
-                      }}
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">Connect Google Calendar</h3>
+                      <p className="text-xs text-muted-foreground font-mono">1-Click Reminders</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendarConnectModal(false)}
+                    className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors cursor-pointer"
+                    aria-label="Close modal"
+                  >
+                    <XIcon className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  <p>
+                    Connecting Google Calendar allows you to sync GDG campus event reminders straight to your personal Google Calendar with automatic meeting details and notifications.
+                  </p>
+                  <p>
+                    Your login session will remain active throughout.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {calendarConnectUrl ? (
+                    <a
+                      href={calendarConnectUrl}
+                      className="flex-1 inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-google-blue text-white text-sm font-semibold shadow-md hover:bg-google-blue/90 transition-all"
                     >
-                      <div className="flex items-center justify-between mb-3 gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
-                            style={{
-                              backgroundColor: `${accentColor}20`,
-                              color: accentColor,
-                              border: `1px solid ${accentColor}40`,
-                            }}
-                          >
-                            {details.category || 'Workshop'}
-                          </span>
-                          {details.participation_type && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono uppercase bg-muted/80 text-foreground border border-border shadow-sm">
-                              {details.participation_type.toLowerCase() === 'team' ? (
-                                <>
-                                  <Users className="w-3 h-3 text-google-yellow" />
-                                  <span>Team</span>
-                                </>
-                              ) : (
-                                <>
-                                  <User className="w-3 h-3 text-google-blue" />
-                                  <span>Individual</span>
-                                </>
-                              )}
-                            </span>
-                          )}
-                        </div>
-
-                        {attachedForm && regState === 'registered' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-green/10 text-google-green border border-google-green/30 font-mono">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Registered</span>
-                          </span>
-                        )}
-
-                        {attachedForm && regState === 'upcoming' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/30 font-mono">
-                            <Clock className="w-3 h-3" />
-                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
-                          </span>
-                        )}
-
-                        {attachedForm && regState === 'full' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-500 border border-rose-500/30 font-mono">
-                            <Users className="w-3 h-3" />
-                            <span>Slots Full</span>
-                          </span>
-                        )}
-
-                        {attachedForm && regState === 'closed' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-google-yellow/10 text-google-yellow border border-google-yellow/30 font-mono">
-                            <Clock className="w-3 h-3" />
-                            <span>Closed</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <Link
-                        to={`/events/${event.id}`}
-                        onClick={handleEventCardNavigate}
-                        className="text-xl font-bold font-sans text-foreground hover:text-google-blue transition-colors line-clamp-2 break-words"
-                      >
-                        {event.title}
-                      </Link>
+                      <CalendarPlus className="w-4 h-4" />
+                      Connect Google Calendar
+                    </a>
+                  ) : (
+                    <div className="flex-1 text-xs text-muted-foreground text-center py-2.5 rounded-xl bg-muted border border-border">
+                      Generating authorization link...
                     </div>
                   )}
-
-                  {/* Body Content */}
-                  <div className="p-6 pt-3 space-y-4">
-                    {/* Description snippet — strip raw markdown chars for card preview */}
-                    <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                      {stripMarkdown(
-                        details.description ||
-                        (details.custom_sections && details.custom_sections[0]?.content) ||
-                        'Join us for this exciting Google Developer Group event.'
-                      )}
-                    </p>
-
-                    {/* Metadata items */}
-                    <div className="space-y-1.5 text-xs text-muted-foreground pt-2 border-t border-border/60">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                        <span>
-                          {formatEventDateRange(
-                            details.startTime || details.start_time,
-                            details.endTime || details.end_time
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
-                        <span>
-                          {formatEventTimeRange(
-                            details.startTime || details.start_time,
-                            details.endTime || details.end_time
-                          )}
-                        </span>
-                      </div>
-                      {(details.location || details.venue) && (
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
-                          <span className="truncate">{details.location || details.venue}</span>
-                        </div>
-                      )}
-                      {details.participation_type && (
-                        <div className="flex items-center gap-2 text-foreground/80 font-medium">
-                          {details.participation_type.toLowerCase() === 'team' ? (
-                            <>
-                              <Users className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                              <span>Team Event</span>
-                            </>
-                          ) : (
-                            <>
-                              <User className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                              <span>Individual Event</span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                      {attachedForm && (attachedForm.show_submission_count !== false && attachedForm.schema?.show_submission_count !== false) && (
-                        <div className="flex items-center gap-2 pt-0.5">
-                          <Users className="w-3.5 h-3.5 text-google-green shrink-0" />
-                          <span>
-                            {(() => {
-                              const count = attachedForm.submission_count ?? 0;
-                              const limit = attachedForm.submission_limit || attachedForm.schema?.submission_limit;
-                              if (limit && Number(limit) > 0) {
-                                const remaining = Math.max(0, Number(limit) - count);
-                                return (
-                                  <>
-                                    <strong className="text-foreground font-semibold">{count}</strong> registered
-                                    <span className="text-muted-foreground mx-1">•</span>
-                                    <span className={remaining === 0 ? 'text-rose-500 font-semibold' : 'text-google-green font-semibold'}>
-                                      {remaining === 0 ? 'No spots left' : `${remaining} spot${remaining === 1 ? '' : 's'} left`}
-                                    </span>
-                                  </>
-                                );
-                              }
-                              return (
-                                <>
-                                  <strong className="text-foreground font-semibold">{count}</strong> registered
-                                  <span className="text-muted-foreground mx-1">•</span>
-                                  <span className="text-muted-foreground">Unlimited spots</span>
-                                </>
-                              );
-                            })()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Footer Actions */}
-                  {(() => {
-                    const eventEnd = details.endTime || details.end_time;
-                    const isEnded = eventEnd ? new Date() > new Date(eventEnd) : false;
-                    const isAddedToCal = addedCalendarEventIds.includes(event.id) && !isEnded;
-
-                    return (
-                      <div className="p-4 bg-muted/40 border-t border-border flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
-                          {isAddedToCal ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold">
-                              <CalendarCheck className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Added</span>
-                            </span>
-                          ) : isEnded ? (
-                            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
-                              Ended
-                            </span>
-                          ) : regState !== 'closed' ? (
-                            <button
-                              type="button"
-                              disabled={calendarProcessingId === event.id}
-                              onClick={() => handleAddToCalendar(event.id)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-sm"
-                              title="Add to Google Calendar"
-                            >
-                              <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
-                              <span>{calendarProcessingId === event.id ? 'Adding...' : 'Add to Cal'}</span>
-                            </button>
-                          ) : (
-                            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
-                              Closed
-                            </span>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setQrModalEvent({
-                                title: event.title,
-                                url: `${window.location.origin}/events/${event.id}`,
-                              })
-                            }
-                            className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            title="Share as QR Code"
-                            aria-label="Share as QR Code"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {attachedForm && regState === 'open' ? (
-                          isAuthenticated ? (
-                            <Link
-                              to={`/events/${event.id}/form`}
-                              onClick={handleEventCardNavigate}
-                              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
-                            >
-                              <span>Register</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleEventCardNavigate();
-                                navigate(`/login?redirect=${encodeURIComponent(`/events/${event.id}/form`)}`);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all"
-                            >
-                              <span>Register</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          )
-                        ) : attachedForm && regState === 'upcoming' ? (
-                          <Link
-                            to={`/events/${event.id}`}
-                            onClick={handleEventCardNavigate}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold hover:bg-amber-500/20 transition-colors"
-                            title={`Registration opens in ${calculateRemainingTime(opensAt).formatted}`}
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
-                          </Link>
-                        ) : attachedForm && regState === 'full' ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold cursor-not-allowed">
-                            <Users className="w-3.5 h-3.5" />
-                            <span>Slots Full</span>
-                          </span>
-                        ) : (
-                          <Link
-                            to={`/events/${event.id}`}
-                            onClick={handleEventCardNavigate}
-                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
-                          >
-                            <span>Details</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </Link>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Google Calendar Connect Modal ── */}
-      <AnimatePresence>
-        {showCalendarConnectModal && (
-          <motion.div
-            key="cal-connect-modal-events"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-[998] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
-            onClick={() => setShowCalendarConnectModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.94, opacity: 0, y: 16 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.94, opacity: 0, y: 16 }}
-              transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-7 space-y-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center flex-shrink-0">
-                    <CalendarPlus className="w-5 h-5 text-google-blue" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">Connect Google Account</h3>
-                    <p className="text-xs text-muted-foreground font-mono">For Google Calendar access</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowCalendarConnectModal(false)}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors"
-                >
-                  <XIcon className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="p-4 rounded-2xl bg-muted/50 border border-border space-y-2 text-sm text-muted-foreground leading-relaxed">
-                <p>Your <span className="font-semibold text-foreground">email &amp; password login is kept</span> — connecting Google only grants calendar access.</p>
-                <p>You'll be redirected to Google to approve calendar permissions. Once done, your login session will be preserved.</p>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                {calendarConnectUrl ? (
-                  <a
-                    href={calendarConnectUrl}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-google-blue text-white text-sm font-bold shadow-md hover:opacity-90 transition-opacity"
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendarConnectModal(false)}
+                    className="h-11 px-5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
                   >
-                    <CalendarPlus className="w-4 h-4" />
-                    Connect Google Calendar
-                  </a>
-                ) : (
-                  <div className="flex-1 text-xs text-muted-foreground text-center py-2.5 rounded-xl bg-muted border border-border">
-                    Could not generate connect URL. Please try again.
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowCalendarConnectModal(false)}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl border border-border text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
-                >
-                  Maybe Later
-                </button>
-              </div>
+                    Maybe Later
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
 
-      {/* QR Code Share Modal */}
-      {qrModalEvent && (
-        <EventQrModal
-          isOpen={Boolean(qrModalEvent)}
-          onClose={() => setQrModalEvent(null)}
-          eventTitle={qrModalEvent.title}
-          eventUrl={qrModalEvent.url}
-        />
-      )}
+        {/* QR Code Share Modal */}
+        {qrModalEvent && (
+          <EventQrModal
+            isOpen={Boolean(qrModalEvent)}
+            onClose={() => setQrModalEvent(null)}
+            eventTitle={qrModalEvent.title}
+            eventUrl={qrModalEvent.url}
+          />
+        )}
       </main>
+
+      <Footer />
     </div>
   );
 };
