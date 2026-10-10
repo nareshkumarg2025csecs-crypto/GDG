@@ -130,6 +130,16 @@ export const EventDetailPage: React.FC = () => {
 
   const isRegistered = Boolean(userSubmission);
 
+  const isQrEnabled = useMemo(() => {
+    const details = (event?.details || {}) as Record<string, any>;
+    if (details.send_qr_email === false) return false;
+    if (details.include_qr === false) return false;
+    if (details.email_config && details.email_config.include_qr === false) return false;
+    if (form?.schema?.include_qr === false) return false;
+    if (form?.schema?.email_config && form?.schema?.email_config.include_qr === false) return false;
+    return true;
+  }, [event, form]);
+
   const [localCalendarAdded, setLocalCalendarAdded] = useState(() => {
     return id ? localStorage.getItem(`gdg_calendar_added_${id}`) === 'true' : false;
   });
@@ -712,7 +722,9 @@ export const EventDetailPage: React.FC = () => {
                         </button>
                       )}
                       <p className="text-[11px] text-muted-foreground text-center">
-                        Includes instant check-in QR pass &amp; email confirmation
+                        {isQrEnabled
+                          ? 'Includes instant check-in QR pass & email confirmation'
+                          : 'Includes instant confirmation & official Ticket ID'}
                       </p>
                     </div>
                   )}
@@ -724,8 +736,8 @@ export const EventDetailPage: React.FC = () => {
                         onClick={() => setShowTicketModal(true)}
                         className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-google-green hover:bg-google-green/90 text-white font-semibold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
                       >
-                        <QrCode className="w-4 h-4" />
-                        <span>View Check-in Ticket Pass</span>
+                        {isQrEnabled ? <QrCode className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+                        <span>{isQrEnabled ? 'View Check-in QR Pass' : 'View Ticket Pass'}</span>
                       </button>
                       <p className="text-[11px] text-muted-foreground text-center">
                         You have secured your spot for this session

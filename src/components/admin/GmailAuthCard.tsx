@@ -232,11 +232,27 @@ export const GmailAuthCard: React.FC<GmailAuthCardProps> = ({ onQueueUpdated }) 
           {/* Quick Metrics Bar */}
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
             {data?.email && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <span className="font-semibold text-foreground">Sender:</span>
-                <span className="font-mono bg-muted px-2 py-0.5 rounded text-foreground">
-                  {data.email}
-                </span>
+                <div className="inline-flex items-center gap-2 bg-muted/80 border border-border px-2.5 py-1 rounded-full shadow-2xs">
+                  {data.senderPhoto ? (
+                    <img
+                      src={data.senderPhoto}
+                      alt={data.senderName || data.email}
+                      className="w-5 h-5 rounded-full object-cover ring-1.5 ring-google-blue"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-google-blue/15 text-google-blue flex items-center justify-center text-[10px] font-bold">
+                      {(data.senderName || data.email || 'G').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-xs font-semibold text-foreground">
+                    {data.senderName || 'GDG On Campus'}
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground hidden sm:inline">
+                    ({data.email})
+                  </span>
+                </div>
               </div>
             )}
             <div className="flex items-center gap-1.5">
