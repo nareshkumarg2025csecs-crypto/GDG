@@ -18,13 +18,12 @@ export function CRTOverlay() {
                 data-no-leet
                 data-easter-overlay="crt"
             >
-                {/* Dark CRT phosphor backing for strong contrast in light & dark theme */}
-                <div className="absolute inset-0 bg-black/35" />
+                {/* Light retro scanlines overlay without dark background */}
                 <div className="absolute inset-0 crt-power-on" />
                 <div className="absolute inset-0 crt-scanlines" />
                 <div className="absolute inset-0 crt-vignette" />
                 <div className="absolute inset-0 crt-rgb-shift" />
-                {!reducedMotion && <div className="absolute inset-0 crt-flicker" />}
+                {!reducedMotion && <div className="hidden sm:block absolute inset-0 crt-flicker" />}
             </div>
 
             <style>{`
@@ -36,35 +35,33 @@ export function CRTOverlay() {
                     background-image:
                         repeating-linear-gradient(
                             0deg,
-                            rgba(0, 0, 0, 0.08) 0px,
-                            rgba(0, 0, 0, 0.08) 1px,
-                            rgba(0, 0, 0, 0.45) 1px,
-                            rgba(0, 0, 0, 0.45) 3px
+                            transparent 0px,
+                            transparent 2px,
+                            rgba(0, 0, 0, 0.12) 2px,
+                            rgba(0, 0, 0, 0.12) 4px
                         );
-                    opacity: 0.75;
+                    opacity: 0.65;
                 }
 
                 .crt-vignette {
                     background:
-                        radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.4) 68%, rgba(0, 0, 0, 0.85) 100%);
+                        radial-gradient(circle at center, transparent 60%, rgba(0, 0, 0, 0.2) 100%);
                 }
 
                 .crt-rgb-shift {
-                    opacity: 0.16;
+                    opacity: 0.08;
                     background:
-                        linear-gradient(90deg, rgba(66, 133, 244, 0.08), transparent 22%, transparent 78%, rgba(234, 67, 53, 0.08)),
-                        linear-gradient(180deg, transparent, rgba(251, 188, 4, 0.03), transparent);
-                    mix-blend-mode: screen;
+                        linear-gradient(90deg, rgba(66, 133, 244, 0.05), transparent 22%, transparent 78%, rgba(234, 67, 53, 0.05));
                 }
 
                 .crt-flicker {
-                    background: rgba(255, 255, 255, 0.03);
-                    animation: crt-flicker 180ms steps(2) infinite;
+                    background: rgba(255, 255, 255, 0.015);
+                    animation: crt-flicker 220ms steps(2) infinite;
                 }
 
                 .crt-power-on {
-                    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.06), transparent 65%);
-                    animation: crt-glow 600ms ease-out;
+                    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.04), transparent 65%);
+                    animation: crt-glow 500ms ease-out;
                 }
 
                 @keyframes crt-power-on {
@@ -83,13 +80,19 @@ export function CRTOverlay() {
                 }
 
                 @keyframes crt-glow {
-                    0% { opacity: 0.35; }
+                    0% { opacity: 0.25; }
                     100% { opacity: 0; }
                 }
 
                 @keyframes crt-flicker {
-                    0%, 100% { opacity: 0.02; }
-                    50% { opacity: 0.045; }
+                    0%, 100% { opacity: 0.01; }
+                    50% { opacity: 0.025; }
+                }
+
+                @media (max-width: 768px) {
+                    .crt-flicker {
+                        display: none;
+                    }
                 }
 
                 @media (prefers-reduced-motion: reduce) {

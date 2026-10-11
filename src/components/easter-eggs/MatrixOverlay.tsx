@@ -28,8 +28,9 @@ export function MatrixOverlay() {
         const ctx = canvas.getContext('2d', { alpha: true })
         if (!ctx) return
 
-        const fontSize = reducedMotion ? 18 : 16
-        const targetFrameTime = reducedMotion ? 1000 / 18 : 1000 / 30
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+        const fontSize = reducedMotion ? 20 : isMobile ? 22 : 16
+        const targetFrameTime = reducedMotion ? 1000 / 18 : isMobile ? 1000 / 24 : 1000 / 35
 
         let width = 0
         let height = 0
@@ -50,7 +51,7 @@ export function MatrixOverlay() {
         }
 
         const resize = () => {
-            dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+            dpr = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5)
             width = window.innerWidth
             height = window.innerHeight
 
@@ -63,7 +64,7 @@ export function MatrixOverlay() {
             setupColumns()
         }
 
-        const trailLength = reducedMotion ? 8 : 14
+        const trailLength = reducedMotion ? 6 : isMobile ? 7 : 13
 
         const draw = (time: number) => {
             if (!running) return
@@ -93,16 +94,16 @@ export function MatrixOverlay() {
 
                     ctx.save()
                     if (t === 0) {
-                        // Leading character is brilliant white/ice with colored glow
+                        // Leading character is brilliant white/ice
                         ctx.fillStyle = '#FFFFFF'
-                        ctx.shadowBlur = 10
-                        ctx.shadowColor = colors[i]
+                        if (!isMobile) {
+                            ctx.shadowBlur = 8
+                            ctx.shadowColor = colors[i]
+                        }
                         ctx.globalAlpha = 0.95
                     } else {
                         // Trail characters fade gently in Google / Matrix colors
                         ctx.fillStyle = colors[i]
-                        ctx.shadowBlur = t < 3 ? 4 : 0
-                        ctx.shadowColor = colors[i]
                         ctx.globalAlpha = alpha * 0.85
                     }
 

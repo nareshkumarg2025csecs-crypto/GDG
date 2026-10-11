@@ -76,7 +76,7 @@ interface BayConfig {
 const GARAGE_BAYS: BayConfig[] = [
     {
         id: 'leads',
-        name: 'LEADERSHIP',
+        name: 'LEADS',
         code: '// COMMAND',
         color: '#FFFFFF',
         description: 'GDG on Campus core leadership & strategic direction',
@@ -591,8 +591,31 @@ export function TeamGarage3D() {
         return activeMembers.slice(start, start + pageSize)
     }, [activeMembers, pageIndex, pageSize])
 
+    const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || window.matchMedia?.('(pointer: coarse)').matches)
+    const containerRef = useRef<HTMLDivElement>(null)
+    const [isVisible, setIsVisible] = useState(false)
+
+    useEffect(() => {
+        const el = containerRef.current
+        if (!el || typeof IntersectionObserver === 'undefined') {
+            setIsVisible(true)
+            return
+        }
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                setIsVisible(entry.isIntersecting)
+            },
+            { rootMargin: '150px' }
+        )
+
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [])
+
     return (
         <div
+            ref={containerRef}
             className={`relative w-full h-[85vh] md:h-screen overflow-hidden select-none transition-colors duration-300 ${
                 isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
             }`}
@@ -630,11 +653,17 @@ export function TeamGarage3D() {
                 </p>
             </div>
 
-            {/* Three.js Canvas */}
+            {/* Three.js Canvas - strictly paused when off-screen */}
             <Canvas
                 camera={{ position: [0, 1.8, 8.5], fov: 48 }}
-                dpr={[1, 2]}
-                gl={{ antialias: true, alpha: false }}
+                dpr={[1, isMobile ? 1.05 : 1.35]}
+                gl={{
+                    antialias: !isMobile,
+                    alpha: false,
+                    powerPreference: 'default',
+                    depth: true,
+                }}
+                frameloop={isVisible ? 'always' : 'never'}
             >
                 <Suspense fallback={null}>
                     <CyberEnvironment isDark={isDark} />

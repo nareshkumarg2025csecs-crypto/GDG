@@ -163,7 +163,7 @@ const rawTeamRoster: RawMemberEntry[] = [
     },
     {
         name: 'Mohamed Aseel',
-        position: 'Co-Lead',
+        position: 'Lead',
         team: 'leads',
         department: 'Leads',
         codename: 'PULSE',
@@ -176,7 +176,7 @@ const rawTeamRoster: RawMemberEntry[] = [
     },
     {
         name: 'Mohith O',
-        position: 'Co-Lead',
+        position: 'Lead',
         team: 'leads',
         department: 'Leads',
         codename: 'CIPHER',
