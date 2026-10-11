@@ -31,6 +31,9 @@ export type EasterEggEffect =
     | 'leet'
     | 'party'
     | 'hacker'
+    | 'fireworks'
+    | 'snow'
+    | 'neon'
 
 export type PhysicsGravity = 'earth' | 'moon' | 'chaos'
 
@@ -49,6 +52,10 @@ interface EasterEggState {
     leetMode: boolean
     partyMode: boolean
     hackerMode: boolean
+    fireworksMode: boolean
+    snowMode: boolean
+    neonMode: boolean
+    soundEnabled: boolean
     physicsGravity: PhysicsGravity
 
     // Unlocks (persisted)
@@ -80,6 +87,10 @@ interface EasterEggActions {
     toggleParty: () => void
     toggleHacker: () => void
     setPhysicsGravity: (gravity: PhysicsGravity) => void
+
+    // Sound
+    toggleSound: () => void
+    setSoundEnabled: (enabled: boolean) => void
 
     // Modes
     unlockPhysics: () => void
@@ -113,6 +124,7 @@ const initialPersistedState: {
     leetMode: boolean
     partyMode: boolean
     hackerMode: boolean
+    soundEnabled: boolean
     physicsGravity: PhysicsGravity
 } = {
     unlocks: initialUnlocks,
@@ -122,6 +134,7 @@ const initialPersistedState: {
     leetMode: false,
     partyMode: false,
     hackerMode: false,
+    soundEnabled: true,
     physicsGravity: 'earth' as PhysicsGravity,
 }
 
@@ -144,10 +157,18 @@ export const useEasterEggStore = create<EasterEggStore>()(
             leetMode: false,
             partyMode: false,
             hackerMode: false,
+            fireworksMode: false,
+            snowMode: false,
+            neonMode: false,
+            soundEnabled: true,
             physicsGravity: 'earth',
             unlocks: initialUnlocks,
             godMode: false,
             reducedMotion: false,
+
+            // Sound actions
+            toggleSound: () => set((state) => ({ soundEnabled: !state.soundEnabled })),
+            setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
 
             // Terminal actions
             toggleTerminal: () => set((state) => ({
@@ -183,7 +204,19 @@ export const useEasterEggStore = create<EasterEggStore>()(
                 return { commandHistory: newHistory, historyIndex: -1 }
             }),
 
-            clearOutput: () => set({ terminalOutput: [] }),
+            clearOutput: () => set({
+                terminalOutput: [],
+                crtEnabled: false,
+                matrixMode: false,
+                physicsEnabled: false,
+                noclipMode: false,
+                leetMode: false,
+                partyMode: false,
+                hackerMode: false,
+                fireworksMode: false,
+                snowMode: false,
+                neonMode: false,
+            }),
 
             setHistoryIndex: (index) => set({ historyIndex: index }),
 
@@ -199,21 +232,41 @@ export const useEasterEggStore = create<EasterEggStore>()(
                     return {}
                 }
 
+                // If activating a new visual effect, close the other active effects so they don't stack
+                const clearOthers = enabled ? {
+                    crtEnabled: false,
+                    matrixMode: false,
+                    physicsEnabled: false,
+                    noclipMode: false,
+                    leetMode: false,
+                    partyMode: false,
+                    hackerMode: false,
+                    fireworksMode: false,
+                    snowMode: false,
+                    neonMode: false,
+                } : {}
+
                 switch (effect) {
                     case 'crt':
-                        return { crtEnabled: enabled }
+                        return { ...clearOthers, crtEnabled: enabled }
                     case 'matrix':
-                        return { matrixMode: enabled }
+                        return { ...clearOthers, matrixMode: enabled }
                     case 'physics':
-                        return { physicsEnabled: enabled }
+                        return { ...clearOthers, physicsEnabled: enabled }
                     case 'noclip':
-                        return { noclipMode: enabled }
+                        return { ...clearOthers, noclipMode: enabled }
                     case 'leet':
-                        return { leetMode: enabled }
+                        return { ...clearOthers, leetMode: enabled }
                     case 'party':
-                        return { partyMode: enabled }
+                        return { ...clearOthers, partyMode: enabled }
                     case 'hacker':
-                        return { hackerMode: enabled }
+                        return { ...clearOthers, hackerMode: enabled }
+                    case 'fireworks':
+                        return { ...clearOthers, fireworksMode: enabled }
+                    case 'snow':
+                        return { ...clearOthers, snowMode: enabled }
+                    case 'neon':
+                        return { ...clearOthers, neonMode: enabled }
                     default:
                         return {}
                 }
@@ -296,6 +349,9 @@ export const useEasterEggStore = create<EasterEggStore>()(
                 leetMode: false,
                 partyMode: false,
                 hackerMode: false,
+                fireworksMode: false,
+                snowMode: false,
+                neonMode: false,
                 physicsGravity: 'earth',
                 historyIndex: -1,
             }),
@@ -312,6 +368,7 @@ export const useEasterEggStore = create<EasterEggStore>()(
                 leetMode: state.leetMode,
                 partyMode: state.partyMode,
                 hackerMode: state.hackerMode,
+                soundEnabled: state.soundEnabled,
                 physicsGravity: state.physicsGravity,
             }),
             migrate: (persistedState) => {

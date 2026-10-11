@@ -1,7 +1,24 @@
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { useTheme } from '@/contexts/ThemeContext';
+import { 
+  Sparkles, 
+  MessageSquare, 
+  Heart, 
+  Terminal, 
+  RefreshCw 
+} from 'lucide-react';
+
+const PIXEL_DIALOGUES = [
+  "Meow! Remember: Great developers write code for humans, not just compilers.",
+  "Hackathon tip: Ship your MVP first, then layer on delight and animations!",
+  "Pixel conducts surprise code reviews across campus. Keep your imports clean!",
+  "Feeling stuck on a stubborn bug? Rubber-duck with me or take a 5-minute walk.",
+  "Google Cloud, Flutter, AI/ML or Web — whatever you build, GDG has your back!",
+  "Psst... Want a secret? Press `~` or tap the GDG header logo 3 times for our hacker terminal!"
+];
 
 // ---------------------------------------------------------------------------
 // Fade-up reveal helper — matches the existing project's reveal convention
@@ -23,6 +40,21 @@ const fadeUp = {
 const AboutUsPage = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+
+  const [dialogueIndex, setDialogueIndex] = useState(0);
+  const [heartCount, setHeartCount] = useState(128);
+  const [isPurring, setIsPurring] = useState(false);
+  const [activeTab, setActiveTab] = useState<'tips' | 'story'>('tips');
+
+  const handlePet = () => {
+    setHeartCount((prev) => prev + 1);
+    setIsPurring(true);
+    setTimeout(() => setIsPurring(false), 1200);
+  };
+
+  const handleNextDialogue = () => {
+    setDialogueIndex((prev) => (prev + 1) % PIXEL_DIALOGUES.length);
+  };
 
   // Derived colour tokens that respect the site's existing theme palette
   const mutedText = isDark ? 'rgba(255,255,255,0.60)' : 'rgba(31,31,31,0.68)';
@@ -248,6 +280,157 @@ const AboutUsPage = () => {
             </p>
           </motion.div>
 
+          {/* --- Native Interactive Mascot Section --- */}
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-60px' }}
+            custom={0}
+            className="p-6 sm:p-8 rounded-3xl bg-card border border-border/80 shadow-xl relative overflow-hidden my-10"
+          >
+            {/* Top Google Colors Accent Stripe */}
+            <div className="absolute top-0 left-0 right-0 h-1 flex w-full">
+              <div className="flex-1 bg-google-blue" />
+              <div className="flex-1 bg-google-red" />
+              <div className="flex-1 bg-google-yellow" />
+              <div className="flex-1 bg-google-green" />
+            </div>
+
+            <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8">
+              {/* Mascot Portrait & Interaction Center */}
+              <div className="flex flex-col items-center shrink-0">
+                <div className="relative w-40 h-52 sm:w-48 sm:h-60 bg-muted/40 rounded-2xl overflow-hidden border border-border/70 flex items-center justify-center p-3 group shadow-inner">
+                  <div className="absolute inset-0 bg-gradient-to-t from-google-yellow/20 via-transparent to-transparent pointer-events-none" />
+                  <motion.img
+                    src="/mascot.png"
+                    alt="Pixel - GDG Official Mascot Kitten"
+                    animate={isPurring ? { scale: [1, 1.06, 0.98, 1.04, 1] } : { scale: 1 }}
+                    transition={{ duration: 0.6 }}
+                    className="w-full h-full object-contain drop-shadow-md select-none"
+                  />
+                  {isPurring && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.8 }}
+                      animate={{ opacity: 1, y: -20, scale: 1.2 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute top-4 right-4 bg-google-red text-white p-1.5 rounded-full shadow-lg pointer-events-none"
+                    >
+                      <Heart className="w-4 h-4 fill-white" />
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Pet Button */}
+                <button
+                  type="button"
+                  onClick={handlePet}
+                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground text-xs font-semibold border border-border/80 transition-all cursor-pointer active:scale-95 shadow-sm"
+                  aria-label="Pet Pixel the mascot"
+                >
+                  <Heart className={`w-3.5 h-3.5 transition-colors ${isPurring ? 'text-google-red fill-google-red' : 'text-google-red'}`} />
+                  <span>{isPurring ? '*purrr*' : 'Pet Pixel'}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground ml-1">({heartCount})</span>
+                </button>
+              </div>
+
+              {/* Main Content Area */}
+              <div className="space-y-4 text-center lg:text-left flex-1 min-w-0">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold uppercase tracking-wider bg-google-blue/10 text-google-blue border border-google-blue/20">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Honorary Team Member</span>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-display font-bold text-2xl sm:text-3xl text-foreground">
+                    Pixel the GDG Kitten
+                  </h3>
+                  <p className="text-xs sm:text-sm font-mono text-muted-foreground font-semibold mt-1">
+                    Chief Morale Officer &bull; Lead Bug Hunter &bull; GDG REC Ambassador
+                  </p>
+                </div>
+
+                {/* Tabs (2 Tabs: Dev Advice & Story) */}
+                <div className="flex items-center justify-center lg:justify-start gap-1 p-1 rounded-xl bg-muted/60 border border-border/60 max-w-[210px] mx-auto lg:mx-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tips')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      activeTab === 'tips'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Dev Advice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('story')}
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      activeTab === 'story'
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Story
+                  </button>
+                </div>
+
+                {/* Tab 1: Live Interactive Advice */}
+                {activeTab === 'tips' && (
+                  <div className="space-y-3">
+                    <div className="p-4 rounded-2xl bg-muted/40 border border-border/70 relative text-left">
+                      <div className="flex items-start gap-3">
+                        <MessageSquare className="w-4 h-4 text-google-blue shrink-0 mt-0.5" />
+                        <AnimatePresence mode="wait">
+                          <motion.p
+                            key={dialogueIndex}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-xs sm:text-sm text-foreground/90 font-sans leading-relaxed min-h-[44px]"
+                          >
+                            &ldquo;{PIXEL_DIALOGUES[dialogueIndex]}&rdquo;
+                          </motion.p>
+                        </AnimatePresence>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2.5">
+                      <button
+                        type="button"
+                        onClick={handleNextDialogue}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-google-blue text-white text-xs font-semibold hover:bg-google-blue/90 transition-all cursor-pointer active:scale-95 shadow-sm"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Ask Another Tip</span>
+                      </button>
+
+                      <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-muted/60 text-muted-foreground text-xs font-mono border border-border/60">
+                        <Terminal className="w-3.5 h-3.5 text-google-green" />
+                        <span>Tip #{dialogueIndex + 1} of {PIXEL_DIALOGUES.length}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: Community Story */}
+                {activeTab === 'story' && (
+                  <div className="space-y-2 text-xs sm:text-sm leading-relaxed text-muted-foreground text-left">
+                    <p>
+                      Every great tech community has a mascot that binds them together. Dressed in official Google Developer Groups colors and sporting varsity jacket, Pixel watches over all sessions at Rajalakshmi Engineering College.
+                    </p>
+                    <p>
+                      From 24-hour hackathons to beginner coding bootcamps, Pixel reminds us that building software should be playful, collaborative, and full of curiosity.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
 
           {/* --- Closing statement --- */}
           <motion.p

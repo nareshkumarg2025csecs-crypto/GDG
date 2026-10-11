@@ -18,6 +18,8 @@ export function CRTOverlay() {
                 data-no-leet
                 data-easter-overlay="crt"
             >
+                {/* Dark CRT phosphor backing for strong contrast in light & dark theme */}
+                <div className="absolute inset-0 bg-black/35" />
                 <div className="absolute inset-0 crt-power-on" />
                 <div className="absolute inset-0 crt-scanlines" />
                 <div className="absolute inset-0 crt-vignette" />
@@ -34,17 +36,17 @@ export function CRTOverlay() {
                     background-image:
                         repeating-linear-gradient(
                             0deg,
-                            rgba(255, 255, 255, 0.02) 0px,
-                            rgba(255, 255, 255, 0.02) 1px,
-                            rgba(0, 0, 0, 0.14) 1px,
-                            rgba(0, 0, 0, 0.14) 3px
+                            rgba(0, 0, 0, 0.08) 0px,
+                            rgba(0, 0, 0, 0.08) 1px,
+                            rgba(0, 0, 0, 0.45) 1px,
+                            rgba(0, 0, 0, 0.45) 3px
                         );
-                    opacity: 0.42;
+                    opacity: 0.75;
                 }
 
                 .crt-vignette {
                     background:
-                        radial-gradient(circle at center, transparent 42%, rgba(0, 0, 0, 0.18) 72%, rgba(0, 0, 0, 0.5) 100%);
+                        radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.4) 68%, rgba(0, 0, 0, 0.85) 100%);
                 }
 
                 .crt-rgb-shift {

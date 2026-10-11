@@ -806,7 +806,26 @@ export const EventDetailPage: React.FC = () => {
                   )}
 
                   {regState === 'registered' && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/20 flex items-center gap-3">
+                        <div className="w-12 h-14 rounded-xl overflow-hidden bg-white/40 dark:bg-black/40 shrink-0 border border-google-green/30 flex items-center justify-center p-1">
+                          <img
+                            src="/mascot.png"
+                            alt="Pixel the Mascot"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-google-green flex items-center gap-1.5">
+                            <span>You're in! Registration Confirmed</span>
+                            <span>🎉</span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                            Pixel and the GDG team are excited to have you join. Your pass is ready below!
+                          </p>
+                        </div>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setShowTicketModal(true)}
@@ -816,7 +835,7 @@ export const EventDetailPage: React.FC = () => {
                         <span>{isQrEnabled ? 'View Check-in QR Pass' : 'View Ticket Pass'}</span>
                       </button>
                       <p className="text-[11px] text-muted-foreground text-center">
-                        You have secured your spot for this session
+                        Official digital pass with instant check-in verification
                       </p>
                     </div>
                   )}

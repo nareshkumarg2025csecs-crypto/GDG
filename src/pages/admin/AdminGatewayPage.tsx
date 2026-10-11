@@ -5,6 +5,7 @@ import { Shield, Lock, Mail, KeyRound, Eye, EyeOff, AlertCircle, ArrowLeft, User
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/hooks/use-toast';
+import { ENABLE_EMAIL_PASSWORD_AUTH } from '@/config/featureFlags';
 
 export const AdminGatewayPage: React.FC = () => {
   const navigate = useNavigate();
@@ -235,10 +236,16 @@ export const AdminGatewayPage: React.FC = () => {
             <span>GDG Administrator Gateway</span>
           </div>
           <h1 className="text-3xl font-extrabold text-foreground tracking-tight font-sans">
-            {mode === 'login' ? 'Admin Portal Sign In' : 'Create Admin Account'}
+            {!ENABLE_EMAIL_PASSWORD_AUTH
+              ? 'Admin Portal Access'
+              : mode === 'login'
+              ? 'Admin Portal Sign In'
+              : 'Create Admin Account'}
           </h1>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-            {mode === 'login'
+            {!ENABLE_EMAIL_PASSWORD_AUTH
+              ? 'Authenticate with your verified administrator Google account to access GDG management.'
+              : mode === 'login'
               ? 'Sign in to access event management, dynamic registration forms, and submissions.'
               : 'Register as a GDG club administrator using your secret verification code.'}
           </p>
@@ -246,42 +253,6 @@ export const AdminGatewayPage: React.FC = () => {
 
         {/* Card */}
         <div className="p-8 rounded-3xl border border-border bg-card text-card-foreground shadow-2xl space-y-6">
-          {/* Mode Switcher Tabs (Sign In vs Create Account) */}
-          <div className="grid grid-cols-2 p-1 rounded-xl bg-muted/70 border border-border/50">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setServerError(null);
-                setServerSuccess(null);
-              }}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-                mode === 'login'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5 text-google-red" />
-              <span>Sign In</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signup');
-                setServerError(null);
-                setServerSuccess(null);
-              }}
-              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-                mode === 'signup'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <User className="w-3.5 h-3.5 text-google-blue" />
-              <span>Create Account</span>
-            </button>
-          </div>
-
           <AnimatePresence>
             {serverError && (
               <motion.div
@@ -308,175 +279,249 @@ export const AdminGatewayPage: React.FC = () => {
             )}
           </AnimatePresence>
 
-          <form onSubmit={handleAdminSubmit} className="space-y-4">
-            {/* Full Name Field (Signup only) */}
-            {mode === 'signup' && (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-foreground">Full Name</label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Alex Morgan"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
+          {!ENABLE_EMAIL_PASSWORD_AUTH ? (
+            /* Single screen: Google Admin Auth Only (No Sign In vs Sign Up separation) */
+            <div className="space-y-4">
+              <button
+                type="button"
+                disabled={isGoogleLoading}
+                onClick={() => setAdminGoogleModalOpen(true)}
+                className="w-full py-3 px-4 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-sm font-semibold flex items-center justify-center gap-3 transition-all shadow-sm hover:shadow disabled:opacity-50 cursor-pointer"
+              >
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                   />
-                </div>
-              </div>
-            )}
-
-            {/* Email Field */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-foreground">Admin Email</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  placeholder="admin@gdg.community"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
-                />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>{isGoogleLoading ? 'Connecting...' : 'Sign in with REC Mail (Admin)'}</span>
+              </button>
+              <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground text-center">
+                <Shield className="w-3.5 h-3.5 text-google-red shrink-0" />
+                <span>Requires club administrator verification code</span>
               </div>
             </div>
-
-            {/* Password Field */}
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-foreground">Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
-                />
+          ) : (
+            <>
+              {/* Mode Switcher Tabs (Sign In vs Create Account) */}
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-muted/70 border border-border/50">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setMode('login');
+                    setServerError(null);
+                    setServerSuccess(null);
+                  }}
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                    mode === 'login'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <Shield className="w-3.5 h-3.5 text-google-red" />
+                  <span>Sign In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signup');
+                    setServerError(null);
+                    setServerSuccess(null);
+                  }}
+                  className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                    mode === 'signup'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5 text-google-blue" />
+                  <span>Create Account</span>
                 </button>
               </div>
-            </div>
 
-            {/* Admin Verification Code (Required for Signup) */}
-            {mode === 'signup' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-foreground">
-                    Admin Verification Code <span className="text-google-red">*</span>
-                  </label>
-                  <span className="text-[10px] text-muted-foreground font-mono">Secret Code</span>
+              <form onSubmit={handleAdminSubmit} className="space-y-4">
+                {/* Full Name Field (Signup only) */}
+                {mode === 'signup' && (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-foreground">Full Name</label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="Alex Morgan"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Email Field */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-foreground">Admin Email</label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="admin@gdg.community"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
+                    />
+                  </div>
                 </div>
-                <div className="relative">
-                  <KeyRound className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    required
-                    placeholder="Enter admin verification code"
-                    value={adminCode}
-                    onChange={(e) => setAdminCode(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red font-mono"
-                  />
+
+                {/* Password Field */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-foreground">Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Provided by club leads to authorize administrator privileges.
-                </p>
+
+                {/* Admin Verification Code (Required for Signup) */}
+                {mode === 'signup' && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-foreground">
+                        Admin Verification Code <span className="text-google-red">*</span>
+                      </label>
+                      <span className="text-[10px] text-muted-foreground font-mono">Secret Code</span>
+                    </div>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="Enter admin verification code"
+                        value={adminCode}
+                        onChange={(e) => setAdminCode(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-red/30 focus:border-google-red font-mono"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Provided by club leads to authorize administrator privileges.
+                    </p>
+                  </div>
+                )}
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white transition-all shadow-md flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                  style={{
+                    background: 'linear-gradient(135deg, #EA4335, #C5221F)',
+                    boxShadow: '0 4px 14px rgba(234, 67, 53, 0.3)',
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>{mode === 'login' ? 'Signing In as Admin...' : 'Creating Admin Account...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Shield className="w-4 h-4" />
+                      <span>{mode === 'login' ? 'Enter Admin Portal' : 'Create Admin Account'}</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* Divider */}
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-border w-full" />
+                <span className="bg-card px-3 text-[11px] font-mono text-muted-foreground uppercase">
+                  Or
+                </span>
+                <div className="border-t border-border w-full" />
               </div>
-            )}
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white transition-all shadow-md flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
-              style={{
-                background: 'linear-gradient(135deg, #EA4335, #C5221F)',
-                boxShadow: '0 4px 14px rgba(234, 67, 53, 0.3)',
-              }}
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>{mode === 'login' ? 'Signing In as Admin...' : 'Creating Admin Account...'}</span>
-                </>
-              ) : (
-                <>
-                  <Shield className="w-4 h-4" />
-                  <span>{mode === 'login' ? 'Enter Admin Portal' : 'Create Admin Account'}</span>
-                </>
-              )}
-            </button>
-          </form>
+              {/* Google Admin Login Button */}
+              <button
+                type="button"
+                disabled={isGoogleLoading}
+                onClick={() => setAdminGoogleModalOpen(true)}
+                className="w-full py-2.5 px-4 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>{isGoogleLoading ? 'Connecting...' : `Sign in with REC Mail (${mode === 'login' ? 'Sign In' : 'Sign Up'})`}</span>
+              </button>
 
-          {/* Divider */}
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-border w-full" />
-            <span className="bg-card px-3 text-[11px] font-mono text-muted-foreground uppercase">
-              Or
-            </span>
-            <div className="border-t border-border w-full" />
-          </div>
-
-          {/* Google Admin Login Button */}
-          <button
-            type="button"
-            disabled={isGoogleLoading}
-            onClick={() => setAdminGoogleModalOpen(true)}
-            className="w-full py-2.5 px-4 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span>{isGoogleLoading ? 'Connecting...' : `Continue with Google Admin (${mode === 'login' ? 'Sign In' : 'Sign Up'})`}</span>
-          </button>
-
-          {/* Toggle between Sign In & Create Account text link */}
-          <div className="text-center pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === 'login' ? 'signup' : 'login');
-                setServerError(null);
-                setServerSuccess(null);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {mode === 'login' ? (
-                <>
-                  Need to register as an administrator?{' '}
-                  <span className="font-semibold text-google-red underline">Create Admin Account</span>
-                </>
-              ) : (
-                <>
-                  Already registered as an administrator?{' '}
-                  <span className="font-semibold text-google-red underline">Sign In</span>
-                </>
-              )}
-            </button>
-          </div>
+              {/* Toggle between Sign In & Create Account text link */}
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode(mode === 'login' ? 'signup' : 'login');
+                    setServerError(null);
+                    setServerSuccess(null);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {mode === 'login' ? (
+                    <>
+                      Need to register as an administrator?{' '}
+                      <span className="font-semibold text-google-red underline">Create Admin Account</span>
+                    </>
+                  ) : (
+                    <>
+                      Already registered as an administrator?{' '}
+                      <span className="font-semibold text-google-red underline">Sign In</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
 
           <div className="pt-2 text-center border-t border-border/70">
             <Link

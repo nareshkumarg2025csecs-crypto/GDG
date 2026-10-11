@@ -1,5 +1,5 @@
 import { motion, useScroll, useMotionValueEvent, useSpring, useMotionValue, AnimatePresence, useTransform } from 'framer-motion';
-import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard, Award } from 'lucide-react';
+import { Menu, X, ExternalLink, Calendar, Sun, Moon, LogIn, LogOut, User, Shield, ChevronDown, Check, LayoutDashboard, Award, Terminal } from 'lucide-react';
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -10,7 +10,7 @@ import { usePromoBannerStore } from '@/store/promoBannerStore';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import { HeaderNotifications } from '@/components/HeaderNotifications';
 import { TOOLS_CONFIG } from '@/config/toolsConfig';
-import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
+import { ENABLE_CERTIFICATES, ENABLE_EMAIL_PASSWORD_AUTH } from '@/config/featureFlags';
 
 // --- Constants & Data ---
 
@@ -209,21 +209,23 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
     return SECTIONS.find(s => s.id === activeSection)?.color || '#4285F4';
   }, [activeSection]);
 
-  const handleLogoPointerDown = () => {
+  const handleLogoPointerDown = (e: React.PointerEvent) => {
     const now = Date.now();
-    const recentTaps = logoTapHistoryRef.current.filter((timestamp) => now - timestamp <= 4000);
+    const recentTaps = logoTapHistoryRef.current.filter((timestamp) => now - timestamp <= 3000);
     recentTaps.push(now);
     logoTapHistoryRef.current = recentTaps;
 
-    if (recentTaps.length < 7) return;
+    if (recentTaps.length < 3) return;
 
+    // Trigger terminal on 3 quick taps
+    e.preventDefault();
     logoTapHistoryRef.current = [];
     setMenuOpen(false);
     useEasterEggStore.getState().openTerminal();
     toast({
-      title: "Terminal Unlocked",
-      description: "Hidden channel open. Type 'help'.",
-      duration: 2400,
+      title: "Terminal Activated",
+      description: "Developer console is ready. Type 'help'.",
+      duration: 2500,
     });
   };
 
@@ -771,7 +773,6 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                       )}
                     </>
                   )}
-
                 </nav>
 
                 {/* User Profile, Theme Toggle & Auth Actions in Responsive Drawer */}
@@ -881,23 +882,34 @@ const Header = ({ transparent = false }: { transparent?: boolean }) => {
                         <span>Switch to {isDark ? 'Light' : 'Dark'} Mode</span>
                       </button>
 
-                      <div className="flex gap-3">
+                      {!ENABLE_EMAIL_PASSWORD_AUTH ? (
                         <Link
                           to="/login"
                           onClick={() => setMenuOpen(false)}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-card hover:bg-muted text-foreground text-sm font-semibold border border-border transition-all"
+                          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all shadow-md"
                         >
-                          <LogIn className="w-4 h-4 text-google-blue" />
-                          <span>Sign In</span>
+                          <LogIn className="w-4 h-4 text-white" />
+                          <span>Sign In / Join</span>
                         </Link>
-                        <Link
-                          to="/signup"
-                          onClick={() => setMenuOpen(false)}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all"
-                        >
-                          <span>Sign Up</span>
-                        </Link>
-                      </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <Link
+                            to="/login"
+                            onClick={() => setMenuOpen(false)}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-card hover:bg-muted text-foreground text-sm font-semibold border border-border transition-all"
+                          >
+                            <LogIn className="w-4 h-4 text-google-blue" />
+                            <span>Sign In</span>
+                          </Link>
+                          <Link
+                            to="/signup"
+                            onClick={() => setMenuOpen(false)}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-sm font-semibold transition-all"
+                          >
+                            <span>Sign Up</span>
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   )}
                 </motion.div>
