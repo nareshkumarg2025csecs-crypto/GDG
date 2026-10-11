@@ -96,13 +96,13 @@ const Footer = () => {
         <div className="grid md:grid-cols-4 gap-10 pb-16 border-b"
           style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(31,31,31,0.08)' }}>
 
-          {/* Brand description */}
+          {/* Brand description & mascot signature */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
-            className="col-span-1 md:col-span-2"
+            className="col-span-1 md:col-span-2 flex flex-col justify-between"
           >
             <p
               className="max-w-sm text-base leading-relaxed"
@@ -111,6 +111,14 @@ const Footer = () => {
               Empowering developers to learn, create, and grow together.
               Join our community and build the future with Google technologies.
             </p>
+            <div className="pt-6">
+              <img
+                src="/gdg-cat.png"
+                alt="GDG Mascot"
+                className="h-[58px] md:h-[76px] w-auto select-none pointer-events-none object-contain"
+                loading="lazy"
+              />
+            </div>
           </motion.div>
 
           {/* Navigate */}

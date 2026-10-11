@@ -1,8 +1,9 @@
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme } from '@/contexts/ThemeContext';
+import FloatingCat3D from './FloatingCat3D';
 
 // ── 2. Subtle 3D Developer Geometric Accents (Depth without Clutter) ──────
 const DevGeometricAccents = () => {
@@ -63,6 +64,14 @@ const DevGeometricAccents = () => {
                     />
                 </mesh>
             </Float>
+
+            {/* 3D Realistic GDG Cat Mascot Floating in Zero Gravity */}
+            <Suspense fallback={null}>
+                <FloatingCat3D
+                    position={[rightX - 1.25, -0.15, -2.1]}
+                    scale={isNarrow ? 0.62 : 0.88}
+                />
+            </Suspense>
 
             {/* Subtle Google Yellow accent ring */}
             <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.3}>
