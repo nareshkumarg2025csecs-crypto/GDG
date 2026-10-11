@@ -43,6 +43,8 @@ const securityConfig = {
       'http://localhost:3000',
       'http://127.0.0.1:8081',
       'http://127.0.0.1:5173',
+      'https://gdgrec.dev',
+      'https://www.gdgrec.dev',
     ];
     const raw = process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || '';
     const configured = raw
