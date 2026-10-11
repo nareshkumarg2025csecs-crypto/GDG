@@ -515,7 +515,7 @@ export const AdminEventEditorPage: React.FC = () => {
     if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost')) {
       return `${window.location.origin}/events/register?ticket=TKT-GDG8492`;
     }
-    return 'https://gdg-rec-five.vercel.app/events/register?ticket=TKT-GDG8492';
+    return 'https://gdgrec.dev/events/register?ticket=TKT-GDG8492';
   };
 
   // Helper to populate sample QR payload with attendee, form answers, and event details
