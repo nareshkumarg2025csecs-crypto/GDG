@@ -1,95 +1,13 @@
-import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Float, Environment } from '@react-three/drei';
+import { useRef, useMemo, useState, useEffect } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useTheme } from '@/contexts/ThemeContext';
-import FloatingCat3D from './FloatingCat3D';
-
-// ── 2. Subtle 3D Developer Geometric Accents (Depth without Clutter) ──────
-const DevGeometricAccents = () => {
-    const groupRef = useRef<THREE.Group>(null);
-    const ringRef = useRef<THREE.Mesh>(null);
-    const polyRef = useRef<THREE.Mesh>(null);
-    const { viewport } = useThree();
-
-    const isNarrow = viewport.width < 6;
-    const accentScale = isNarrow ? 0.6 : 1;
-    const rightX = isNarrow ? viewport.width * 0.38 : 4.2;
-    const leftX = isNarrow ? -viewport.width * 0.38 : -4.5;
-
-    useFrame((state) => {
-        const t = state.clock.elapsedTime;
-        if (groupRef.current) {
-            groupRef.current.rotation.y = t * 0.04;
-            groupRef.current.rotation.x = Math.sin(t * 0.03) * 0.05;
-        }
-        if (ringRef.current) {
-            ringRef.current.rotation.x = t * 0.08;
-            ringRef.current.rotation.y = t * 0.05;
-        }
-        if (polyRef.current) {
-            polyRef.current.rotation.x = t * 0.06;
-            polyRef.current.rotation.z = t * 0.05;
-        }
-    });
-
-    return (
-        <>
-            <group ref={groupRef} scale={[accentScale, accentScale, accentScale]}>
-                {/* Elegant glowing tech ring floating in peripheral space */}
-                <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.4}>
-                    <mesh ref={ringRef} position={[rightX, 0.8, -2.5]}>
-                        <torusGeometry args={[1.3, 0.025, 16, 64]} />
-                        <meshStandardMaterial
-                            color="#4285F4"
-                            emissive="#4285F4"
-                            emissiveIntensity={0.6}
-                            transparent
-                            opacity={0.35}
-                            wireframe
-                        />
-                    </mesh>
-                </Float>
-
-                {/* Translucent wireframe icosahedron adding futuristic developer aesthetic */}
-                <Float speed={1.8} rotationIntensity={0.3} floatIntensity={0.5}>
-                    <mesh ref={polyRef} position={[rightX + 0.6, -1.2, -3.2]}>
-                        <icosahedronGeometry args={[0.9, 1]} />
-                        <meshStandardMaterial
-                            color="#34A853"
-                            emissive="#34A853"
-                            emissiveIntensity={0.4}
-                            transparent
-                            opacity={0.25}
-                            wireframe
-                        />
-                    </mesh>
-                </Float>
-
-                {/* Subtle Google Yellow accent ring */}
-                <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.3}>
-                    <mesh position={[leftX, 1.8, -3.5]}>
-                        <ringGeometry args={[0.8, 0.82, 48]} />
-                        <meshBasicMaterial color="#FBBC04" transparent opacity={0.2} side={THREE.DoubleSide} />
-                    </mesh>
-                </Float>
-            </group>
-
-            {/* 3D Realistic GDG Cat Mascot Floating in Zero Gravity */}
-            <Suspense fallback={null}>
-                <FloatingCat3D
-                    position={[rightX - 1.25, -0.15, -2.1]}
-                    scale={isNarrow ? 0.62 : 0.88}
-                />
-            </Suspense>
-        </>
-    );
-};
 
 // ── 3. Interactive Floating Particle Constellation ─────────────────────────
 const FloatingParticles = () => {
     const particlesRef = useRef<THREE.Points>(null);
-    const count = 90;
+    const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || window.matchMedia?.('(pointer: coarse)').matches);
+    const count = isMobile ? 45 : 80;
 
     const [positions, colors] = useMemo(() => {
         const pos = new Float32Array(count * 3);
@@ -113,11 +31,12 @@ const FloatingParticles = () => {
             col[i * 3 + 2] = c[2];
         }
         return [pos, col];
-    }, []);
+    }, [count]);
 
-    useFrame((state) => {
+    useFrame((state, delta) => {
         if (particlesRef.current) {
-            particlesRef.current.rotation.y = state.clock.elapsedTime * 0.015;
+            const step = Math.min(delta, 0.05);
+            particlesRef.current.rotation.y += step * 0.04;
             particlesRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.01) * 0.02;
         }
     });
@@ -145,9 +64,7 @@ const FluidScene = () => {
     const isDark = theme === 'dark';
     return (
         <>
-            <DevGeometricAccents />
             <FloatingParticles />
-            <Environment preset={isDark ? "night" : "city"} />
             <ambientLight intensity={isDark ? 0.5 : 0.9} />
             <pointLight position={[6, 4, 4]} intensity={isDark ? 1.2 : 0.7} color="#4285F4" />
             <pointLight position={[-6, -4, 3]} intensity={isDark ? 0.8 : 0.5} color="#EA4335" />
@@ -160,6 +77,7 @@ const FluidScene = () => {
 const FluidCanvas = () => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isVisible, setIsVisible] = useState(true);
+    const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || window.matchMedia?.('(pointer: coarse)').matches);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -180,9 +98,9 @@ const FluidCanvas = () => {
         <div ref={containerRef} className="absolute inset-0 pointer-events-none">
             <Canvas
                 camera={{ position: [0, 0, 6], fov: 45 }}
-                dpr={[1, 1.5]}
+                dpr={[1, isMobile ? 1.0 : 1.25]}
                 gl={{
-                    antialias: true,
+                    antialias: !isMobile,
                     alpha: true,
                     powerPreference: "default"
                 }}

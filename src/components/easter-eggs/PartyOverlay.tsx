@@ -43,11 +43,12 @@ export function PartyOverlay() {
         let running = !document.hidden
         let lastFrame = 0
 
-        const confettiCount = reducedMotion ? 40 : 90
-        const targetFrameTime = reducedMotion ? 1000 / 24 : 1000 / 45
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+        const confettiCount = reducedMotion ? 20 : isMobile ? 32 : 65
+        const targetFrameTime = reducedMotion ? 1000 / 20 : isMobile ? 1000 / 30 : 1000 / 45
 
         const resize = () => {
-            dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+            dpr = isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 1.5)
             width = window.innerWidth
             height = window.innerHeight
 
@@ -85,12 +86,8 @@ export function PartyOverlay() {
             }
             lastFrame = time
 
+            // Clear completely for 100% transparent matrix-style background without any darks
             ctx.clearRect(0, 0, width, height)
-
-            // Gentle ambient disco wash in Google colors
-            const discoColor = GDG_COLORS[Math.floor(time / 600) % GDG_COLORS.length]
-            ctx.fillStyle = `${discoColor}14`
-            ctx.fillRect(0, 0, width, height)
 
             // Update & Render Fluttering Confetti Pieces
             for (let i = 0; i < confetti.length; i++) {
@@ -115,8 +112,6 @@ export function PartyOverlay() {
                 const scaleY = Math.cos(c.wobble)
                 ctx.scale(1, scaleY)
                 ctx.fillStyle = c.color
-                ctx.shadowBlur = 6
-                ctx.shadowColor = c.color
                 ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h)
                 ctx.restore()
             }
@@ -157,19 +152,12 @@ export function PartyOverlay() {
     if (!partyMode) return null
 
     return (
-        <>
-            {/* Deep atmospheric dark club backdrop for both light & dark theme */}
-            <div
-                className="fixed inset-0 z-[9985] pointer-events-none bg-black/60 backdrop-blur-[0.5px]"
-                data-no-leet
-            />
-            <canvas
-                ref={canvasRef}
-                className="fixed inset-0 z-[9986] pointer-events-none opacity-95"
-                data-no-leet
-                data-easter-overlay="party"
-            />
-        </>
+        <canvas
+            ref={canvasRef}
+            className="fixed inset-0 z-[9986] pointer-events-none opacity-95"
+            data-no-leet
+            data-easter-overlay="party"
+        />
     )
 }
 

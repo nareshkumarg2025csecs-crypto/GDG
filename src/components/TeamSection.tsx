@@ -42,7 +42,7 @@ interface LeadCategory {
 
 const LEAD_CATEGORIES: LeadCategory[] = [
     { id: 'all', label: 'ALL LEADS', color: '#4285F4' },
-    { id: 'leads', label: 'LEADERSHIP', color: '#4285F4' },
+    { id: 'leads', label: 'LEAD', color: '#4285F4' },
     { id: 'techops', label: 'TECH-OPS', color: '#4285F4' },
     { id: 'design', label: 'DESIGN', color: '#EA4335' },
     { id: 'media', label: 'MEDIA', color: '#FBBC04' },

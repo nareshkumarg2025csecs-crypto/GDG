@@ -39,6 +39,10 @@ export const VisualFXOverlay: React.FC = () => {
         }
         window.addEventListener('resize', handleResize)
 
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+        const targetFrameTime = reducedMotion ? 1000 / 20 : isMobile ? 1000 / 30 : 1000 / 60
+        let lastFrameTime = 0
+
         // --- Fireworks Particle Engine ---
         interface FireworkParticle {
             x: number
@@ -56,11 +60,11 @@ export const VisualFXOverlay: React.FC = () => {
         let lastRocketTime = 0
 
         const createBurst = (originX: number, originY: number) => {
-            const count = Math.min(64, Math.floor(window.innerWidth < 640 ? 40 : 70))
+            const count = isMobile ? 22 : reducedMotion ? 25 : 48
             const primaryColor = GOOGLE_COLORS[Math.floor(Math.random() * GOOGLE_COLORS.length)]
             for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2
-                const speed = Math.random() * 6.5 + 2
+                const speed = Math.random() * (isMobile ? 4.5 : 6) + 1.8
                 const color = Math.random() > 0.35 ? primaryColor : GOOGLE_COLORS[Math.floor(Math.random() * GOOGLE_COLORS.length)]
                 fireworkParticles.push({
                     x: originX,
@@ -71,8 +75,8 @@ export const VisualFXOverlay: React.FC = () => {
                     vy: Math.sin(angle) * speed,
                     alpha: 1,
                     color,
-                    size: Math.random() * 3.5 + 2.5,
-                    decay: Math.random() * 0.012 + 0.012
+                    size: Math.random() * 2.5 + (isMobile ? 1.8 : 2.2),
+                    decay: Math.random() * 0.016 + (isMobile ? 0.02 : 0.014)
                 })
             }
         }
@@ -85,16 +89,16 @@ export const VisualFXOverlay: React.FC = () => {
             density: number
             alpha: number
         }
-        const snowCount = Math.min(75, Math.floor(window.innerWidth < 640 ? 35 : 80))
+        const snowCount = reducedMotion ? 15 : isMobile ? 22 : 48
         const flakes: Snowflake[] = []
         if (snowMode) {
             for (let i = 0; i < snowCount; i++) {
                 flakes.push({
                     x: Math.random() * width,
                     y: Math.random() * height,
-                    radius: Math.random() * 3 + 1.8,
+                    radius: Math.random() * 2.5 + 1.2,
                     density: Math.random() * 1.5 + 0.5,
-                    alpha: Math.random() * 0.5 + 0.5
+                    alpha: Math.random() * 0.5 + 0.4
                 })
             }
         }
@@ -102,15 +106,23 @@ export const VisualFXOverlay: React.FC = () => {
         let snowAngle = 0
 
         const render = (now: number) => {
+            if (now - lastFrameTime < targetFrameTime) {
+                animationId = requestAnimationFrame(render)
+                return
+            }
+            lastFrameTime = now
+
+            // Completely clear canvas - transparent matrix-style overlay without any darks
             ctx.clearRect(0, 0, width, height)
 
             // --- Render Fireworks ---
             if (fireworksMode) {
-                if (now - lastRocketTime > 550) {
+                const rocketInterval = isMobile ? 850 : 600
+                if (now - lastRocketTime > rocketInterval && fireworkParticles.length < (isMobile ? 35 : 70)) {
                     const burstX = Math.random() * (width * 0.8) + width * 0.1
                     const burstY = Math.random() * (height * 0.45) + height * 0.1
                     createBurst(burstX, burstY)
-                    if (Math.random() > 0.4) {
+                    if (!isMobile && Math.random() > 0.5) {
                         createBurst(
                             Math.random() * (width * 0.8) + width * 0.1,
                             Math.random() * (height * 0.45) + height * 0.1
@@ -136,13 +148,15 @@ export const VisualFXOverlay: React.FC = () => {
 
                     ctx.save()
                     ctx.globalAlpha = Math.max(0, p.alpha)
-                    ctx.shadowBlur = 10
-                    ctx.shadowColor = p.color
+                    if (!isMobile) {
+                        ctx.shadowBlur = 6
+                        ctx.shadowColor = p.color
+                    }
                     ctx.fillStyle = p.color
                     ctx.strokeStyle = p.color
 
                     // Spark trail
-                    ctx.lineWidth = p.size * 0.7
+                    ctx.lineWidth = p.size * 0.6
                     ctx.beginPath()
                     ctx.moveTo(p.prevX, p.prevY)
                     ctx.lineTo(p.x, p.y)
@@ -162,8 +176,8 @@ export const VisualFXOverlay: React.FC = () => {
 
                 for (let i = 0; i < flakes.length; i++) {
                     const f = flakes[i]
-                    f.y += Math.cos(snowAngle + f.density) + 1.2 + f.radius / 2
-                    f.x += Math.sin(snowAngle) * 0.9
+                    f.y += Math.cos(snowAngle + f.density) + 1.1 + f.radius / 2
+                    f.x += Math.sin(snowAngle) * 0.8
 
                     if (f.y > height) {
                         f.y = -10
@@ -174,8 +188,10 @@ export const VisualFXOverlay: React.FC = () => {
 
                     ctx.save()
                     ctx.globalAlpha = f.alpha
-                    ctx.shadowBlur = 6
-                    ctx.shadowColor = 'rgba(255, 255, 255, 0.8)'
+                    if (!isMobile) {
+                        ctx.shadowBlur = 4
+                        ctx.shadowColor = 'rgba(255, 255, 255, 0.7)'
+                    }
                     ctx.fillStyle = '#ffffff'
                     ctx.beginPath()
                     ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2)
@@ -197,14 +213,6 @@ export const VisualFXOverlay: React.FC = () => {
 
     return (
         <>
-            {/* Atmospheric dark backdrop ensuring fireworks and snow are intensely visible in both light & dark themes */}
-            {(fireworksMode || snowMode) && (
-                <div
-                    className="fixed inset-0 pointer-events-none z-[9988] bg-black/60 backdrop-blur-[0.5px] transition-opacity duration-300"
-                    data-no-leet
-                />
-            )}
-
             {(fireworksMode || snowMode) && (
                 <canvas
                     ref={canvasRef}
