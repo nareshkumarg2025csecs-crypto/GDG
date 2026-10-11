@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#071019" />
+    <title>Open the Next Chapter — GDG on Campus REC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="launch.css" />
+  </head>
+  <body>
+    <canvas id="sky" aria-hidden="true"></canvas>
+    <div class="ambient ambient-a" aria-hidden="true"></div><div class="ambient ambient-b" aria-hidden="true"></div>
+    <main class="shell">
+      <header>
+        <div class="chapter"><span class="logo-dots"><i></i><i></i><i></i><i></i></span><span><b>GDG ON CAMPUS</b><small>RAJALAKSHMI ENGINEERING COLLEGE</small></span></div>
+        <div class="ready"><i></i><span id="status">SIGNAL READY</span></div>
+      </header>
+      <section class="center">
+        <p class="kicker">A NEW DIGITAL HOME <span></span> 2026</p>
+        <h1>THE DOOR TO<br /><em>TOMORROW</em></h1>
+        <p class="intro">One tap marks the start of a more connected, more creative chapter for our developer community.</p>
+        <div class="launch-zone" id="launchZone">
+          <div class="ray ray-1"></div><div class="ray ray-2"></div><div class="ray ray-3"></div>
+          <div class="orbital orbital-one"><i></i><i></i><i></i><i></i></div>
+          <div class="orbital orbital-two"></div>
+          <svg class="arc" viewBox="0 0 240 240" aria-hidden="true"><circle cx="120" cy="120" r="106"/><circle id="chargeArc" cx="120" cy="120" r="106"/></svg>
+          <button id="openButton" class="open-button" type="button" aria-label="Open the website">
+            <span class="open-icon"><b>&lt;</b><b>/</b><b>&gt;</b></span>
+            <strong id="buttonText">OPEN</strong><small>THE NEXT CHAPTER</small>
+          </button>
+        </div>
+        <p class="key-hint">PRESS <kbd>SPACE</kbd> TO OPEN</p>
+      </section>
+      <footer><span>GDG ON CAMPUS REC</span><span>BUILD · LEARN · BELONG</span></footer>
+    </main>
+    <section class="destination" id="destination" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="destination-card">
+        <p>THE DOOR IS OPEN</p><h2>WELCOME<br />IN.</h2>
+        <a id="goLink" href="https://gdgrec.dev">gdgrec.dev <span>↗</span></a>
+        <div class="countdown"><span>REDIRECTING IN <b id="seconds">5</b>S</span><i><b id="timer"></b></i></div>
+        <button id="again" type="button">REPLAY CEREMONY</button>
+      </div>
+    </section>
+    <script src="launch.js"></script>
+  </body>
+</html>

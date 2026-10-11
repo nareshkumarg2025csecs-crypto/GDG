@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080b10" />
+    <title>Launch Control — GDG on Campus REC</title>
+    <meta name="description" content="The official launch control for GDG on Campus REC." />
+    <link rel="icon" type="image/png" href="assets/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="stars" aria-hidden="true"></canvas>
+    <canvas id="celebration" aria-hidden="true"></canvas>
+    <div class="grain" aria-hidden="true"></div>
+    <main class="launchpad" id="launchpad">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="GDG on Campus REC launch control">
+          <span class="brand-icon"><img src="assets/gdg-logo-icon.png" alt="" /></span>
+          <span><strong>GDG ON CAMPUS</strong><small>RAJALAKSHMI ENGINEERING COLLEGE</small></span>
+        </a>
+        <div class="system-status" aria-live="polite"><span class="status-light"></span><span id="systemText">ALL SYSTEMS READY</span></div>
+        <div class="controls">
+          <button class="icon-button" id="soundButton" type="button" aria-label="Mute launch sound" title="Sound (M)"><svg id="soundOn" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Zm12.5 2a4.5 4.5 0 0 0-2-3.74v7.48A4.5 4.5 0 0 0 16.5 12Zm0-8.14v2.2a6.5 6.5 0 0 1 0 11.88v2.2a8.5 8.5 0 0 0 0-16.28Z" /></svg><svg id="soundOff" hidden viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Zm12.6 2 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4-2.7-2.7Z" /></svg></button>
+          <button class="icon-button" id="fullscreenButton" type="button" aria-label="Enter fullscreen" title="Fullscreen (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4" /></svg></button>
+        </div>
+      </header>
+      <section class="hero" aria-labelledby="launchTitle">
+        <div class="eyebrow reveal-item"><i></i> THE NEXT CHAPTER IS STANDING BY</div>
+        <h1 id="launchTitle" class="reveal-item">MAKE THE<br /><span>MOMENT</span> LIVE.</h1>
+        <p class="hero-copy reveal-item">A new home for the curious, the builders, and the beautifully relentless.</p>
+        <div class="launch-module reveal-item" id="launchModule">
+          <div class="orbit orbit-one" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="orbit orbit-two" aria-hidden="true"></div><div class="pulse pulse-one" aria-hidden="true"></div><div class="pulse pulse-two" aria-hidden="true"></div>
+          <svg class="progress-ring" viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="138" /><circle id="progress" cx="150" cy="150" r="138" /></svg>
+          <button type="button" class="launch-button" id="launchButton" aria-describedby="launchHint"><span class="button-shine" aria-hidden="true"></span><span class="button-mark"><b>&lt;</b><em>/</em><b>&gt;</b></span><strong id="buttonLabel">LAUNCH</strong><small id="launchHint">TAP TO IGNITE</small></button>
+        </div>
+        <div class="launch-meta reveal-item"><div><span>MISSION</span><strong>01 / WEBSITE INAUGURATION</strong></div><div><span>ACCESS</span><strong>OPEN TO EVERYONE</strong></div><div><span>COMMAND</span><strong>SPACE / ENTER</strong></div></div>
+      </section>
+      <footer><span>© 2026 GDG ON CAMPUS REC</span><span class="footer-message">DESIGNED FOR WHAT'S NEXT <i></i></span></footer>
+    </main>
+    <section class="reveal" id="reveal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="liveTitle">
+      <div class="reveal-grid" aria-hidden="true"></div>
+      <div class="live-card"><div class="live-check"><svg viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7" /></svg></div><p class="live-eyebrow">THE COUNTDOWN IS OVER</p><h2 id="liveTitle">WE ARE<br /><span>LIVE.</span></h2><p class="live-copy">The digital home of GDG on Campus REC is ready to be explored.</p><a class="site-link" id="enterLink" href="https://gdgrec.dev"><span>gdgrec.dev</span><svg viewBox="0 0 24 24"><path d="M5 12h13M14 6l6 6-6 6" /></svg></a><div class="redirect"><span>ENTERING IN <b id="countdown">5</b> SECONDS</span><div><i id="timerFill"></i></div></div><button type="button" class="replay" id="replayButton">REPLAY LAUNCH</button></div>
+    </section>
+    <script src="script.js"></script>
+  </body>
+</html>
