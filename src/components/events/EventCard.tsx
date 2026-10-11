@@ -75,18 +75,39 @@ export const EventCard: React.FC<EventCardProps> = ({
       : `${startCountdown.minutes}m`
     : '';
 
+  // Effective registration deadline (with fallbacks to event deadline or start time)
+  const registrationDeadline = attachedForm
+    ? attachedForm.expires_at ||
+      attachedForm.schema?.expires_at ||
+      details.registration_deadline ||
+      details.startTime ||
+      details.start_time
+    : null;
+
   const opensAt = attachedForm?.opens_at || attachedForm?.schema?.opens_at;
   const regState = attachedForm
     ? getEventRegistrationState({
         isRegistered,
         isOpen: attachedForm.schema?.is_open !== false && details.is_registration_open !== false,
         opensAt,
-        expiresAt: attachedForm.expires_at || attachedForm.schema?.expires_at,
+        expiresAt: registrationDeadline,
         isFull: attachedForm.is_full,
         submissionLimit: attachedForm.submission_limit || attachedForm.schema?.submission_limit,
         submissionCount: attachedForm.submission_count,
       })
     : 'hidden';
+
+  // Registration close countdown (when form is included & open)
+  const closeDateObj = registrationDeadline ? parseEventDate(registrationDeadline) : null;
+  const isClosingUpcoming = attachedForm && regState === 'open' && !isEnded && closeDateObj ? closeDateObj.getTime() > Date.now() : false;
+  const closeCountdown = isClosingUpcoming ? calculateRemainingTime(registrationDeadline) : null;
+  const formattedCloseCountdown = closeCountdown && !closeCountdown.isPast
+    ? closeCountdown.days > 0
+      ? `${closeCountdown.days}d ${closeCountdown.hours}h`
+      : closeCountdown.hours > 0
+      ? `${closeCountdown.hours}h ${closeCountdown.minutes}m`
+      : `${closeCountdown.minutes}m`
+    : '';
 
   const accentColor = details.theme_color || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
   const banner = details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image;
@@ -207,12 +228,21 @@ export const EventCard: React.FC<EventCardProps> = ({
             </span>
           ) : <div />}
 
-          {isUpcomingStart && formattedCountdown && (
+          {/* Timer logic:
+              - If form included and open: show 'Closes in' timer
+              - After form closes or if form not included: show 'Starts in' timer if event upcoming
+          */}
+          {attachedForm && regState === 'open' && formattedCloseCountdown ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-black/80 backdrop-blur-md text-white border border-amber-500/40 shadow-xs">
+              <Timer className="w-3 h-3 text-amber-400 animate-pulse shrink-0" />
+              <span>Closes in {formattedCloseCountdown}</span>
+            </span>
+          ) : isUpcomingStart && formattedCountdown ? (
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-black/80 backdrop-blur-md text-white border border-google-blue/40 shadow-xs">
               <Timer className="w-3 h-3 text-google-yellow animate-pulse shrink-0" />
               <span>Starts in {formattedCountdown}</span>
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 

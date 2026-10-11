@@ -477,8 +477,8 @@ export const EventLaunchSpotlight: React.FC = () => {
       icon: Clock,
     },
     new_release: {
-      tag: 'Registration Open',
-      headline: 'Event Registration Open',
+      tag: promo.form ? 'Registration Open' : 'Featured Event',
+      headline: promo.form ? 'Event Registration Open' : 'Featured Event',
       subhead: eventSnippet || `Scheduled for ${formattedDate} at ${locationText}.`,
       badgePill: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/70 border-blue-200 dark:border-blue-900',
       accentColor: details?.theme_color || '#2563EB',
@@ -614,7 +614,15 @@ export const EventLaunchSpotlight: React.FC = () => {
                     onClick={handleCtaClick}
                     className={`px-4 py-1.5 rounded-xl font-bold text-xs shadow-md transition-all duration-200 flex items-center gap-1.5 group hover:scale-105 active:scale-95 ${tierConfig.buttonBg}`}
                   >
-                    <span>View Event</span>
+                    <span>
+                      {promo.form
+                        ? tier === 'slots_low'
+                          ? 'Register Now'
+                          : tier === 'closing_soon'
+                          ? 'Complete Registration'
+                          : 'Register Now'
+                        : 'View Event'}
+                    </span>
                     <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
                   </button>
 
@@ -695,7 +703,7 @@ export const EventLaunchSpotlight: React.FC = () => {
                     onClick={handleCtaClick}
                     className={`px-3 py-1.5 rounded-lg font-bold text-[11px] shadow-sm flex items-center gap-1 shrink-0 active:scale-95 transition-all ${tierConfig.buttonBg}`}
                   >
-                    <span>View</span>
+                    <span>{promo.form ? 'Register' : 'View Event'}</span>
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
@@ -897,7 +905,7 @@ export const EventLaunchSpotlight: React.FC = () => {
                     <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-700 dark:text-zinc-300 font-medium">
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center gap-2">
                         <Zap className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="truncate">Registration Open</span>
+                        <span className="truncate">{promo.form ? 'Registration Open' : 'Featured Event'}</span>
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center gap-2">
                         <Code2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -915,11 +923,13 @@ export const EventLaunchSpotlight: React.FC = () => {
                     className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm shadow-md transition-all duration-200 flex items-center justify-center gap-2 group ${tierConfig.buttonBg}`}
                   >
                     <span>
-                      {tier === 'slots_low'
-                        ? 'Register Now'
-                        : tier === 'closing_soon'
-                        ? 'Complete Registration'
-                        : 'View Event & Register'}
+                      {promo.form
+                        ? tier === 'slots_low'
+                          ? 'Register Now'
+                          : tier === 'closing_soon'
+                          ? 'Complete Registration'
+                          : 'View Event & Register'
+                        : 'View Event'}
                     </span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                   </button>
@@ -1049,7 +1059,7 @@ export const EventLaunchSpotlight: React.FC = () => {
                     <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-center gap-2">
                       <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                       <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
-                        Registration open for this event
+                        {promo.form ? 'Registration open for this event' : 'Featured GDG campus event'}
                       </p>
                     </div>
                   )}
@@ -1064,11 +1074,13 @@ export const EventLaunchSpotlight: React.FC = () => {
                   className={`w-full h-12 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 ${tierConfig.buttonBg}`}
                 >
                   <span>
-                    {tier === 'slots_low'
-                      ? 'Register Now'
-                      : tier === 'closing_soon'
-                      ? 'Complete Registration'
-                      : 'View Event & Register'}
+                    {promo.form
+                      ? tier === 'slots_low'
+                        ? 'Register Now'
+                        : tier === 'closing_soon'
+                        ? 'Complete Registration'
+                        : 'View Event & Register'
+                      : 'View Event'}
                   </span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
