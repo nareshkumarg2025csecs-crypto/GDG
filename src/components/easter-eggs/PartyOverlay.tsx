@@ -7,6 +7,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useEasterEggStore } from '@/store/easterEggStore'
+import { ENABLE_PARTY_MODE } from '@/config/featureFlags'
 
 const GDG_COLORS = ['#4285F4', '#EA4335', '#FBBC04', '#34A853', '#A855F7', '#FF3D00']
 
@@ -27,9 +28,10 @@ interface ConfettiPiece {
 export function PartyOverlay() {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const { partyMode, reducedMotion } = useEasterEggStore()
+    const isPartyActive = ENABLE_PARTY_MODE || partyMode
 
     useEffect(() => {
-        if (!partyMode || !canvasRef.current) return
+        if (!isPartyActive || !canvasRef.current) return
 
         const canvas = canvasRef.current
         const ctx = canvas.getContext('2d', { alpha: true })
@@ -147,9 +149,9 @@ export function PartyOverlay() {
                 window.cancelAnimationFrame(rafId)
             }
         }
-    }, [partyMode, reducedMotion])
+    }, [isPartyActive, reducedMotion])
 
-    if (!partyMode) return null
+    if (!isPartyActive) return null
 
     return (
         <canvas

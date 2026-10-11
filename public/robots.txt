@@ -1,14 +1,74 @@
+# https://www.robotstxt.org/robotstxt.html
+# Robots.txt for Google Developer Groups Community Portal
+
+# -------------------------------------------------------------
+# Standard Search Engine Crawlers
+# -------------------------------------------------------------
 User-agent: Googlebot
+User-agent: Googlebot-Image
+User-agent: Googlebot-Mobile
 Allow: /
 
 User-agent: Bingbot
+User-agent: Slurp
+User-agent: DuckDuckBot
+User-agent: Baiduspider
+User-agent: YandexBot
 Allow: /
 
-User-agent: Twitterbot
+# -------------------------------------------------------------
+# AI Search & Retrieval Bots (SearchGPT, ChatGPT, Perplexity, Claude, Gemini, etc.)
+# Explicitly allowed to fetch, read, and cite website content
+# -------------------------------------------------------------
+
+# OpenAI (SearchGPT, ChatGPT Live Browsing & Training)
+User-agent: GPTBot
+User-agent: ChatGPT-User
+User-agent: OAI-SearchBot
 Allow: /
 
-User-agent: facebookexternalhit
+# Google Gemini & Extended AI
+User-agent: Google-Extended
+User-agent: GoogleOther
 Allow: /
 
+# Perplexity AI Search Engine
+User-agent: PerplexityBot
+Allow: /
+
+# Anthropic Claude & Claude Web
+User-agent: ClaudeBot
+User-agent: Claude-Web
+User-agent: anthropic-ai
+Allow: /
+
+# Apple Intelligence
+User-agent: Applebot
+User-agent: Applebot-Extended
+Allow: /
+
+# Meta AI & Llama
+User-agent: Meta-ExternalAgent
+User-agent: FacebookBot
+Allow: /
+
+# Other AI Knowledge Engines
+User-agent: Cohere-ai
+User-agent: Diffbot
+Allow: /
+
+# -------------------------------------------------------------
+# Disallow sensitive / private paths for all crawlers
+# -------------------------------------------------------------
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /auth/callback
+Disallow: /api/
+
+# -------------------------------------------------------------
+# Sitemap Location
+# -------------------------------------------------------------
+Sitemap: https://gdgrec.dev/sitemap.xml

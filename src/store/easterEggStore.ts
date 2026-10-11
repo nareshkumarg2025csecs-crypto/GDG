@@ -107,7 +107,7 @@ type EasterEggStore = EasterEggState & EasterEggActions
 
 const MAX_HISTORY = 100
 const MAX_OUTPUT = 200
-const STORE_VERSION = 2
+const STORE_VERSION = 3
 
 const initialUnlocks: Unlocks = {
     matrix: false,
@@ -132,7 +132,7 @@ const initialPersistedState: {
     commandHistory: [],
     crtEnabled: false,
     leetMode: false,
-    partyMode: false,
+    partyMode: true,
     hackerMode: false,
     soundEnabled: true,
     physicsGravity: 'earth' as PhysicsGravity,
@@ -155,7 +155,7 @@ export const useEasterEggStore = create<EasterEggStore>()(
             physicsEnabled: false,
             noclipMode: false,
             leetMode: false,
-            partyMode: false,
+            partyMode: true,
             hackerMode: false,
             fireworksMode: false,
             snowMode: false,
@@ -371,9 +371,12 @@ export const useEasterEggStore = create<EasterEggStore>()(
                 soundEnabled: state.soundEnabled,
                 physicsGravity: state.physicsGravity,
             }),
-            migrate: (persistedState) => {
+            migrate: (persistedState, version) => {
                 if (!persistedState || typeof persistedState !== 'object') {
-                    return initialPersistedState
+                    return {
+                        ...initialPersistedState,
+                        partyMode: true,
+                    }
                 }
 
                 const state = persistedState as Partial<typeof initialPersistedState> & {
@@ -384,6 +387,7 @@ export const useEasterEggStore = create<EasterEggStore>()(
                 return {
                     ...initialPersistedState,
                     ...state,
+                    partyMode: version < 3 ? true : (state.partyMode ?? true),
                     unlocks: {
                         ...initialUnlocks,
                         ...(state.unlocks ?? {}),
