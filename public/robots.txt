@@ -71,4 +71,4 @@ Disallow: /api/
 # -------------------------------------------------------------
 # Sitemap Location
 # -------------------------------------------------------------
-Sitemap: https://gdgrec.dev/sitemap.xml
+Sitemap: https://www.gdgrec.dev/sitemap.xml
