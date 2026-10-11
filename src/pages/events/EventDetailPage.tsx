@@ -186,6 +186,19 @@ export const EventDetailPage: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Effective registration deadline (with fallbacks to event deadline or start time)
+  const registrationDeadline = useMemo(() => {
+    if (!form) return null;
+    return (
+      form.expires_at ||
+      form.schema?.expires_at ||
+      details.registration_deadline ||
+      details.startTime ||
+      details.start_time ||
+      null
+    );
+  }, [form, details]);
+
   const regState = useMemo(() => {
     if (!form) return 'hidden';
     const opensAt = form.opens_at || form.schema?.opens_at;
@@ -193,13 +206,13 @@ export const EventDetailPage: React.FC = () => {
       isRegistered,
       isOpen: form.schema?.is_open !== false && details.is_registration_open !== false,
       opensAt,
-      expiresAt: form.expires_at || form.schema?.expires_at,
+      expiresAt: registrationDeadline,
       isFull: form.is_full,
       submissionLimit: form.submission_limit ?? form.schema?.submission_limit,
       submissionCount: form.submission_count,
       now,
     });
-  }, [form, isRegistered, details, now]);
+  }, [form, isRegistered, details, registrationDeadline, now]);
 
   const handleAddToCalendar = async () => {
     if (!isAuthenticated) {
@@ -306,6 +319,26 @@ export const EventDetailPage: React.FC = () => {
     const seconds = totalSeconds % 60;
     return { days, hours, minutes, seconds, totalSeconds };
   }, [eventStartTime, isUpcomingStart, now]);
+
+  // Registration close deadline & live countdown (when form is included)
+  const regCloseTime = useMemo(() => {
+    if (!registrationDeadline) return null;
+    return parseEventDate(registrationDeadline);
+  }, [registrationDeadline]);
+
+  const isRegOpen = Boolean(form && regState === 'open' && !eventEnded);
+
+  const regCloseCountdown = useMemo(() => {
+    if (!form || !isRegOpen || !regCloseTime) return null;
+    if (now >= regCloseTime) return null;
+    const diffMs = Math.max(0, regCloseTime.getTime() - now.getTime());
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return { days, hours, minutes, seconds, totalSeconds };
+  }, [form, isRegOpen, regCloseTime, now]);
 
   // Show Added to Calendar badge only while event hasn't ended
   const showCalendarAddedBadge = calendarAdded && !eventEnded;
@@ -499,8 +532,51 @@ export const EventDetailPage: React.FC = () => {
                 {event.title}
               </h1>
 
-              {/* Live Countdown to Event Start */}
-              {isUpcomingStart && startCountdown && (
+              {/* Timer logic:
+                  - If form is included and registration is open: show 'Registration Closes In' ticker
+                  - After form is closed (or if form is not included): show 'Event Starts In' ticker if event is upcoming
+              */}
+              {form && isRegOpen && regCloseCountdown && regCloseCountdown.totalSeconds > 0 ? (
+                /* Registration Closes In Live Ticker */
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-card to-amber-500/5 border border-amber-500/20 shadow-xs">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      <Timer className="w-3.5 h-3.5" />
+                      <span>Registration Closes In</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-muted-foreground uppercase">Live Ticker</span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2 sm:gap-3 text-center">
+                    <div className="p-2 sm:p-3 rounded-xl bg-card border border-border/80 shadow-2xs">
+                      <span className="block text-xl sm:text-2xl md:text-3xl font-mono font-black text-foreground tabular-nums">
+                        {regCloseCountdown.days}
+                      </span>
+                      <span className="block text-[10px] font-mono text-muted-foreground uppercase">Days</span>
+                    </div>
+                    <div className="p-2 sm:p-3 rounded-xl bg-card border border-border/80 shadow-2xs">
+                      <span className="block text-xl sm:text-2xl md:text-3xl font-mono font-black text-foreground tabular-nums">
+                        {String(regCloseCountdown.hours).padStart(2, '0')}
+                      </span>
+                      <span className="block text-[10px] font-mono text-muted-foreground uppercase">Hours</span>
+                    </div>
+                    <div className="p-2 sm:p-3 rounded-xl bg-card border border-border/80 shadow-2xs">
+                      <span className="block text-xl sm:text-2xl md:text-3xl font-mono font-black text-foreground tabular-nums">
+                        {String(regCloseCountdown.minutes).padStart(2, '0')}
+                      </span>
+                      <span className="block text-[10px] font-mono text-muted-foreground uppercase">Mins</span>
+                    </div>
+                    <div className="p-2 sm:p-3 rounded-xl bg-card border border-border/80 shadow-2xs">
+                      <span className="block text-xl sm:text-2xl md:text-3xl font-mono font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                        {String(regCloseCountdown.seconds).padStart(2, '0')}
+                      </span>
+                      <span className="block text-[10px] font-mono text-muted-foreground uppercase">Secs</span>
+                    </div>
+                  </div>
+                </div>
+              ) : isUpcomingStart && startCountdown ? (
+                /* Registration Closed or No Form -> Event Starts In Live Ticker */
                 <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-google-blue/10 via-card to-google-blue/5 border border-google-blue/20 shadow-xs">
                   <div className="flex items-center justify-between mb-2.5">
                     <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-google-blue">
@@ -538,7 +614,7 @@ export const EventDetailPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {isLiveNow && (
                 <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/30 flex items-center gap-2.5 text-google-green">
@@ -730,7 +806,26 @@ export const EventDetailPage: React.FC = () => {
                   )}
 
                   {regState === 'registered' && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
+                      <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/20 flex items-center gap-3">
+                        <div className="w-12 h-14 rounded-xl overflow-hidden bg-white/40 dark:bg-black/40 shrink-0 border border-google-green/30 flex items-center justify-center p-1">
+                          <img
+                            src="/mascot.png"
+                            alt="Pixel the Mascot"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-google-green flex items-center gap-1.5">
+                            <span>You're in! Registration Confirmed</span>
+                            <span>🎉</span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                            Pixel and the GDG team are excited to have you join. Your pass is ready below!
+                          </p>
+                        </div>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setShowTicketModal(true)}
@@ -740,7 +835,7 @@ export const EventDetailPage: React.FC = () => {
                         <span>{isQrEnabled ? 'View Check-in QR Pass' : 'View Ticket Pass'}</span>
                       </button>
                       <p className="text-[11px] text-muted-foreground text-center">
-                        You have secured your spot for this session
+                        Official digital pass with instant check-in verification
                       </p>
                     </div>
                   )}

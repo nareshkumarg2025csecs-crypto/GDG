@@ -367,22 +367,41 @@ export const EventsPage: React.FC = () => {
           {isLoading ? (
             <EventSkeletons count={6} />
           ) : filteredEvents.length === 0 ? (
-            <div className="text-center py-20 px-4 border border-dashed border-border rounded-3xl bg-card/40 max-w-xl mx-auto">
-              <div className="w-14 h-14 rounded-2xl bg-muted/80 flex items-center justify-center mx-auto mb-4 border border-border">
-                <Calendar className="w-7 h-7 text-muted-foreground" />
+            <div className="text-center py-16 px-6 border border-border/80 rounded-3xl bg-card/60 backdrop-blur-sm max-w-lg mx-auto shadow-xl relative overflow-hidden">
+              {/* Top Google Colors Accent Stripe */}
+              <div className="absolute top-0 left-0 right-0 h-1 flex w-full">
+                <div className="flex-1 bg-google-blue" />
+                <div className="flex-1 bg-google-red" />
+                <div className="flex-1 bg-google-yellow" />
+                <div className="flex-1 bg-google-green" />
               </div>
+
+              {/* Mascot Portrait */}
+              <div className="relative mx-auto w-32 h-40 sm:w-36 sm:h-44 flex items-center justify-center mb-4">
+                <div className="absolute inset-0 bg-gradient-to-t from-google-yellow/20 to-transparent rounded-full blur-lg pointer-events-none" />
+                <img
+                  src="/mascot.png"
+                  alt="Pixel the Mascot"
+                  className="relative z-10 w-full h-full object-contain drop-shadow-md select-none"
+                />
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-google-yellow/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 mb-2">
+                <span>🐾 Pixel Searched Everywhere</span>
+              </div>
+
               <h3 className="text-xl font-display font-bold text-foreground">
                 No events found
               </h3>
-              <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
                 {searchQuery || selectedCategory !== 'all' || timeframe !== 'upcoming'
-                  ? 'No sessions match your active filters or search query.'
-                  : 'There are currently no sessions scheduled in this section.'}
+                  ? 'No sessions match your active filters or search terms. Try clearing them to see all events.'
+                  : 'There are currently no sessions scheduled in this section. Check back soon!'}
               </p>
               <button
                 type="button"
                 onClick={handleResetFilters}
-                className="mt-6 inline-flex items-center gap-2 h-11 px-5 rounded-xl bg-foreground text-background text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+                className="mt-6 inline-flex items-center gap-2 h-11 px-6 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold transition-all cursor-pointer shadow-md active:scale-95"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset All Filters</span>

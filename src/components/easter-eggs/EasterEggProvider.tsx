@@ -19,6 +19,7 @@ import { MatrixOverlay } from './MatrixOverlay'
 import { PartyOverlay } from './PartyOverlay'
 import { LeetProvider } from './LeetProvider'
 import { HackerOverlay } from './HackerOverlay'
+import { VisualFXOverlay } from './VisualFXOverlay'
 
 interface EasterEggProviderProps {
     children: React.ReactNode
@@ -53,6 +54,7 @@ export function EasterEggProvider({ children }: EasterEggProviderProps) {
                 <MatrixOverlay />
                 <PartyOverlay />
                 <HackerOverlay />
+                <VisualFXOverlay />
             </div>
 
             {children}

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowUp, Linkedin, Instagram, Youtube } from 'lucide-react';
+import { ArrowUp, Linkedin, Instagram, Youtube, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { TOOLS_CONFIG } from '@/config/toolsConfig';
@@ -13,9 +13,10 @@ const BRAND_LETTERS = [
 const GOOGLE_STRIPE = ['#4285F4', '#EA4335', '#FBBC04', '#34A853'];
 
 const socialLinks = [
-  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/showcase/google-developer-groups/about/',           hoverColor: '#0A66C2' },
-  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/',                                          hoverColor: '#E1306C' },
-  { name: 'YouTube',   icon: Youtube,   href: 'https://youtube.com/@gdgrec?si=q6AanONH9r7qxSCm',                           hoverColor: '#FF0000' },
+  { name: 'LinkedIn',  icon: Linkedin,  href: 'https://www.linkedin.com/showcase/google-developer-groups/about/', hoverColor: '#0A66C2' },
+  { name: 'Instagram', icon: Instagram, href: 'https://www.instagram.com/gdgrec/',                                hoverColor: '#E1306C' },
+  { name: 'YouTube',   icon: Youtube,   href: 'https://youtube.com/@gdgrec?si=q6AanONH9r7qxSCm',                 hoverColor: '#FF0000' },
+  { name: 'Email',     icon: Mail,      href: 'mailto:gdg@rajalakshmi.edu.in',                                    hoverColor: '#EA4335' },
 ];
 
 const navLinks = [
@@ -96,13 +97,13 @@ const Footer = () => {
         <div className="grid md:grid-cols-4 gap-10 pb-16 border-b"
           style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(31,31,31,0.08)' }}>
 
-          {/* Brand description */}
+          {/* Brand description & mascot signature */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
-            className="col-span-1 md:col-span-2"
+            className="col-span-1 md:col-span-2 flex flex-col justify-between"
           >
             <p
               className="max-w-sm text-base leading-relaxed"
@@ -111,6 +112,14 @@ const Footer = () => {
               Empowering developers to learn, create, and grow together.
               Join our community and build the future with Google technologies.
             </p>
+            <div className="pt-6">
+              <img
+                src="/gdg-cat.png"
+                alt="GDG Mascot"
+                className="h-[58px] md:h-[76px] w-auto select-none pointer-events-none object-contain"
+                loading="lazy"
+              />
+            </div>
           </motion.div>
 
           {/* Navigate */}
@@ -193,14 +202,7 @@ const Footer = () => {
               ))}
             </div>
 
-            {/* Email */}
-            <a
-              href="mailto:gdg@rajalakshmi.edu.in"
-              className="link-wipe text-sm font-medium"
-              style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(31,31,31,0.55)' }}
-            >
-              gdg@rajalakshmi.edu.in
-            </a>
+            
           </motion.div>
         </div>
 
@@ -210,7 +212,7 @@ const Footer = () => {
             className="text-xs uppercase tracking-widest"
             style={{ color: isDark ? 'rgba(255,255,255,0.22)' : 'rgba(31,31,31,0.35)' }}
           >
-            © 2025 Google Developer Groups. All rights reserved.
+            © 2026 Google Developer Groups. All rights reserved.
           </p>
 
           <motion.button

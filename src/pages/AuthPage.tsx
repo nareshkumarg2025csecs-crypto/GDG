@@ -23,6 +23,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from '@/hooks/use-toast';
 import { ApiError } from '@/lib/api';
 import { authService } from '@/services/authService';
+import { ENABLE_EMAIL_PASSWORD_AUTH } from '@/config/featureFlags';
 
 interface AuthPageProps {
   defaultMode?: 'login' | 'signup';
@@ -532,7 +533,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
               : '0 20px 50px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
           }}
         >
-          {verificationSentEmail ? (
+          {ENABLE_EMAIL_PASSWORD_AUTH && verificationSentEmail ? (
             <div className="py-4 text-center space-y-6">
               {/* Animated Mail Icon */}
               <div className="relative mx-auto w-20 h-20 flex items-center justify-center">
@@ -605,7 +606,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                 </button>
               </div>
             </div>
-          ) : isForgotPassword ? (
+          ) : ENABLE_EMAIL_PASSWORD_AUTH && isForgotPassword ? (
             <div className="py-4 space-y-6">
               {resetSentEmail ? (
                 /* Card: Reset Email Dispatched */
@@ -771,12 +772,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
               {/* Header Title */}
               <div className="text-center mb-6">
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-sans">
-                  {mode === 'login' ? 'Welcome Back' : 'Create GDG Account'}
+                  {!ENABLE_EMAIL_PASSWORD_AUTH
+                    ? (role === 'admin' ? 'GDG Admin Portal' : 'Welcome to GDG REC')
+                    : (mode === 'login' ? 'Welcome Back' : 'Create GDG Account')}
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {mode === 'login'
-                    ? `Sign in to access your GDG ${role === 'admin' ? 'admin portal' : 'community hub'}`
-                    : `Join the Google Developer Group as a ${role === 'admin' ? 'Club Administrator' : 'Student Member'}`}
+                  {!ENABLE_EMAIL_PASSWORD_AUTH
+                    ? (role === 'admin'
+                        ? 'Sign in to access your GDG administrator dashboard'
+                        : 'Sign in or join our developer community with Google')
+                    : (mode === 'login'
+                        ? `Sign in to access your GDG ${role === 'admin' ? 'admin portal' : 'community hub'}`
+                        : `Join the Google Developer Group as a ${role === 'admin' ? 'Club Administrator' : 'Student Member'}`)}
                 </p>
               </div>
 
@@ -844,279 +851,328 @@ export const AuthPage: React.FC<AuthPageProps> = ({ defaultMode = 'login' }) => 
                 )}
               </AnimatePresence>
 
-              {/* Google OAuth Button */}
-              <div className="mb-5">
-                <button
-                  type="button"
-                  disabled={isGoogleLoading || isSubmitting}
-                  onClick={handleGoogleClick}
-                  aria-label={`Continue with Google as ${role}`}
-                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border/80 bg-background/80 hover:bg-surface-200 hover:border-google-blue/50 text-foreground font-medium text-sm transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group"
-                >
-                  {/* Google 4-color SVG Icon */}
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24Z"
-                    />
-                    <path
-                      fill="#FBBC04"
-                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
-                    />
-                  </svg>
-                  <span>
-                    {isGoogleLoading
-                      ? 'Connecting to Google...'
-                      : `Continue with Google ${role === 'admin' ? '(Admin)' : ''}`}
-                  </span>
-                </button>
-                <p className="text-[11px] text-muted-foreground text-center mt-2 px-1">
-                  Please use your official college email ID (@rajalakshmi.edu.in).
-                </p>
-              </div>
-
-              {/* Divider */}
-              <div className="relative flex items-center justify-center mb-5">
-                <div className="border-t border-border/80 w-full" />
-                <span className="bg-card px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground absolute font-mono">
-                  Or continue with email
-                </span>
-              </div>
-
-              {/* Email + Password Form */}
-              <form onSubmit={handleSubmit} noValidate className="space-y-4">
-                {/* Full Name field (Signup only) */}
-                <AnimatePresence>
-                  {mode === 'signup' && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="space-y-1.5 overflow-hidden"
+              {!ENABLE_EMAIL_PASSWORD_AUTH ? (
+                /* Single screen: Google Auth Only (No Login vs Signup separation) */
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    disabled={isGoogleLoading || isSubmitting}
+                    onClick={handleGoogleClick}
+                    aria-label={`Sign in with REC Mail as ${role}`}
+                    className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-border/80 bg-background/80 hover:bg-surface-200 hover:border-google-blue/50 text-foreground font-semibold text-sm transition-all duration-200 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed group cursor-pointer"
+                  >
+                    {/* Google 4-color SVG Icon */}
+                    <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24Z"
+                      />
+                      <path
+                        fill="#FBBC04"
+                        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
+                      />
+                    </svg>
+                    <span>
+                      {isGoogleLoading
+                        ? 'Connecting...'
+                        : role === 'admin'
+                        ? 'Sign in with REC Mail (Admin)'
+                        : 'Sign in with REC Mail'}
+                    </span>
+                  </button>
+                  <p className="text-[11px] text-muted-foreground text-center mt-2 px-1">
+                    {role === 'admin'
+                      ? 'Requires verified club administrator credentials (@rajalakshmi.edu.in).'
+                      : 'Please use your official college email ID (@rajalakshmi.edu.in).'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Google OAuth Button */}
+                  <div className="mb-5">
+                    <button
+                      type="button"
+                      disabled={isGoogleLoading || isSubmitting}
+                      onClick={handleGoogleClick}
+                      aria-label={`Sign in with REC Mail as ${role}`}
+                      className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border border-border/80 bg-background/80 hover:bg-surface-200 hover:border-google-blue/50 text-foreground font-medium text-sm transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group"
                     >
+                      {/* Google 4-color SVG Icon */}
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="#4285F4"
+                          d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24Z"
+                        />
+                        <path
+                          fill="#FBBC04"
+                          d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
+                        />
+                      </svg>
+                      <span>
+                        {isGoogleLoading
+                          ? 'Connecting...'
+                          : role === 'admin'
+                          ? 'Sign in with REC Mail (Admin)'
+                          : 'Sign in with REC Mail'}
+                      </span>
+                    </button>
+                    <p className="text-[11px] text-muted-foreground text-center mt-2 px-1">
+                      Please use your official college email ID (@rajalakshmi.edu.in).
+                    </p>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="relative flex items-center justify-center mb-5">
+                    <div className="border-t border-border/80 w-full" />
+                    <span className="bg-card px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground absolute font-mono">
+                      Or continue with email
+                    </span>
+                  </div>
+
+                  {/* Email + Password Form */}
+                  <form onSubmit={handleSubmit} noValidate className="space-y-4">
+                    {/* Full Name field (Signup only) */}
+                    <AnimatePresence>
+                      {mode === 'signup' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="space-y-1.5 overflow-hidden"
+                        >
+                          <label
+                            htmlFor="fullName"
+                            className="block text-xs font-semibold text-foreground/80 font-sans"
+                          >
+                            Full Name <span className="text-destructive">*</span>
+                          </label>
+                          <div className="relative">
+                            <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                              id="fullName"
+                              type="text"
+                              autoComplete="name"
+                              placeholder="e.g. Alex Johnson"
+                              value={fullName}
+                              onChange={(e) => setFullName(e.target.value)}
+                              className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
+                                formErrors.fullName
+                                  ? 'border-destructive focus:ring-destructive/30'
+                                  : 'border-input hover:border-border focus:ring-google-blue/30 focus:border-google-blue'
+                              }`}
+                            />
+                          </div>
+                          {formErrors.fullName && (
+                            <p className="text-xs text-destructive mt-1 font-medium">
+                              {formErrors.fullName}
+                            </p>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Email Address */}
+                    <div className="space-y-1.5">
                       <label
-                        htmlFor="fullName"
+                        htmlFor="email"
                         className="block text-xs font-semibold text-foreground/80 font-sans"
                       >
-                        Full Name <span className="text-destructive">*</span>
+                        Email Address <span className="text-destructive">*</span>
                       </label>
                       <div className="relative">
-                        <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
-                          id="fullName"
-                          type="text"
-                          autoComplete="name"
-                          placeholder="e.g. Alex Johnson"
-                          value={fullName}
-                          onChange={(e) => setFullName(e.target.value)}
+                          id="email"
+                          type="email"
+                          autoComplete="email"
+                          placeholder="your.name@rajalakshmi.edu.in"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
                           className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
-                            formErrors.fullName
+                            formErrors.email
                               ? 'border-destructive focus:ring-destructive/30'
                               : 'border-input hover:border-border focus:ring-google-blue/30 focus:border-google-blue'
                           }`}
                         />
                       </div>
-                      {formErrors.fullName && (
-                        <p className="text-xs text-destructive mt-1 font-medium">
-                          {formErrors.fullName}
-                        </p>
+                      {formErrors.email && (
+                        <p className="text-xs text-destructive mt-1 font-medium">{formErrors.email}</p>
                       )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    </div>
 
-                {/* Email Address */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="email"
-                    className="block text-xs font-semibold text-foreground/80 font-sans"
-                  >
-                    Email Address <span className="text-destructive">*</span>
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      id="email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="your.name@rajalakshmi.edu.in"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
-                        formErrors.email
-                          ? 'border-destructive focus:ring-destructive/30'
-                          : 'border-input hover:border-border focus:ring-google-blue/30 focus:border-google-blue'
-                      }`}
-                    />
-                  </div>
-                  {formErrors.email && (
-                    <p className="text-xs text-destructive mt-1 font-medium">{formErrors.email}</p>
-                  )}
-                </div>
-
-                {/* Password Field */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label
-                      htmlFor="password"
-                      className="block text-xs font-semibold text-foreground/80 font-sans"
-                    >
-                      Password <span className="text-destructive">*</span>
-                    </label>
-                    {mode === 'login' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForgotPasswordEmail(email);
-                          setIsForgotPassword(true);
-                          setResetSentEmail(null);
-                          setServerError(null);
-                          setServerSuccess(null);
-                        }}
-                        className="text-xs text-muted-foreground hover:text-google-blue transition-colors font-medium"
-                      >
-                        Forgot password?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
-                        formErrors.password
-                          ? 'border-destructive focus:ring-destructive/30'
-                          : 'border-input hover:border-border focus:ring-google-blue/30 focus:border-google-blue'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {formErrors.password && (
-                    <p className="text-xs text-destructive mt-1 font-medium">
-                      {formErrors.password}
-                    </p>
-                  )}
-                  {mode === 'signup' && (
-                    <p className="text-[11px] text-muted-foreground">
-                      Must be at least 6 characters.
-                    </p>
-                  )}
-                </div>
-
-                {/* Secret Admin Code Field (Admin Signup Only) */}
-                <AnimatePresence>
-                  {mode === 'signup' && role === 'admin' && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="space-y-1.5 overflow-hidden"
-                    >
-                      <label
-                        htmlFor="adminCode"
-                        className="block text-xs font-semibold text-google-red font-sans"
-                      >
-                        Secret Admin Signup Code <span className="text-destructive">*</span>
-                      </label>
+                    {/* Password Field */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="password"
+                          className="block text-xs font-semibold text-foreground/80 font-sans"
+                        >
+                          Password <span className="text-destructive">*</span>
+                        </label>
+                        {mode === 'login' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotPasswordEmail(email);
+                              setIsForgotPassword(true);
+                              setResetSentEmail(null);
+                              setServerError(null);
+                              setServerSuccess(null);
+                            }}
+                            className="text-xs text-muted-foreground hover:text-google-blue transition-colors font-medium"
+                          >
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
                       <div className="relative">
-                        <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-google-red" />
+                        <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                         <input
-                          id="adminCode"
-                          type="password"
-                          autoComplete="off"
-                          placeholder="Enter administrative authorization key"
-                          value={adminCode}
-                          onChange={(e) => setAdminCode(e.target.value)}
-                          className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
-                            formErrors.adminCode
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className={`w-full pl-10 pr-10 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
+                            formErrors.password
                               ? 'border-destructive focus:ring-destructive/30'
-                              : 'border-google-red/40 hover:border-google-red/60 focus:ring-google-red/30 focus:border-google-red'
+                              : 'border-input hover:border-border focus:ring-google-blue/30 focus:border-google-blue'
                           }`}
                         />
+                        <button
+                          type="button"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
-                      {formErrors.adminCode && (
+                      {formErrors.password && (
                         <p className="text-xs text-destructive mt-1 font-medium">
-                          {formErrors.adminCode}
+                          {formErrors.password}
                         </p>
                       )}
-                      <p className="text-[11px] text-muted-foreground">
-                        Required for club administrator registration.
-                      </p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting || isGoogleLoading}
-                  className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-white font-semibold text-sm transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
-                    role === 'admin' ? 'hover:brightness-110' : 'hover:brightness-110'
-                  }`}
-                  style={{
-                    background:
-                      role === 'admin'
-                        ? 'linear-gradient(135deg, #EA4335, #D93025)'
-                        : 'linear-gradient(135deg, #4285F4, #1A73E8)',
-                    boxShadow:
-                      role === 'admin'
-                        ? '0 4px 20px rgba(234, 67, 53, 0.35)'
-                        : '0 4px 20px rgba(66, 133, 244, 0.35)',
-                  }}
-                >
-                  {isSubmitting ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Processing...</span>
+                      {mode === 'signup' && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Must be at least 6 characters.
+                        </p>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      <span>
-                        {mode === 'login'
-                          ? `Sign In as ${role === 'admin' ? 'Admin' : 'Student'}`
-                          : `Create ${role === 'admin' ? 'Admin' : 'Student'} Account`}
-                      </span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
 
-              {/* Toggle between Login and Signup */}
-              <div className="text-center mt-6 pt-4 border-t border-border/60">
-                <p className="text-xs text-muted-foreground">
-                  {mode === 'login' ? "Don't have an account yet?" : 'Already have an account?'}{' '}
-                  <button
-                    type="button"
-                    onClick={() => handleModeChange(mode === 'login' ? 'signup' : 'login')}
-                    className="font-semibold text-google-blue hover:underline focus:outline-none ml-1"
-                  >
-                    {mode === 'login' ? 'Create Account' : 'Sign In'}
-                  </button>
-                </p>
-              </div>
+                    {/* Secret Admin Code Field (Admin Signup Only) */}
+                    <AnimatePresence>
+                      {mode === 'signup' && role === 'admin' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="space-y-1.5 overflow-hidden"
+                        >
+                          <label
+                            htmlFor="adminCode"
+                            className="block text-xs font-semibold text-google-red font-sans"
+                          >
+                            Secret Admin Signup Code <span className="text-destructive">*</span>
+                          </label>
+                          <div className="relative">
+                            <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-google-red" />
+                            <input
+                              id="adminCode"
+                              type="password"
+                              autoComplete="off"
+                              placeholder="Enter administrative authorization key"
+                              value={adminCode}
+                              onChange={(e) => setAdminCode(e.target.value)}
+                              className={`w-full pl-10 pr-4 py-2.5 rounded-xl border text-sm bg-background/50 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all duration-200 ${
+                                formErrors.adminCode
+                                  ? 'border-destructive focus:ring-destructive/30'
+                                  : 'border-google-red/40 hover:border-google-red/60 focus:ring-google-red/30 focus:border-google-red'
+                              }`}
+                            />
+                          </div>
+                          {formErrors.adminCode && (
+                            <p className="text-xs text-destructive mt-1 font-medium">
+                              {formErrors.adminCode}
+                            </p>
+                          )}
+                          <p className="text-[11px] text-muted-foreground">
+                            Required for club administrator registration.
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || isGoogleLoading}
+                      className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-white font-semibold text-sm transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                        role === 'admin' ? 'hover:brightness-110' : 'hover:brightness-110'
+                      }`}
+                      style={{
+                        background:
+                          role === 'admin'
+                            ? 'linear-gradient(135deg, #EA4335, #D93025)'
+                            : 'linear-gradient(135deg, #4285F4, #1A73E8)',
+                        boxShadow:
+                          role === 'admin'
+                            ? '0 4px 20px rgba(234, 67, 53, 0.35)'
+                            : '0 4px 20px rgba(66, 133, 244, 0.35)',
+                      }}
+                    >
+                      {isSubmitting ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Processing...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span>
+                            {mode === 'login'
+                              ? `Sign In as ${role === 'admin' ? 'Admin' : 'Student'}`
+                              : `Create ${role === 'admin' ? 'Admin' : 'Student'} Account`}
+                          </span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+
+                  {/* Toggle between Login and Signup */}
+                  <div className="text-center mt-6 pt-4 border-t border-border/60">
+                    <p className="text-xs text-muted-foreground">
+                      {mode === 'login' ? "Don't have an account yet?" : 'Already have an account?'}{' '}
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange(mode === 'login' ? 'signup' : 'login')}
+                        className="font-semibold text-google-blue hover:underline focus:outline-none ml-1"
+                      >
+                        {mode === 'login' ? 'Create Account' : 'Sign In'}
+                      </button>
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

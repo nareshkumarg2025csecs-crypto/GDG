@@ -1,8 +1,9 @@
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useRef, useMemo, useState, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, Environment } from '@react-three/drei';
 import * as THREE from 'three';
 import { useTheme } from '@/contexts/ThemeContext';
+import FloatingCat3D from './FloatingCat3D';
 
 // ── 2. Subtle 3D Developer Geometric Accents (Depth without Clutter) ──────
 const DevGeometricAccents = () => {
@@ -33,45 +34,55 @@ const DevGeometricAccents = () => {
     });
 
     return (
-        <group ref={groupRef} scale={[accentScale, accentScale, accentScale]}>
-            {/* Elegant glowing tech ring floating in peripheral space */}
-            <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.4}>
-                <mesh ref={ringRef} position={[rightX, 0.8, -2.5]}>
-                    <torusGeometry args={[1.3, 0.025, 16, 64]} />
-                    <meshStandardMaterial
-                        color="#4285F4"
-                        emissive="#4285F4"
-                        emissiveIntensity={0.6}
-                        transparent
-                        opacity={0.35}
-                        wireframe
-                    />
-                </mesh>
-            </Float>
+        <>
+            <group ref={groupRef} scale={[accentScale, accentScale, accentScale]}>
+                {/* Elegant glowing tech ring floating in peripheral space */}
+                <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.4}>
+                    <mesh ref={ringRef} position={[rightX, 0.8, -2.5]}>
+                        <torusGeometry args={[1.3, 0.025, 16, 64]} />
+                        <meshStandardMaterial
+                            color="#4285F4"
+                            emissive="#4285F4"
+                            emissiveIntensity={0.6}
+                            transparent
+                            opacity={0.35}
+                            wireframe
+                        />
+                    </mesh>
+                </Float>
 
-            {/* Translucent wireframe icosahedron adding futuristic developer aesthetic */}
-            <Float speed={1.8} rotationIntensity={0.3} floatIntensity={0.5}>
-                <mesh ref={polyRef} position={[rightX + 0.6, -1.2, -3.2]}>
-                    <icosahedronGeometry args={[0.9, 1]} />
-                    <meshStandardMaterial
-                        color="#34A853"
-                        emissive="#34A853"
-                        emissiveIntensity={0.4}
-                        transparent
-                        opacity={0.25}
-                        wireframe
-                    />
-                </mesh>
-            </Float>
+                {/* Translucent wireframe icosahedron adding futuristic developer aesthetic */}
+                <Float speed={1.8} rotationIntensity={0.3} floatIntensity={0.5}>
+                    <mesh ref={polyRef} position={[rightX + 0.6, -1.2, -3.2]}>
+                        <icosahedronGeometry args={[0.9, 1]} />
+                        <meshStandardMaterial
+                            color="#34A853"
+                            emissive="#34A853"
+                            emissiveIntensity={0.4}
+                            transparent
+                            opacity={0.25}
+                            wireframe
+                        />
+                    </mesh>
+                </Float>
 
-            {/* Subtle Google Yellow accent ring */}
-            <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.3}>
-                <mesh position={[leftX, 1.8, -3.5]}>
-                    <ringGeometry args={[0.8, 0.82, 48]} />
-                    <meshBasicMaterial color="#FBBC04" transparent opacity={0.2} side={THREE.DoubleSide} />
-                </mesh>
-            </Float>
-        </group>
+                {/* Subtle Google Yellow accent ring */}
+                <Float speed={1.2} rotationIntensity={0.2} floatIntensity={0.3}>
+                    <mesh position={[leftX, 1.8, -3.5]}>
+                        <ringGeometry args={[0.8, 0.82, 48]} />
+                        <meshBasicMaterial color="#FBBC04" transparent opacity={0.2} side={THREE.DoubleSide} />
+                    </mesh>
+                </Float>
+            </group>
+
+            {/* 3D Realistic GDG Cat Mascot Floating in Zero Gravity */}
+            <Suspense fallback={null}>
+                <FloatingCat3D
+                    position={[rightX - 1.25, -0.15, -2.1]}
+                    scale={isNarrow ? 0.62 : 0.88}
+                />
+            </Suspense>
+        </>
     );
 };
 

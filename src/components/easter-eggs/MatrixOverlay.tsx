@@ -63,6 +63,8 @@ export function MatrixOverlay() {
             setupColumns()
         }
 
+        const trailLength = reducedMotion ? 8 : 14
+
         const draw = (time: number) => {
             if (!running) return
 
@@ -72,28 +74,46 @@ export function MatrixOverlay() {
             }
             lastFrame = time
 
-            ctx.fillStyle = reducedMotion ? 'rgba(3, 3, 3, 0.18)' : 'rgba(3, 3, 3, 0.08)'
-            ctx.fillRect(0, 0, width, height)
+            // Clear canvas completely each frame so the page behind is 100% visible
+            ctx.clearRect(0, 0, width, height)
             ctx.font = `${fontSize}px monospace`
             ctx.textBaseline = 'top'
 
             for (let i = 0; i < columns; i++) {
                 const x = i * fontSize
-                const y = drops[i] * fontSize
-                const char = CHARS[Math.floor(Math.random() * CHARS.length)]
+                const leadY = drops[i]
 
-                ctx.fillStyle = `${colors[i]}CC`
-                ctx.fillText(char, x, y)
+                // Draw leading head and fading trail characters
+                for (let t = 0; t < trailLength; t++) {
+                    const charY = (leadY - t) * fontSize
+                    if (charY < -fontSize || charY > height + fontSize) continue
 
-                if (Math.random() > 0.965) {
-                    ctx.fillStyle = '#E8F7FF'
-                    ctx.fillText(char, x, y)
+                    const alpha = Math.max(0.08, 1 - t / trailLength)
+                    const char = CHARS[(Math.floor(leadY * 2) + t * 7 + i) % CHARS.length]
+
+                    ctx.save()
+                    if (t === 0) {
+                        // Leading character is brilliant white/ice with colored glow
+                        ctx.fillStyle = '#FFFFFF'
+                        ctx.shadowBlur = 10
+                        ctx.shadowColor = colors[i]
+                        ctx.globalAlpha = 0.95
+                    } else {
+                        // Trail characters fade gently in Google / Matrix colors
+                        ctx.fillStyle = colors[i]
+                        ctx.shadowBlur = t < 3 ? 4 : 0
+                        ctx.shadowColor = colors[i]
+                        ctx.globalAlpha = alpha * 0.85
+                    }
+
+                    ctx.fillText(char, x, charY)
+                    ctx.restore()
                 }
 
                 drops[i] += speeds[i]
 
-                if (y > height + fontSize && Math.random() > 0.965) {
-                    drops[i] = -Math.random() * 12
+                if (leadY * fontSize > height + trailLength * fontSize + 20 && Math.random() > 0.96) {
+                    drops[i] = -Math.random() * 8
                     speeds[i] = (reducedMotion ? 0.35 : 0.6) + Math.random() * 0.9
                     colors[i] = GDG_COLORS[Math.floor(Math.random() * GDG_COLORS.length)]
                 }
@@ -137,7 +157,7 @@ export function MatrixOverlay() {
     return (
         <canvas
             ref={canvasRef}
-            className="fixed inset-0 z-[9982] pointer-events-none opacity-70"
+            className="fixed inset-0 z-[9982] pointer-events-none"
             data-no-leet
             data-easter-overlay="matrix"
         />
