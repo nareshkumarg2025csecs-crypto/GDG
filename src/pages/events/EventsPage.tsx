@@ -21,6 +21,7 @@ import {
   type ClubEvent,
   parseEventDate,
 } from '@/lib/formUtils';
+import { SEO } from '@/components/common/SEO';
 
 import { EventsHero } from '@/components/events/EventsHero';
 import {
@@ -321,6 +322,12 @@ export const EventsPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/30">
+      <SEO
+        title="Events & Tech Workshops"
+        description="Explore upcoming workshops, hackathons, speaker sessions, and tech conferences organized by Google Developer Groups on Campus at Rajalakshmi Engineering College."
+        keywords={['GDG events', 'tech workshops Chennai', 'hackathons REC', 'Google Developer Groups', 'developer conferences']}
+        canonical="https://www.gdgrec.dev/events"
+      />
       <Header />
 
       <main id="main-content" className="flex-1 pt-24 sm:pt-28 pb-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">

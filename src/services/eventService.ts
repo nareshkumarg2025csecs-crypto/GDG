@@ -1,6 +1,7 @@
 import { apiRequest } from '@/lib/api';
 import type { ClubEvent, EventDetails } from '@/lib/formUtils';
 import { clearFormsSummaryCache } from '@/services/formService';
+import { getEventSlug, isEventMatch } from '@/lib/slugUtils';
 
 export interface EventsResponse {
   message: string;
@@ -98,35 +99,52 @@ export const eventService = {
   },
 
   async getEventById(id: string, forceRefresh = false): Promise<SingleEventResponse> {
-    const cached = cachedSingleEvents.get(id);
+    const normalized = String(id || '').toLowerCase().trim();
+    const cached = cachedSingleEvents.get(id) || cachedSingleEvents.get(normalized);
     if (!forceRefresh && cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
 
     // Optimization: If event exists in cachedEventsList, use it immediately with zero network egress
     if (!forceRefresh && cachedEventsList && cachedEventsList.expiresAt > Date.now()) {
-      const match = cachedEventsList.data.events.find((e) => e.id === id);
+      const match = cachedEventsList.data.events.find((e) => isEventMatch(e, id));
       if (match) {
         const synthesized: SingleEventResponse = {
           message: 'Loaded from events list cache',
           event: match,
         };
+        const slug = getEventSlug(match);
         cachedSingleEvents.set(id, {
           data: synthesized,
           expiresAt: cachedEventsList.expiresAt,
         });
+        cachedSingleEvents.set(String(match.id), {
+          data: synthesized,
+          expiresAt: cachedEventsList.expiresAt,
+        });
+        if (slug) {
+          cachedSingleEvents.set(slug, {
+            data: synthesized,
+            expiresAt: cachedEventsList.expiresAt,
+          });
+        }
         return synthesized;
       }
     }
 
-    const data = await apiRequest<SingleEventResponse>(`/api/events/${id}`, {
+    const data = await apiRequest<SingleEventResponse>(`/api/events/${encodeURIComponent(id)}`, {
       method: 'GET',
     });
 
-    cachedSingleEvents.set(id, {
-      data,
-      expiresAt: Date.now() + 300 * 1000,
-    });
+    if (data?.event) {
+      const slug = getEventSlug(data.event);
+      const expiresAt = Date.now() + 300 * 1000;
+      cachedSingleEvents.set(id, { data, expiresAt });
+      cachedSingleEvents.set(String(data.event.id), { data, expiresAt });
+      if (slug) {
+        cachedSingleEvents.set(slug, { data, expiresAt });
+      }
+    }
 
     return data;
   },

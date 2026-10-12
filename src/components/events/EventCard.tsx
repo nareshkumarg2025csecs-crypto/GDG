@@ -25,6 +25,7 @@ import {
   calculateRemainingTime,
   parseEventDate,
 } from '@/lib/formUtils';
+import { getEventSlug } from '@/lib/slugUtils';
 
 interface EventCardProps {
   event: ClubEvent;
@@ -55,6 +56,7 @@ export const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const details = event.details || {};
+  const eventSlug = getEventSlug(event);
 
   const startDate = details.startTime || details.start_time;
   const endDate = details.endTime || details.end_time;
@@ -260,7 +262,7 @@ export const EventCard: React.FC<EventCardProps> = ({
 
           {/* Event Title */}
           <Link
-            to={`/events/${event.id}`}
+            to={`/events/${eventSlug}`}
             onClick={onNavigate}
             className="group/title block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-google-blue rounded-lg"
           >
@@ -361,7 +363,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             onClick={() =>
               onShareQr({
                 title: event.title,
-                url: `${window.location.origin}/events/${event.id}`,
+                url: `${window.location.origin}/events/${eventSlug}`,
               })
             }
             className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer shadow-xs active:scale-95"
@@ -377,7 +379,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           {attachedForm && regState === 'open' && !isEnded ? (
             isAuthenticated ? (
               <Link
-                to={`/events/${event.id}/form`}
+                to={`/events/${eventSlug}/form`}
                 onClick={onNavigate}
                 className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
               >
@@ -389,7 +391,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                 type="button"
                 onClick={() => {
                   onNavigate();
-                  navigate(`/login?redirect=${encodeURIComponent(`/events/${event.id}/form`)}`);
+                  navigate(`/login?redirect=${encodeURIComponent(`/events/${eventSlug}/form`)}`);
                 }}
                 className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
               >
@@ -399,7 +401,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             )
           ) : (
             <Link
-              to={`/events/${event.id}`}
+              to={`/events/${eventSlug}`}
               onClick={onNavigate}
               className="inline-flex items-center gap-1.5 h-10 px-4 rounded-xl border border-border/80 hover:bg-muted text-xs font-semibold text-foreground transition-colors"
             >

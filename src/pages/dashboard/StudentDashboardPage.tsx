@@ -43,6 +43,7 @@ import { formService } from '@/services/formService';
 import { certificateService } from '@/services/certificateService';
 import { ENABLE_CERTIFICATES } from '@/config/featureFlags';
 import { toast } from '@/hooks/use-toast';
+import { getEventSlug } from '@/lib/slugUtils';
 import { UserAvatar } from '@/components/common/UserAvatar';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -1095,7 +1096,7 @@ export const StudentDashboardPage: React.FC = () => {
                               })()}
 
                               <Link
-                                to={`/events/${event.id}`}
+                                to={`/events/${getEventSlug(event)}`}
                                 className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-google-blue/10 text-google-blue hover:bg-google-blue/20 text-xs font-semibold transition-colors"
                               >
                                 <span>Details</span>
@@ -1422,7 +1423,7 @@ export const StudentDashboardPage: React.FC = () => {
                             )
                           )}
                           <Link
-                            to={`/events/${event.id}`}
+                            to={`/events/${getEventSlug(event)}`}
                             className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl hover:bg-muted text-xs font-semibold text-foreground transition-colors"
                           >
                             <span>View Event</span>

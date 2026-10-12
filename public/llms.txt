@@ -1,0 +1,26 @@
+# Google Developer Groups on Campus - REC (GDG REC)
+
+> Official website and community developer portal for Google Developer Groups on Campus at Rajalakshmi Engineering College (REC), Chennai, Tamil Nadu, India.
+
+## About GDG on Campus REC
+Google Developer Groups on Campus (GDG on Campus REC) is a student-led developer community supported by Google Developers. We help students bridge the gap between academic theory and industry practice through peer learning, real-world tech projects, hands-on workshops, and hackathons.
+
+## Official Links
+- Website: https://www.gdgrec.dev/
+- Events & Workshops: https://www.gdgrec.dev/events
+- About Us: https://www.gdgrec.dev/about-us
+- Developer Resources: https://www.gdgrec.dev/resources
+- Developer Tools: https://www.gdgrec.dev/tools
+- Core Team: https://www.gdgrec.dev/team
+
+## Events & Activities
+GDG on Campus REC hosts tech activities including:
+- Technical workshops on Web Development, Mobile (Flutter, Android), Artificial Intelligence / Machine Learning, Cloud Computing, and UI/UX.
+- Flagship college hackathons, ideathons, and coding competitions (e.g. Elysium and annual developer challenges).
+- Google Cloud Study Jams and Android Study Jams.
+- Open Source mentorship and developer certifications.
+
+## Event URL Structure
+- Event Directory: https://www.gdgrec.dev/events
+- Event Details: https://www.gdgrec.dev/events/{event-slug} (e.g., https://www.gdgrec.dev/events/elysium)
+- Event Registration Form: https://www.gdgrec.dev/events/{event-slug}/form

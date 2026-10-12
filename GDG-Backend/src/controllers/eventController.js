@@ -196,15 +196,24 @@ const listEvents = async (req, res) => {
  * Authenticated: Get a single event by ID.
  * Shielded by in-memory TTL cache and single-flight coalescing.
  */
+const toSlug = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
 const getEventById = async (req, res) => {
   try {
     const { id } = req.params;
     const now = Date.now();
+    const normalizedId = String(id || '').toLowerCase().trim();
 
     // Egress optimization: browser & CDN caching headers
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
 
-    const cached = singleEventCache.get(id);
+    const cached = singleEventCache.get(id) || singleEventCache.get(normalizedId);
     if (cached && cached.expiresAt > now) {
       return res.status(200).json({
         message: 'Event retrieved successfully.',
@@ -213,21 +222,57 @@ const getEventById = async (req, res) => {
       });
     }
 
+    // Fast-path: check eventsListCache if already loaded
+    if (eventsListCache.data && eventsListCache.expiresAt > now) {
+      const listMatch = eventsListCache.data.find(
+        (e) => String(e.id) === id || toSlug(e.title) === normalizedId
+      );
+      if (listMatch) {
+        singleEventCache.set(id, { data: listMatch, expiresAt: now + EVENT_CACHE_TTL });
+        singleEventCache.set(String(listMatch.id), { data: listMatch, expiresAt: now + EVENT_CACHE_TTL });
+        return res.status(200).json({
+          message: 'Event retrieved successfully.',
+          event: listMatch,
+          cached: true,
+        });
+      }
+    }
+
     let event;
     if (singleEventInflightPromises.has(id)) {
       event = await singleEventInflightPromises.get(id);
     } else {
       const fetchPromise = (async () => {
-        const { data, error } = await supabaseAdmin
+        // 1. If id is numeric or UUID, check direct id match
+        const isNumericOrUuid = /^[0-9]+$/.test(id) || /^[0-9a-f-]{36}$/i.test(id);
+        if (isNumericOrUuid) {
+          const { data, error } = await supabaseAdmin
+            .from('events')
+            .select('id, title, details, created_by, created_at, updated_at')
+            .eq('id', id)
+            .maybeSingle();
+          if (!error && data) {
+            if (data?.details?.certificate_config) {
+              delete data.details.certificate_config;
+            }
+            return data;
+          }
+        }
+
+        // 2. Lookup by title slug from events table
+        const { data: allEvents, error: listError } = await supabaseAdmin
           .from('events')
           .select('id, title, details, created_by, created_at, updated_at')
-          .eq('id', id)
-          .single();
-        if (error) throw error;
-        if (data?.details?.certificate_config) {
-          delete data.details.certificate_config;
+          .order('created_at', { ascending: false });
+
+        if (listError) throw listError;
+        const matched = (allEvents || []).find(
+          (e) => String(e.id) === id || toSlug(e.title) === normalizedId
+        );
+        if (matched?.details?.certificate_config) {
+          delete matched.details.certificate_config;
         }
-        return data;
+        return matched || null;
       })();
 
       singleEventInflightPromises.set(id, fetchPromise);
@@ -256,6 +301,17 @@ const getEventById = async (req, res) => {
       data: event,
       expiresAt: now + EVENT_CACHE_TTL,
     });
+    singleEventCache.set(String(event.id), {
+      data: event,
+      expiresAt: now + EVENT_CACHE_TTL,
+    });
+    const slug = toSlug(event.title);
+    if (slug) {
+      singleEventCache.set(slug, {
+        data: event,
+        expiresAt: now + EVENT_CACHE_TTL,
+      });
+    }
 
     return res.status(200).json({
       message: 'Event retrieved successfully.',

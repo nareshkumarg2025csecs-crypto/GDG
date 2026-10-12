@@ -25,6 +25,7 @@ import { EVENT_PROMO_CONFIG } from '@/config/eventPromoConfig';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
 import { getEventRegistrationState, type ClubEvent, type EventForm } from '@/lib/formUtils';
+import { getEventSlug } from '@/lib/slugUtils';
 
 export type BannerTier = 'slots_low' | 'closing_soon' | 'new_release';
 
@@ -407,7 +408,7 @@ export const EventLaunchSpotlight: React.FC = () => {
     setIsBannerVisible(false);
     setIsBannerVisibleInStore(false);
     setBannerHeight(0);
-    navigate(`/events/${promo.event.id}`);
+    navigate(`/events/${getEventSlug(promo.event)}`);
   };
 
   if (!EVENT_PROMO_CONFIG.ENABLED || !promo) {

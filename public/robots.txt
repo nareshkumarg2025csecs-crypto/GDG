@@ -1,13 +1,23 @@
 # https://www.robotstxt.org/robotstxt.html
-# Robots.txt for Google Developer Groups Community Portal
+# Robots.txt for Google Developer Groups On Campus - REC Community Portal
 
 # -------------------------------------------------------------
-# Standard Search Engine Crawlers
+# Google & Primary Search Engine Crawlers
 # -------------------------------------------------------------
 User-agent: Googlebot
 User-agent: Googlebot-Image
 User-agent: Googlebot-Mobile
 Allow: /
+Allow: /events
+Allow: /events/*
+Allow: /about-us
+Allow: /resources
+Allow: /tools
+Allow: /team
+Allow: /favicon.ico
+Allow: /favicon.png
+Allow: /sitemap.xml
+Allow: /llms.txt
 
 User-agent: Bingbot
 User-agent: Slurp
@@ -18,57 +28,59 @@ Allow: /
 
 # -------------------------------------------------------------
 # AI Search & Retrieval Bots (SearchGPT, ChatGPT, Perplexity, Claude, Gemini, etc.)
-# Explicitly allowed to fetch, read, and cite website content
+# Explicitly allowed to fetch, read, understand, and cite events and website content
 # -------------------------------------------------------------
-
-# OpenAI (SearchGPT, ChatGPT Live Browsing & Training)
 User-agent: GPTBot
 User-agent: ChatGPT-User
 User-agent: OAI-SearchBot
-Allow: /
-
-# Google Gemini & Extended AI
 User-agent: Google-Extended
 User-agent: GoogleOther
-Allow: /
-
-# Perplexity AI Search Engine
 User-agent: PerplexityBot
-Allow: /
-
-# Anthropic Claude & Claude Web
 User-agent: ClaudeBot
 User-agent: Claude-Web
 User-agent: anthropic-ai
-Allow: /
-
-# Apple Intelligence
 User-agent: Applebot
 User-agent: Applebot-Extended
-Allow: /
-
-# Meta AI & Llama
 User-agent: Meta-ExternalAgent
 User-agent: FacebookBot
-Allow: /
-
-# Other AI Knowledge Engines
 User-agent: Cohere-ai
 User-agent: Diffbot
 Allow: /
+Allow: /events
+Allow: /events/*
+Allow: /about-us
+Allow: /resources
+Allow: /tools
+Allow: /team
+Allow: /sitemap.xml
+Allow: /llms.txt
 
 # -------------------------------------------------------------
 # Disallow sensitive / private paths for all crawlers
 # -------------------------------------------------------------
 User-agent: *
 Allow: /
+Allow: /events
+Allow: /events/*
+Allow: /about-us
+Allow: /resources
+Allow: /tools
+Allow: /team
+Allow: /favicon.ico
+Allow: /favicon.png
 Disallow: /admin
 Disallow: /admin/
+Disallow: /dashboard
 Disallow: /dashboard/
+Disallow: /profile
+Disallow: /profile/
+Disallow: /onboarding
+Disallow: /complete-profile
 Disallow: /auth/callback
-Disallow: /api/
+Disallow: /api/admin/
+Disallow: /api/auth/
 
 # -------------------------------------------------------------
-# Sitemap Location
+# Sitemap & LLM Knowledge Location
 # -------------------------------------------------------------
 Sitemap: https://www.gdgrec.dev/sitemap.xml
