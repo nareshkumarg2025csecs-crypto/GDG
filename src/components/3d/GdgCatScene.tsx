@@ -27,6 +27,30 @@ export interface GdgCatSceneProps {
   onReady?: () => void;
 }
 
+function useIsCoarse(): boolean {
+  const [isCoarse, setIsCoarse] = useState(() =>
+    typeof window !== 'undefined'
+      ? !!(window.matchMedia?.('(pointer: coarse)').matches || window.innerWidth <= 768)
+      : false
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia?.('(pointer: coarse)');
+    const update = () => {
+      setIsCoarse(!!(mq?.matches || window.innerWidth <= 768));
+    };
+    mq?.addEventListener?.('change', update);
+    window.addEventListener('resize', update);
+    return () => {
+      mq?.removeEventListener?.('change', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
+
+  return isCoarse;
+}
+
 function Kitten({
   src, modelScale, animate, isInteracting, onReady, isCoarse,
 }: Pick<GdgCatSceneProps, 'src' | 'modelScale' | 'animate' | 'onReady'> & {
@@ -35,14 +59,13 @@ function Kitten({
 }) {
   const { scene } = useGLTF(src);
   const group = useRef<THREE.Group>(null);
-  const invalidate = useThree((s) => s.invalidate);
+  const { gl, camera, invalidate } = useThree();
   const currentRotY = useRef(0);
   const currentPosY = useRef(0);
 
-  // Clone so several mascots on one page never share (and dispose) the same scene graph.
-  const model = useMemo(() => {
-    const clone = scene.clone(true);
-    clone.traverse((o) => {
+  // Setup model materials and compute centering offset once without expensive deep cloning
+  const offset = useMemo(() => {
+    scene.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {
         mesh.castShadow = false;
@@ -51,23 +74,28 @@ function Kitten({
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         mats.forEach((m) => {
           const std = m as THREE.MeshStandardMaterial;
-          if (std.map) {
+          if (std && std.map) {
             std.map.anisotropy = isCoarse ? 1 : 2;
           }
         });
       }
     });
-    // Centre horizontally; sit the feet on y = 0.
-    const box = new THREE.Box3().setFromObject(clone);
-    const c = box.getCenter(new THREE.Vector3());
-    clone.position.set(-c.x, -box.min.y, -c.z);
-    return clone;
+
+    const box = new THREE.Box3().setFromObject(scene);
+    const center = box.getCenter(new THREE.Vector3());
+    return [-center.x, -box.min.y, -center.z] as Vec3;
   }, [scene, isCoarse]);
 
   useEffect(() => {
+    // Warm up & precompile shaders on the actual loaded mascot geometry and materials
+    try {
+      gl.compile(scene, camera);
+    } catch {
+      // Fallback if compile is unsupported on constrained WebGL context
+    }
     onReady?.();
     invalidate();
-  }, [model, onReady, invalidate]);
+  }, [scene, gl, camera, onReady, invalidate]);
 
   useFrame((state, delta) => {
     const g = group.current;
@@ -90,7 +118,7 @@ function Kitten({
 
   return (
     <group ref={group} scale={modelScale}>
-      <primitive object={model} />
+      <primitive object={scene} position={offset} dispose={null} />
     </group>
   );
 }
@@ -106,13 +134,47 @@ function CameraRig({ position, target, fov }: { position: Vec3; target: Vec3; fo
   return null;
 }
 
+function IdleThrottler({ isCoarse, isInteracting, animate, paused }: {
+  isCoarse: boolean;
+  isInteracting: boolean;
+  animate: boolean;
+  paused: boolean;
+}) {
+  const invalidate = useThree((s) => s.invalidate);
+
+  useEffect(() => {
+    if (!isCoarse || isInteracting || !animate || paused) return;
+    let lastTime = 0;
+    let rafId: number;
+    const tick = (time: number) => {
+      if (time - lastTime >= 32) { // Regulate mobile idle sway to ~30 FPS to reduce GPU heat
+        lastTime = time;
+        invalidate();
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isCoarse, isInteracting, animate, paused, invalidate]);
+
+  return null;
+}
+
 export default function GdgCatScene(props: GdgCatSceneProps) {
   const {
     src, cameraPosition, target, fov, modelScale, interactive, animate, lightIntensity, shadow, paused, onReady,
   } = props;
   const li = lightIntensity;
-  const isCoarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+  const isCoarse = useIsCoarse();
   const [isInteracting, setIsInteracting] = useState(false);
+
+  const frameloopMode = paused
+    ? 'never'
+    : isCoarse && !isInteracting
+    ? 'demand'
+    : animate || interactive
+    ? 'always'
+    : 'demand';
 
   return (
     <Canvas
@@ -126,7 +188,7 @@ export default function GdgCatScene(props: GdgCatSceneProps) {
       }}
       dpr={[1, isCoarse ? 1.05 : 1.35]}
       shadows={false}
-      frameloop={paused ? 'never' : animate || interactive ? 'always' : 'demand'}
+      frameloop={frameloopMode}
       camera={{ position: cameraPosition, fov, near: 0.1, far: 50 }}
       style={{
         background: 'transparent',
@@ -135,26 +197,28 @@ export default function GdgCatScene(props: GdgCatSceneProps) {
         width: '100%',
         height: '100%',
       }}
-      onCreated={({ gl, scene, camera }) => {
+      onCreated={({ gl }) => {
         gl.setClearColor(0x000000, 0);
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
         gl.outputColorSpace = THREE.SRGBColorSpace;
-        // Warm up and precompile all shaders to eliminate initial frame hang
-        try {
-          gl.compile(scene, camera);
-        } catch {
-          // ignore warmup errors on restrictive contexts
-        }
       }}
     >
       <CameraRig position={cameraPosition} target={target} fov={fov} />
-      <ambientLight intensity={0.65 * li} />
-      <hemisphereLight intensity={0.45 * li} color="#ffffff" groundColor="#333333" />
-      <directionalLight position={[-2.5, 4, 3.5]} intensity={2.4 * li} />
-      <directionalLight position={[3, 1.5, 2]} intensity={0.9 * li} />
-      <directionalLight position={[0, 3, -4]} intensity={1.0 * li} />
+      <ambientLight intensity={(isCoarse ? 0.8 : 0.65) * li} />
+      <hemisphereLight intensity={(isCoarse ? 0.35 : 0.45) * li} color="#ffffff" groundColor="#333333" />
+      <directionalLight position={[-2.5, 4, 3.5]} intensity={(isCoarse ? 2.6 : 2.4) * li} />
+      {!isCoarse && <directionalLight position={[3, 1.5, 2]} intensity={0.9 * li} />}
+      {!isCoarse && <directionalLight position={[0, 3, -4]} intensity={1.0 * li} />}
+      {isCoarse && <directionalLight position={[2, 1.5, 2]} intensity={0.8 * li} />}
       
+      <IdleThrottler
+        isCoarse={isCoarse}
+        isInteracting={isInteracting}
+        animate={animate}
+        paused={paused}
+      />
+
       <Suspense fallback={null}>
         <Kitten
           src={src}
@@ -173,7 +237,7 @@ export default function GdgCatScene(props: GdgCatSceneProps) {
       )}
 
       {/* Simple zero-cost circular soft shadow for mobile */}
-      {isCoarse && (
+      {shadow && isCoarse && (
         <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[0.5, 32]} />
           <meshBasicMaterial color="#000000" transparent opacity={0.25} />
@@ -199,4 +263,3 @@ export default function GdgCatScene(props: GdgCatSceneProps) {
 }
 
 useGLTF.preload('/models/gdg-cat.glb');
-

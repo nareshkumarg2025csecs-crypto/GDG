@@ -55,10 +55,10 @@ const MessageSection = () => {
   };
 
   return (
-    <div ref={outerRef} id="about" className="relative min-h-screen md:min-h-[115vh]">
+    <div ref={outerRef} id="about" className="relative min-h-0 md:min-h-[115vh]">
       <div
         ref={stickyRef}
-        className="relative md:sticky top-0 min-h-screen md:h-screen flex flex-col items-center justify-center overflow-hidden bg-background py-16 md:py-0"
+        className="relative md:sticky top-0 min-h-0 md:h-screen flex flex-col items-center justify-center overflow-hidden bg-background py-8 sm:py-12 md:py-0"
       >
         {/* Large decorative geometric shapes (Desktop only for smooth mobile performance) */}
         <div className="absolute inset-0 pointer-events-none select-none overflow-hidden hidden md:block">

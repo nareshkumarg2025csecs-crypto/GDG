@@ -125,7 +125,7 @@ export default function GdgCatMascot({
     <div
       ref={host}
       className={className}
-      style={{ position: 'relative', width: '100%', aspectRatio: '3 / 4', ...style }}
+      style={{ position: 'relative', width: '100%', aspectRatio: '3 / 4', touchAction: 'pan-y', ...style }}
       role="img"
       aria-label={alt}
     >

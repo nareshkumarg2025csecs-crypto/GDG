@@ -98,7 +98,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                         ? `perspective(1000px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg)`
                         : 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
                     transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.35s ease-out',
-                    transformStyle: 'preserve-3d',
+                    transformStyle: isTouch ? 'flat' : 'preserve-3d',
                     willChange: isHovered ? 'transform' : 'auto'
                 }}
                 onMouseMove={handleMouseMove}
@@ -114,7 +114,7 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                     style={{
                         background: `linear-gradient(145deg, ${member.color}15, ${member.color}05, var(--card-bg))`,
                         border: `1px solid ${member.color}${isHovered ? '80' : '30'}`,
-                        boxShadow: isHovered
+                        boxShadow: (!isTouch && isHovered)
                             ? `0 25px 50px -12px ${member.color}40, 0 0 40px ${member.color}20, inset 0 1px 0 ${member.color}30`
                             : `0 10px 30px -10px rgba(0,0,0,0.1)`,
                         transition: 'border-color 0.3s, box-shadow 0.3s',
@@ -122,24 +122,28 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                     }}
                 >
                     {/* Holographic Foil Overlay */}
-                    <div
-                        className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10"
-                        style={{
-                            background: `linear-gradient(115deg, transparent 20%, ${member.color}15 40%, ${member.color}30 50%, ${member.color}15 60%, transparent 80%)`,
-                            backgroundSize: '200% 200%',
-                            backgroundPosition: `${tilt.fx}% ${tilt.fy}%`,
-                            mixBlendMode: 'overlay',
-                        }}
-                    />
+                    {!isTouch && (
+                        <div
+                            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10"
+                            style={{
+                                background: `linear-gradient(115deg, transparent 20%, ${member.color}15 40%, ${member.color}30 50%, ${member.color}15 60%, transparent 80%)`,
+                                backgroundSize: '200% 200%',
+                                backgroundPosition: `${tilt.fx}% ${tilt.fy}%`,
+                                mixBlendMode: 'overlay',
+                            }}
+                        />
+                    )}
 
                     {/* Scanlines */}
-                    <div
-                        className="absolute inset-0 pointer-events-none opacity-20 z-10"
-                        style={{
-                            backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 4px)`,
-                            animation: isHovered ? 'scanlines 8s linear infinite' : 'none',
-                        }}
-                    />
+                    {!isTouch && (
+                        <div
+                            className="absolute inset-0 pointer-events-none opacity-20 z-10"
+                            style={{
+                                backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 2px, ${member.color === '#FBBC04' ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.3)'} 4px)`,
+                                animation: isHovered ? 'scanlines 8s linear infinite' : 'none',
+                            }}
+                        />
+                    )}
 
                     {/* Status Badge */}
                     <div className="absolute top-3 right-3 z-20">
@@ -158,14 +162,20 @@ function HolographicCard({ member, index, onCardClick }: HolographicCardProps) {
                     {/* Avatar / Photo (Zero-Egress Local Asset with Monogram Fallback) */}
                     <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
                         {member.image && !imgError ? (
-                            <img
-                                src={member.image}
-                                alt={member.name}
-                                loading="lazy"
-                                decoding="async"
-                                onError={() => setImgError(true)}
-                                className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
-                            />
+                            <picture className="w-full h-full">
+                                <source
+                                    srcSet={member.image.replace(/\.(png|jpg|jpeg)$/i, '.webp')}
+                                    type="image/webp"
+                                />
+                                <img
+                                    src={member.image}
+                                    alt={member.name}
+                                    loading="lazy"
+                                    decoding="async"
+                                    onError={() => setImgError(true)}
+                                    className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                                />
+                            </picture>
                         ) : (
                             <motion.div
                                 animate={isHovered ? { scale: 1.1, rotate: 5 } : { scale: 1, rotate: 0 }}
