@@ -42,6 +42,8 @@ import {
   parseEventDate,
 } from '@/lib/formUtils';
 import EventTicketPass from '@/components/events/EventTicketPass';
+import { SEO } from '@/components/common/SEO';
+import { getEventSlug, isEventMatch, slugify } from '@/lib/slugUtils';
 
 export const EventDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -74,7 +76,7 @@ export const EventDetailPage: React.FC = () => {
   // 1. Instant cache lookup from existing events list (zero spinner when navigating from /events or home)
   const cachedList = queryClient.getQueryData<EventsResponse>(EVENT_QUERY_KEYS.list());
   const initialEvent = useMemo(() => {
-    return cachedList?.events?.find((e) => e.id === id);
+    return cachedList?.events?.find((e) => isEventMatch(e, id || ''));
   }, [cachedList, id]);
 
   // 2. Event detail query with instant initialData
@@ -90,13 +92,30 @@ export const EventDetailPage: React.FC = () => {
     gcTime: 15 * 60 * 1000,
   });
 
-  const event = eventRes?.event || null;
+  const event = eventRes?.event || initialEvent || null;
+  const targetEventId = event?.id || id;
+
+  // Canonical slug for this event (e.g., 'elysium')
+  const canonicalSlug = useMemo(() => {
+    if (event) return getEventSlug(event);
+    if (id && !/^\d{16,}$/.test(id)) return slugify(id);
+    return '';
+  }, [event, id]);
+
+  // Smoothly update browser address bar to canonical event name slug
+  useEffect(() => {
+    if (!canonicalSlug || !id) return;
+    if (id !== canonicalSlug && typeof window !== 'undefined' && window.location.pathname.startsWith('/events/')) {
+      const targetPath = `/events/${canonicalSlug}${window.location.search}${window.location.hash}`;
+      window.history.replaceState(null, '', targetPath);
+    }
+  }, [canonicalSlug, id]);
 
   // 3. Form for this event (cached 5 min)
   const { data: formsRes } = useQuery({
-    queryKey: FORM_QUERY_KEYS.byEvent(id || ''),
-    queryFn: () => formService.getFormsByEvent(id!).catch(() => ({ message: 'ok', count: 0, forms: [] })),
-    enabled: !!id,
+    queryKey: FORM_QUERY_KEYS.byEvent(targetEventId || ''),
+    queryFn: () => formService.getFormsByEvent(targetEventId!).catch(() => ({ message: 'ok', count: 0, forms: [] })),
+    enabled: !!targetEventId,
     staleTime: 5 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
   });
@@ -220,7 +239,7 @@ export const EventDetailPage: React.FC = () => {
         title: 'Sign In Required',
         description: 'Please log in to add events to your Google Calendar.',
       });
-      navigate(`/login?redirect=${encodeURIComponent(`/events/${id}`)}`);
+      navigate(`/login?redirect=${encodeURIComponent(`/events/${canonicalSlug || id}`)}`);
       return;
     }
 
@@ -265,15 +284,24 @@ export const EventDetailPage: React.FC = () => {
     }
   };
 
+  // Full canonical URL for sharing, QR modal, and social tags
+  const canonicalUrl = useMemo(() => {
+    const slug = canonicalSlug || id || '';
+    if (typeof window !== 'undefined' && window.location.origin) {
+      return `${window.location.origin}/events/${slug}`;
+    }
+    return `https://www.gdgrec.dev/events/${slug}`;
+  }, [canonicalSlug, id]);
+
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
         title: event?.title || 'GDG Event',
         text: 'Check out this event on GDG on Campus!',
-        url: window.location.href,
+        url: canonicalUrl,
       });
     } else {
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard.writeText(canonicalUrl);
       toast({ title: 'Link Copied', description: 'Event link copied to your clipboard.' });
     }
   };
@@ -340,12 +368,62 @@ export const EventDetailPage: React.FC = () => {
     return { days, hours, minutes, seconds, totalSeconds };
   }, [form, isRegOpen, regCloseTime, now]);
 
+  // Plain-text snippet for SEO meta descriptions
+  const plainDescription = useMemo(() => {
+    const raw = primaryDescription || details.short_description || details.description || '';
+    const stripped = raw
+      .replace(/!\[.*?\]\(.*?\)/g, '')
+      .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+      .replace(/[#*`~_>-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return stripped.length > 220 ? `${stripped.slice(0, 217)}...` : stripped;
+  }, [primaryDescription, details]);
+
+  // Schema.org Event structured data for search engines & AI crawlers
+  const eventSchema = useMemo(() => {
+    if (!event) return undefined;
+    const startTime = details.startTime || details.start_time;
+    const endTime = details.endTime || details.end_time || startTime;
+    const locationName = details.venue || details.location || 'Rajalakshmi Engineering College (REC), Chennai';
+    return {
+      '@context': 'https://schema.org',
+      '@type': 'Event',
+      name: event.title,
+      description: plainDescription || `${event.title} organized by GDG on Campus REC.`,
+      image: banner ? [banner] : ['https://www.gdgrec.dev/favicon.png'],
+      startDate: startTime ? new Date(startTime).toISOString() : undefined,
+      endDate: endTime ? new Date(endTime).toISOString() : undefined,
+      eventStatus: 'https://schema.org/EventScheduled',
+      eventAttendanceMode:
+        details.mode === 'online' || details.is_online
+          ? 'https://schema.org/OnlineEventAttendanceMode'
+          : 'https://schema.org/OfflineEventAttendanceMode',
+      location: {
+        '@type': 'Place',
+        name: locationName,
+        address: {
+          '@type': 'PostalAddress',
+          addressLocality: 'Chennai',
+          addressRegion: 'Tamil Nadu',
+          addressCountry: 'IN',
+        },
+      },
+      organizer: {
+        '@type': 'Organization',
+        name: 'Google Developer Groups on Campus - REC',
+        url: 'https://www.gdgrec.dev',
+      },
+    };
+  }, [event, details, plainDescription, banner]);
+
   // Show Added to Calendar badge only while event hasn't ended
   const showCalendarAddedBadge = calendarAdded && !eventEnded;
 
   if (isLoading || !event) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+        <SEO title="Loading Event | GDG on Campus REC" />
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-google-blue/30 border-t-google-blue rounded-full animate-spin" />
           <p className="text-sm font-medium text-muted-foreground">Loading event details...</p>
@@ -356,6 +434,14 @@ export const EventDetailPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/30">
+      <SEO
+        title={event.title}
+        description={plainDescription || `Explore ${event.title} hosted by Google Developer Groups on Campus REC.`}
+        image={banner || 'https://www.gdgrec.dev/favicon.png'}
+        type="event"
+        canonical={canonicalUrl}
+        schema={eventSchema}
+      />
       <Header />
 
       <main id="main-content" className="flex-1 pt-24 sm:pt-28 pb-24 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
@@ -781,7 +867,7 @@ export const EventDetailPage: React.FC = () => {
                     <div className="space-y-3">
                       {isAuthenticated ? (
                         <Link
-                          to={`/events/${id}/form`}
+                          to={`/events/${canonicalSlug || id}/form`}
                           className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all active:scale-95"
                         >
                           <FileText className="w-4 h-4" />
@@ -790,7 +876,7 @@ export const EventDetailPage: React.FC = () => {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/events/${id}/form`)}`)}
+                          onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/events/${canonicalSlug || id}/form`)}`)}
                           className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-google-blue hover:bg-google-blue/90 text-white font-semibold text-sm shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
                         >
                           <FileText className="w-4 h-4" />
@@ -885,7 +971,7 @@ export const EventDetailPage: React.FC = () => {
           isOpen={showQrModal}
           onClose={() => setShowQrModal(false)}
           eventTitle={event?.title || 'Event'}
-          eventUrl={window.location.href}
+          eventUrl={canonicalUrl}
         />
 
         {/* Ticket Pass QR Modal */}

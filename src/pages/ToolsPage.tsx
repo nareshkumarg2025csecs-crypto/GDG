@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { SEO } from '@/components/common/SEO';
 import { useTheme } from '@/contexts/ThemeContext';
 import { TOOLS_CONFIG } from '@/config/toolsConfig';
 import { GOOGLE_TOOLS, TOOL_CATEGORIES, GoogleTool } from '@/data/googleTools';
@@ -247,6 +248,12 @@ export const ToolsPage = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/30">
+      <SEO
+        title="Google Developer Tools Directory"
+        description="Comprehensive directory of Google developer tools, SDKs, APIs, and frameworks across AI & Machine Learning, Cloud, Mobile, and Web."
+        keywords={['Google tools', 'Firebase', 'Flutter', 'Google Cloud', 'TensorFlow', 'Gemini API', 'Android SDK']}
+        canonical="https://www.gdgrec.dev/tools"
+      />
       <Header />
 
       <main id="main-content" className="flex-1 pt-28 sm:pt-32 pb-24 relative overflow-hidden">

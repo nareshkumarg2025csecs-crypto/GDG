@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { SEO } from '@/components/common/SEO';
 import { useTheme } from '@/contexts/ThemeContext';
 import { 
   Sparkles, 
@@ -64,6 +65,12 @@ const AboutUsPage = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <SEO
+        title="About Us"
+        description="Learn about Google Developer Groups (GDG) On Campus at Rajalakshmi Engineering College (REC) - our mission, vision, tech domains, and vibrant student community."
+        keywords={['About GDG REC', 'GDG on Campus Rajalakshmi Engineering College', 'Google Developer Groups Chennai', 'student developer community']}
+        canonical="https://www.gdgrec.dev/about-us"
+      />
       <Header />
 
       <main>

@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
 import { useAuth } from '@/hooks/useAuth';
 import { formatEventDate, formatEventTimeRange, stripMarkdown, type ClubEvent } from '@/lib/formUtils';
+import { getEventSlug } from '@/lib/slugUtils';
 
 const THEME_COLORS = ['#4285F4', '#34A853', '#EA4335', '#FBBC04'];
 
@@ -123,7 +124,7 @@ const EventsSection = () => {
                                     whileHover={{ y: -8, scale: 1.02 }}
                                 >
                                     <Link
-                                        to={`/events/${event.id}`}
+                                        to={`/events/${getEventSlug(event)}`}
                                         className="block group relative rounded-3xl overflow-hidden border transition-all duration-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                                         style={{
                                             borderColor: `${accentColor}25`,

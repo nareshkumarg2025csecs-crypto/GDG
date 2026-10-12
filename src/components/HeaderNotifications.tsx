@@ -18,6 +18,7 @@ import { eventService } from '@/services/eventService';
 import { dashboardService, type AppNotification } from '@/services/dashboardService';
 import { formService } from '@/services/formService';
 import { type ClubEvent, stripMarkdown } from '@/lib/formUtils';
+import { getEventSlug } from '@/lib/slugUtils';
 
 interface HeaderNotificationsProps {
   activeColor?: string;
@@ -390,7 +391,7 @@ export const HeaderNotifications: React.FC<HeaderNotificationsProps> = ({
       category: ev.details?.category || 'Event',
       eventId: ev.id,
       eventTitle: ev.title,
-      actionUrl: `/events/${ev.id}`,
+      actionUrl: `/events/${getEventSlug(ev)}`,
     }));
 
     const combined = [...personalNotifications, ...eventItems];

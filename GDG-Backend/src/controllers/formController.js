@@ -435,6 +435,14 @@ const enrichFormOptionStats = async (form) => {
  * Authenticated: Get all forms associated with an event, enriched with real submission count and slot limit status.
  * Shielded by in-memory TTL cache and single-flight coalescing to handle high-traffic viewing during event rollouts.
  */
+const toEventSlug = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
 const getFormsByEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
@@ -456,10 +464,24 @@ const getFormsByEvent = async (req, res) => {
       enrichedForms = await eventFormsInflightPromises.get(eventId);
     } else {
       const fetchPromise = (async () => {
+        let targetEventId = eventId;
+        const isNumericOrUuid = /^[0-9]+$/.test(eventId) || /^[0-9a-f-]{36}$/i.test(eventId);
+        if (!isNumericOrUuid) {
+          const { data: events } = await supabaseAdmin
+            .from('events')
+            .select('id, title');
+          const matched = (events || []).find(
+            (e) => String(e.id) === eventId || toEventSlug(e.title) === String(eventId).toLowerCase().trim()
+          );
+          if (matched) {
+            targetEventId = matched.id;
+          }
+        }
+
         const { data: forms, error } = await supabaseAdmin
           .from('forms')
           .select('id, event_id, title, schema, opens_at, expires_at, submission_limit, created_at')
-          .eq('event_id', eventId)
+          .eq('event_id', targetEventId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;

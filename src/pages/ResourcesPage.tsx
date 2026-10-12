@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import { SEO } from '@/components/common/SEO';
 import {
   CODELABS_DATA,
   VIDEOS_DATA,
@@ -290,6 +291,12 @@ export const ResourcesPage = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-google-blue/30">
+      <SEO
+        title="Learning Resources & Codelabs"
+        description="Access Google developer codelabs, video masterclasses, open-source repositories, and structured technical study guides at GDG on Campus REC."
+        keywords={['GDG resources', 'Google Codelabs', 'developer study guides', 'open source repositories', 'web tutorials']}
+        canonical="https://www.gdgrec.dev/resources"
+      />
       <Header />
 
       <main id="main-content" className="flex-1 pt-24 sm:pt-28 pb-24 relative overflow-hidden">

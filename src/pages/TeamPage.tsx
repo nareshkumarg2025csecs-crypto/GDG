@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useTheme } from '@/contexts/ThemeContext'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import { SEO } from '@/components/common/SEO'
 import { Linkedin, Mail, ChevronLeft, ChevronRight, ArrowUp } from 'lucide-react'
 import {
     TeamMember,
@@ -559,6 +560,12 @@ export default function TeamPage() {
 
     return (
         <div className="min-h-screen bg-background transition-colors duration-300">
+            <SEO
+                title="Our Team & Core Organizers"
+                description="Meet the organizers, technical domain leads, coordinators, and faculty advisors behind Google Developer Groups on Campus at Rajalakshmi Engineering College."
+                keywords={['GDG team', 'GDG REC leads', 'Google Developer Group organizers', 'Rajalakshmi Engineering College', 'core team']}
+                canonical="https://www.gdgrec.dev/team"
+            />
             <Header />
 
             <main id="main-content">

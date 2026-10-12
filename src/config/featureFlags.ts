@@ -16,5 +16,5 @@ export const ENABLE_EMAIL_PASSWORD_AUTH = false;
 
 // Master switch for Celebratory Party Confetti mode (shows irrespective of terminal)
 // Set to true to show party confetti on the site. Set to false to turn it off.
-export const ENABLE_PARTY_MODE = true;
+export const ENABLE_PARTY_MODE = false;
 

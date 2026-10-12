@@ -8,6 +8,7 @@ import ToolsSection from '@/components/ToolsSection';
 import Footer from '@/components/Footer';
 import Preloader from '@/components/Preloader';
 import { EventLaunchSpotlight } from '@/components/events/EventLaunchSpotlight';
+import { SEO } from '@/components/common/SEO';
 import { useTheme } from '@/contexts/ThemeContext';
 
 /**
@@ -60,6 +61,12 @@ const GradientBand = ({
 const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden selection:bg-google-blue/30">
+      <SEO
+        title="Google Developer Groups on Campus | REC"
+        description="Official community portal for Google Developer Groups on Campus at Rajalakshmi Engineering College (REC). Discover upcoming tech workshops, hackathons, speaker sessions, and resources."
+        keywords={['GDG on Campus REC', 'Google Developer Groups on Campus Rajalakshmi Engineering College', 'GDG REC', 'Google Developer Groups Rajalakshmi Engineering College', 'student developers']}
+        canonical="https://www.gdgrec.dev/"
+      />
       <Preloader />
       <EventLaunchSpotlight />
       <Header />

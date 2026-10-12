@@ -15,6 +15,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useTheme } from '@/contexts/ThemeContext';
 import { eventService, EVENT_QUERY_KEYS } from '@/services/eventService';
 import { formatEventDate, formatEventDateRange, stripMarkdown } from '@/lib/formUtils';
+import { getEventSlug, slugify } from '@/lib/slugUtils';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -25,6 +26,7 @@ gsap.registerPlugin(ScrollTrigger);
 interface EventItem {
   id: string | number;
   eventId?: string;
+  slug?: string;
   title: string;
   type: string;
   date: string;
@@ -151,8 +153,9 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
     </div>
   );
 
-  if (event.eventId) {
-    return <Link to={`/events/${event.eventId}`}>{cardContent}</Link>;
+  const targetSlug = event.slug || (event.title ? slugify(event.title) : event.eventId);
+  if (targetSlug) {
+    return <Link to={`/events/${targetSlug}`}>{cardContent}</Link>;
   }
 
   return <Link to="/events">{cardContent}</Link>;
@@ -191,6 +194,7 @@ export function EventsHorizontal() {
       return {
         id: e.id,
         eventId: e.id,
+        slug: getEventSlug(e),
         title: e.title,
         type: details.category || 'Workshop',
         date: formatEventDateRange(
