@@ -70,6 +70,7 @@ Allow: /favicon.ico
 Allow: /favicon.png
 Disallow: /admin
 Disallow: /admin/
+Disallow: /admin-gdg
 Disallow: /dashboard
 Disallow: /dashboard/
 Disallow: /profile
