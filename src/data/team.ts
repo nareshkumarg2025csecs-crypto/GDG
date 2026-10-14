@@ -33,7 +33,7 @@ export interface TeamMember {
     email: string;
     linkedin: string;
     github?: string;
-    image: string; // Local static path: e.g. "/team/.webp"
+    image: string; // Local static path: e.g. "/team/filename.png"
 }
 
 export interface TeamSection {
@@ -159,7 +159,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'nivedithaa.s.2024.csecs@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/nivedithaa-s/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/nivedithaa.png',
     },
     {
         name: 'Mohamed Aseel',
@@ -172,7 +172,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'mohamedaseel.s.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/mohamed-aseel-3b0933331',
         github: '',
-        image: '/team/.webp',
+        image: '/team/aseel.png',
     },
     {
         name: 'Mohith O',
@@ -185,7 +185,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'mohith.o.2024.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/mohithexe',
         github: '',
-        image: '/team/.webp',
+        image: '/team/mohith.png',
     },
 
     // ------------------------------------------------------------------------
@@ -202,7 +202,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'harish.s2.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/harish-s-339b3a331?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/harish.png',
     },
     {
         name: 'Kamalesh R',
@@ -215,7 +215,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'kamalesh.r.2024.csbs@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/kamalesh-ravichandran-497726325',
         github: '',
-        image: '/team/.webp',
+        image: '/team/kamalesh.png',
     },
     {
         name: 'Gayathri Boopathy',
@@ -228,7 +228,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'gayathriboopathy.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/gayathri-boopathy-611158334',
         github: '',
-        image: '/team/.webp',
+        image: '/team/gayathri_boopathy.png',
     },
     {
         name: 'Naresh Kumar G',
@@ -241,7 +241,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'nareshkumar.g.2025.csecs@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/naresh-kumar-g-31264939a?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/naresh.png',
     },
     {
         name: 'Mohammed Sabithulla Sharieff M',
@@ -254,7 +254,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'mohammedsabithullasharieff.m.2024.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/sabithullasharieff',
         github: '',
-        image: '/team/.webp',
+        image: '/team/sabithulla.png',
     },
     {
         name: 'Raghul K',
@@ -267,7 +267,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'raghul.k.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/raghul-k-b95912399/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/raghul.png',
     },
     {
         name: 'Harshini U',
@@ -280,7 +280,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'harshini.u.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/harshiniudayakumar/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/harshini.png',
     },
     {
         name: 'Abhishiek S',
@@ -293,7 +293,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'abhishiek.s.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/abhishiek-sankaranarayanan-672621397/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/abhishiek.png',
     },
     {
         name: 'Harsha Vardhini S',
@@ -306,7 +306,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'harshavardhini.s.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/harsha-vardhini-s-478971330/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/harshavardhini.png',
     },
     {
         name: 'Sheshashree Arunkumar',
@@ -319,7 +319,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'sheshashreearunkumar.2025.aiml@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/sh-ak/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/sheshashree.png',
     },
     {
         name: 'Vihith D',
@@ -332,7 +332,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'vihith.d.2024.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/vihith-d-467946331',
         github: '',
-        image: '/team/.webp',
+        image: '/team/vihith.png',
     },
     {
         name: 'Raghav S',
@@ -345,7 +345,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'raghav.s.2025.mech@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/raghavsenthilkumar/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/raghav.png',
     },
     {
         name: 'Rohitha N',
@@ -358,7 +358,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'rohitha.n.2025.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/rohitha-n-2116b838a',
         github: '',
-        image: '/team/.webp',
+        image: '/team/rohitha.png',
     },
     {
         name: 'Yogeeshwaran C',
@@ -371,7 +371,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'yogeeshwaran.c.2025.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/yogeeshwaran-chandru-252690394',
         github: '',
-        image: '/team/.webp',
+        image: '/team/yogeeshwaran.png',
     },
 
     // ------------------------------------------------------------------------
@@ -388,7 +388,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'sneha.s.2024.csd@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/me?trk=p_mwlite_feed-secondary_nav',
         github: '',
-        image: '/team/.webp',
+        image: '/team/sneha.png',
     },
     {
         name: 'Aishwarya R',
@@ -401,7 +401,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'aishwarya.r.2024.aiml@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/aishwaryaramanathan17?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/aishwarya.png',
     },
     {
         name: 'Adithtya K',
@@ -414,7 +414,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'adithtya.k.2024.csd@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/adithtya-k-726b23375',
         github: '',
-        image: '/team/.webp',
+        image: '/team/adithtya_k.png',
     },
     {
         name: 'Gowshik K',
@@ -427,7 +427,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'gowshik.k.2025.aids@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/gowshik-k-3693b9381?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/gowshik.png',
     },
     {
         name: 'Pavithra M.D',
@@ -440,7 +440,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'pavithra.md.2025.aids@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/pavithra-m-d-0b62a33a2?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/pavithra.png',
     },
     {
         name: 'Pooja K',
@@ -453,7 +453,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'pooja.k.2025.csd@rajalakshmi.edu.in',
         linkedin: 'www.linkedin.com/in/pooja-k-digital-company',
         github: '',
-        image: '/team/.webp',
+        image: '/team/pooja.png',
     },
     {
         name: 'Varshene R',
@@ -466,7 +466,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'varshene.r.2025.csd@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/varshene-r-b39488330',
         github: '',
-        image: '/team/.webp',
+        image: '/team/varshene.png',
     },
     {
         name: 'Vishwathi',
@@ -479,7 +479,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'vishwathi.be.2025.bt@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/vishwathi-b-e-aa9a403b4/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/vishwathi.png',
     },
 
     // ------------------------------------------------------------------------
@@ -496,7 +496,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: '',
         linkedin: '',
         github: '',
-        image: '/team/.webp',
+        image: '/team/arvindharish.png',
     },
     {
         name: 'Adithya',
@@ -509,7 +509,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'adithya.n.2024.it@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/adithya-n-881062318?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
         github: '',
-        image: '/team/.webp',
+        image: '/team/adithya.png',
     },
     {
         name: 'Dilshath D',
@@ -522,7 +522,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'dilshath.d.2025.csd@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/dilshath-dhavood-489baa398/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/dilshath.png',
     },
     {
         name: 'Gayathri S',
@@ -535,7 +535,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'gayathri.s1.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/gayathrisathishkumar/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/gayathri.png',
     },
     {
         name: 'Jayant Jyotiranjan R',
@@ -548,7 +548,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'jayantjyotiranjan.r.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/jayant-jyotiranjan-r-7906b7426?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/jayant.png',
     },
     {
         name: 'Rithvika',
@@ -561,7 +561,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'rithvika.b.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/rithvika-b-4730b5396',
         github: '',
-        image: '/team/.webp',
+        image: '/team/rithvika.png',
     },
     {
         name: 'Shreya Srivatsan',
@@ -574,7 +574,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'shreyasrivatsan.2025.aiml@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/shreya-srivatsan-aa2630396',
         github: '',
-        image: '/team/.webp',
+        image: '/team/shreya.png',
     },
     {
         name: 'Tarun',
@@ -587,7 +587,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'tarun.c.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/tarun-c-524646424',
         github: '',
-        image: '/team/.webp',
+        image: '/team/tarun.png',
     },
 
     // ------------------------------------------------------------------------
@@ -604,7 +604,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'subramanianvelavan.2024.cse@rajalakshmi.edu.in',
         linkedin: 'http://www.linkedin.com/in/subramanian-velavan-17sv4s564',
         github: '',
-        image: '/team/.webp',
+        image: '/team/subramanian.png',
     },
     {
         name: 'Sai Prashanth',
@@ -617,7 +617,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'saiprashanth.v.2024.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/saiprashanth-vijayakumar-63520b318/?isSelfProfile=true',
         github: '',
-        image: '/team/.webp',
+        image: '/team/saiprashanth.png',
     },
     {
         name: 'Steve Anderson',
@@ -630,7 +630,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'steveanderson.p.2024.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/steve-anderson-b1552231a',
         github: '',
-        image: '/team/.webp',
+        image: '/team/steve.png',
     },
     {
         name: 'Adhith Vaibav',
@@ -643,7 +643,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'adhithvaibav.rk.2024.ece@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/adhith-vaibav-bb4b54331?utm_source=share_via&utm_content=profile&utm_medium=member_ios',
         github: '',
-        image: '/team/.webp',
+        image: '/team/adhith.png',
     },
     {
         name: 'Nadira Noorul Nazer',
@@ -656,7 +656,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'nadiranoorulnazer.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/nadira-noorul-nazer-21730a442/',
         github: '',
-        image: '/team/.webp',
+        image: '/team/nadira.png',
     },
     {
         name: 'Poojasri B',
@@ -669,7 +669,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'poojasri.b.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/poojasri-b-70844b409',
         github: '',
-        image: '/team/.webp',
+        image: '/team/poojasri.png',
     },
     {
         name: 'Poorvika N',
@@ -682,7 +682,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'poorvika.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/poorvika-nandakumar-537a30394',
         github: '',
-        image: '/team/.webp',
+        image: '/team/poorvika.png',
     },
     {
         name: 'Sherin A',
@@ -695,7 +695,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: '',
         linkedin: '',
         github: '',
-        image: '/team/.webp',
+        image: '/team/sherin.png',
     },
     {
         name: 'Shiny K',
@@ -708,7 +708,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'shiny.k.2025.csecs@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/shinykingsley',
         github: '',
-        image: '/team/.webp',
+        image: '/team/shiny.png',
     },
     {
         name: 'Adhithya S',
@@ -721,7 +721,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'adhithya.s.2024.mct@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/adhithya-s-6b5b1b2b9?utm_source=share_via&utm_content=profile&utm_medium=member_android',
         github: '',
-        image: '/team/.webp',
+        image: '/team/adhithya_s.png',
     },
     {
         name: 'Ayshwarya S',
@@ -734,7 +734,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'ayshwarya.s.2024.aiml@rajalakshmi.edu.in',
         linkedin: 'http://www.linkedin.com/in/ayshwarya-s-17sv4s564',
         github: '',
-        image: '/team/.webp',
+        image: '/team/ayshwarya.png',
     },
     {
         name: 'Nethra S',
@@ -747,7 +747,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'nethra.s.2025.csbs@rajalakshmi.edu.in',
         linkedin: '',
         github: '',
-        image: '/team/.webp',
+        image: '/team/nethra.png',
     },
     {
         name: 'Rounith Arrun Rathesh',
@@ -760,7 +760,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'rounitharrunrathesh.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/rounithrathesh',
         github: '',
-        image: '/team/.webp',
+        image: '/team/rounith.png',
     },
     {
         name: 'Sanskriti G',
@@ -773,7 +773,7 @@ const rawTeamRoster: RawMemberEntry[] = [
         email: 'sanskriti.g.2025.cse@rajalakshmi.edu.in',
         linkedin: 'https://www.linkedin.com/in/sanskriti-gajapathi-6857bb388',
         github: '',
-        image: '/team/.webp',
+        image: '/team/sanskriti.png',
     },
 ];
 
