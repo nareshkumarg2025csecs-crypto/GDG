@@ -570,7 +570,7 @@ export const AdminEventEditorPage: React.FC = () => {
     generateBrandedQrDataUrl(populated, {
       width: 440,
       margin: 2,
-      logoSrc: '/favicon.png',
+      logoSrc: '/gdg-logo-icon.webp',
     })
       .then((url) => {
         if (isMounted) {

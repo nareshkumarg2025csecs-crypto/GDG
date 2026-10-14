@@ -69,7 +69,7 @@ class SceneBoundary extends Component<{ children: ReactNode; onError: (e: unknow
  */
 export default function GdgCatMascot({
   src = '/models/gdg-cat.glb',
-  poster = '/models/gdg-cat-poster.png',
+  poster = '/models/gdg-cat-poster.webp',
   className,
   style,
   interactive = true,

@@ -35,7 +35,7 @@ const NotFound = () => {
         <div className="pt-2 flex justify-center">
           <div className="relative inline-flex items-center justify-center">
             <img
-              src="/gdg-cat.png"
+              src="/gdg-cat.webp"
               alt="GDG cat mascot"
               className="h-[160px] sm:h-[210px] w-auto select-none pointer-events-none object-contain"
               draggable={false}

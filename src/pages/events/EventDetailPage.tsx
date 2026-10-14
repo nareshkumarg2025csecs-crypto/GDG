@@ -896,7 +896,7 @@ export const EventDetailPage: React.FC = () => {
                       <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/20 flex items-center gap-3">
                         <div className="w-12 h-14 rounded-xl overflow-hidden bg-white/40 dark:bg-black/40 shrink-0 border border-google-green/30 flex items-center justify-center p-1">
                           <img
-                            src="/mascot.png"
+                            src="/mascot.webp"
                             alt="Pixel the Mascot"
                             className="w-full h-full object-contain"
                           />

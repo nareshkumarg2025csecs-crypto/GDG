@@ -114,7 +114,7 @@ const Footer = () => {
             </p>
             <div className="pt-6">
               <img
-                src="/gdg-cat.png"
+                src="/gdg-cat.webp"
                 alt="GDG Mascot"
                 className="h-[58px] md:h-[76px] w-auto select-none pointer-events-none object-contain"
                 loading="lazy"

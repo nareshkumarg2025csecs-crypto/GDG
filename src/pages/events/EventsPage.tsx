@@ -387,7 +387,7 @@ export const EventsPage: React.FC = () => {
               <div className="relative mx-auto w-32 h-40 sm:w-36 sm:h-44 flex items-center justify-center mb-4">
                 <div className="absolute inset-0 bg-gradient-to-t from-google-yellow/20 to-transparent rounded-full blur-lg pointer-events-none" />
                 <img
-                  src="/mascot.png"
+                  src="/mascot.webp"
                   alt="Pixel the Mascot"
                   className="relative z-10 w-full h-full object-contain drop-shadow-md select-none"
                 />

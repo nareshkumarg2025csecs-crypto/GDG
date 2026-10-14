@@ -23,7 +23,7 @@ export async function generateBrandedQrDataUrl(
     margin = 2,
     darkColor = '#0f172a',
     lightColor = '#ffffff',
-    logoSrc = '/favicon.png',
+    logoSrc = '/gdg-logo-icon.webp',
   } = options;
 
   if (typeof document === 'undefined') {
@@ -94,7 +94,7 @@ export async function generateBrandedQrDataUrl(
         fallback.crossOrigin = 'anonymous';
         fallback.onload = () => resolve(fallback);
         fallback.onerror = (err) => reject(err);
-        fallback.src = '/gdg-logo-icon1.png';
+        fallback.src = '/gdg-logo-icon1.webp';
       };
       img.src = logoSrc;
     });

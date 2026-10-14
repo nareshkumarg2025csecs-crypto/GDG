@@ -64,7 +64,7 @@ const Index = () => {
       <SEO
         title="Google Developer Groups on Campus | REC"
         description="Official community portal for Google Developer Groups on Campus at Rajalakshmi Engineering College (REC). Discover upcoming tech workshops, hackathons, speaker sessions, and resources."
-        keywords={['GDG on Campus REC', 'Google Developer Groups on Campus Rajalakshmi Engineering College', 'GDG REC', 'Google Developer Groups Rajalakshmi Engineering College', 'student developers']}
+        keywords={['gdgrec', 'gdg rec', 'gdg on campus rec', 'GDG Rajalakshmi Engineering College', 'Google Developer Groups Rajalakshmi Engineering College', 'GDG REC', 'student developers']}
         canonical="https://www.gdgrec.dev/"
       />
       <Preloader />

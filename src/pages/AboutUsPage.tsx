@@ -310,7 +310,7 @@ const AboutUsPage = () => {
                 <div className="relative w-40 h-52 sm:w-48 sm:h-60 bg-muted/40 rounded-2xl overflow-hidden border border-border/70 flex items-center justify-center p-3 group shadow-inner">
                   <div className="absolute inset-0 bg-gradient-to-t from-google-yellow/20 via-transparent to-transparent pointer-events-none" />
                   <motion.img
-                    src="/mascot.png"
+                    src="/mascot.webp"
                     alt="Pixel - GDG Official Mascot Kitten"
                     animate={isPurring ? { scale: [1, 1.06, 0.98, 1.04, 1] } : { scale: 1 }}
                     transition={{ duration: 0.6 }}

@@ -18,6 +18,17 @@ const DEFAULT_IMAGE = 'https://www.gdgrec.dev/favicon.png';
 const SITE_NAME = 'Google Developer Groups On Campus - REC';
 const BASE_URL = 'https://www.gdgrec.dev';
 
+const DEFAULT_KEYWORDS = [
+  'gdgrec',
+  'gdg rec',
+  'gdg on campus rec',
+  'GDG Rajalakshmi Engineering College',
+  'Google Developer Groups on Campus REC',
+  'GDG Chennai',
+  'rec developer club',
+  'student developers'
+];
+
 export const SEO: React.FC<SEOProps> = ({
   title,
   description = DEFAULT_DESCRIPTION,
@@ -64,11 +75,11 @@ export const SEO: React.FC<SEOProps> = ({
     // 2. Standard Meta Description
     setMetaTag('name', 'description', description);
 
-    // 3. Keywords (if provided)
-    if (keywords) {
-      const keywordStr = Array.isArray(keywords) ? keywords.join(', ') : keywords;
-      setMetaTag('name', 'keywords', keywordStr);
-    }
+    // 3. Keywords (with robust defaults)
+    const keywordStr = keywords
+      ? (Array.isArray(keywords) ? keywords.join(', ') : keywords)
+      : DEFAULT_KEYWORDS.join(', ');
+    setMetaTag('name', 'keywords', keywordStr);
 
     // 4. Canonical URL
     const canonicalUrl = canonical || (typeof window !== 'undefined' ? window.location.href : BASE_URL);
