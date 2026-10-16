@@ -510,4 +510,135 @@ describe('Security Hardening Test Suite', () => {
       expect(res.body.error).toMatch(/unauthorized/i);
     });
   });
+
+  describe('4. OAuth & Shared Credential Hardening', () => {
+    test('Unauthenticated user cannot access Gmail or Drive OAuth URL generation', async () => {
+      const resGmail = await request(app).get('/api/auth/google/gmail-auth-url');
+      expect(resGmail.status).toBe(401);
+
+      const resDrive = await request(app).get('/api/auth/google/drive-auth-url');
+      expect(resDrive.status).toBe(401);
+    });
+
+    test('Student user is forbidden from initiating shared admin OAuth flows', async () => {
+      const resGmail = await request(app)
+        .get('/api/auth/google/gmail-auth-url')
+        .set('Authorization', `Bearer ${studentToken}`);
+      expect(resGmail.status).toBe(403);
+
+      const resDrive = await request(app)
+        .get('/api/auth/google/drive-auth-url')
+        .set('Authorization', `Bearer ${studentToken}`);
+      expect(resDrive.status).toBe(403);
+    });
+
+    test('Admin OAuth URL contains cryptographically strong dynamic state', async () => {
+      const res = await request(app)
+        .get('/api/auth/google/gmail-auth-url')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.url).toBeDefined();
+
+      const parsedUrl = new URL(res.body.url);
+      const state = parsedUrl.searchParams.get('state');
+      expect(state).toBeDefined();
+      expect(state.length).toBeGreaterThanOrEqual(32);
+      expect(state).not.toBe('gmail');
+      expect(state).not.toBe('drive');
+    });
+
+    test('OAuth callback rejects missing, static, or forged state parameters', async () => {
+      // Missing state
+      const resMissing = await request(app)
+        .get('/api/auth/google/gmail-callback')
+        .set('Accept', 'application/json')
+        .query({ code: 'mock-auth-code' });
+      expect(resMissing.status).toBe(400);
+      expect(resMissing.body.error).toMatch(/state/i);
+
+      // Legacy static state rejected
+      const resStatic = await request(app)
+        .get('/api/auth/google/drive-callback')
+        .set('Accept', 'application/json')
+        .query({ code: 'mock-auth-code', state: 'drive' });
+      expect(resStatic.status).toBe(400);
+      expect(resStatic.body.error).toMatch(/state/i);
+
+      // Random unissued state rejected
+      const resForged = await request(app)
+        .get('/api/auth/google/gmail-callback')
+        .set('Accept', 'application/json')
+        .query({ code: 'mock-auth-code', state: '0123456789abcdef0123456789abcdef' });
+      expect(resForged.status).toBe(400);
+      expect(resForged.body.error).toMatch(/state/i);
+    });
+  });
+
+  describe('5. Certificate Code Execution Security Policies', () => {
+    const CertificateService = require('../src/services/certificateService');
+
+    test('Rejects arbitrary subprocess execution attempts in certificate scripts', () => {
+      expect(() => {
+        CertificateService.validateScriptCode(`
+          import subprocess
+          subprocess.call(["cat", "/etc/passwd"])
+        `);
+      }).toThrow(/Prohibited Python module or system call detected/i);
+    });
+
+    test('Rejects socket network access attempts in certificate scripts', () => {
+      expect(() => {
+        CertificateService.validateScriptCode(`
+          import socket
+          s = socket.socket()
+        `);
+      }).toThrow(/Prohibited Python module or system call detected/i);
+    });
+
+    test('Rejects os.system and dangerous os execution calls', () => {
+      expect(() => {
+        CertificateService.validateScriptCode(`
+          import os
+          os.system("rm -rf /")
+        `);
+      }).toThrow(/Prohibited Python module or system call detected/i);
+    });
+
+    test('Rejects eval, exec, and builtins traversal', () => {
+      expect(() => {
+        CertificateService.validateScriptCode(`
+          eval("__import__('os').system('whoami')")
+        `);
+      }).toThrow(/Prohibited Python module or system call detected/i);
+    });
+
+    test('Accepts valid PIL graphic layout script', () => {
+      expect(
+        CertificateService.validateScriptCode(CertificateService.DEFAULT_PYTHON_TEMPLATE)
+      ).toBe(true);
+    });
+  });
+
+  describe('6. Client IP Extraction and Anti-Spoofing', () => {
+    const { getClientIp } = require('../src/services/activityLogService');
+
+    test('Extracts req.ip correctly without trusting raw client X-Forwarded-For', () => {
+      const mockReq = {
+        ip: '198.51.100.42',
+        headers: {
+          'x-forwarded-for': '203.0.113.195, 198.51.100.42',
+        },
+      };
+
+      const extracted = getClientIp(mockReq);
+      expect(extracted).toBe('198.51.100.42');
+    });
+
+    test('Handles IPv4-mapped IPv6 loopback correctly', () => {
+      const mockReq = {
+        ip: '::ffff:127.0.0.1',
+      };
+      expect(getClientIp(mockReq)).toBe('127.0.0.1');
+    });
+  });
 });

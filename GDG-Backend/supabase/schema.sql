@@ -56,21 +56,37 @@ DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
 CREATE POLICY "Users can view their own profile"
     ON public.profiles
     FOR SELECT
+    TO authenticated
     USING (auth.uid() = id);
 
--- Users can only UPDATE their own profile row
--- Note: Column-level restrictions are not enforced by standard RLS in Postgres.
--- The backend must strip the `role` and `id` fields on update routes to prevent privilege escalation.
+-- Note: Direct INSERT, UPDATE, and DELETE on public.profiles are revoked from browser roles (anon & authenticated).
+-- All profile creation, role assignment, and security changes occur server-side exclusively via the Supabase Service Role.
 DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
-CREATE POLICY "Users can update their own profile"
-    ON public.profiles
-    FOR UPDATE
-    USING (auth.uid() = id);
 
--- Note on Profiles INSERT:
--- We intentionally DO NOT create a public INSERT policy for public.profiles.
--- Profile rows must ONLY be inserted server-side by the backend application
--- using the Supabase Service Role key (which bypasses RLS).
+-- Defense-in-depth trigger: block any attempt to escalate role or modify security counters directly
+CREATE OR REPLACE FUNCTION public.prevent_profile_role_escalation()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'UPDATE') THEN
+        IF NEW.role IS DISTINCT FROM OLD.role THEN
+            RAISE EXCEPTION 'Privilege Escalation Blocked: Role cannot be modified directly.';
+        END IF;
+        IF NEW.locked_until IS DISTINCT FROM OLD.locked_until THEN
+            RAISE EXCEPTION 'Security Policy Violation: Account lockout status is server-managed.';
+        END IF;
+        IF NEW.failed_login_count IS DISTINCT FROM OLD.failed_login_count THEN
+            RAISE EXCEPTION 'Security Policy Violation: Login counters are server-managed.';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_prevent_profile_role_escalation ON public.profiles;
+CREATE TRIGGER trg_prevent_profile_role_escalation
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.prevent_profile_role_escalation();
 
 
 -- ==============================================================================
@@ -219,13 +235,10 @@ CREATE INDEX IF NOT EXISTS idx_submissions_user_id ON public.form_submissions(us
 -- Enable RLS on form submissions
 ALTER TABLE public.form_submissions ENABLE ROW LEVEL SECURITY;
 
--- Students can insert their own submissions
+-- Note: Direct client-side INSERT, UPDATE, and DELETE on form_submissions are revoked.
+-- All form submissions, ticket allocation, and attendance checks MUST be processed
+-- via Express backend endpoints with atomic validation.
 DROP POLICY IF EXISTS "Users can insert own submissions" ON public.form_submissions;
-CREATE POLICY "Users can insert own submissions"
-    ON public.form_submissions
-    FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = user_id);
 
 -- Users can view their own submissions
 DROP POLICY IF EXISTS "Users can view own submissions" ON public.form_submissions;
@@ -234,6 +247,11 @@ CREATE POLICY "Users can view own submissions"
     FOR SELECT
     TO authenticated
     USING (auth.uid() = user_id);
+
+-- Enforce strict database uniqueness on ticket_id to eliminate collisions across instances
+CREATE UNIQUE INDEX IF NOT EXISTS idx_form_submissions_ticket_id 
+    ON public.form_submissions(ticket_id) 
+    WHERE ticket_id IS NOT NULL;
 
 
 -- ==============================================================================
@@ -361,21 +379,9 @@ CREATE TABLE IF NOT EXISTS public.gmail_service_tokens (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable RLS on gmail_service_tokens (Server-side service role only)
+-- Enable RLS on gmail_service_tokens (Strictly server-side service_role only)
 ALTER TABLE public.gmail_service_tokens ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Admins can view gmail service tokens" ON public.gmail_service_tokens;
-CREATE POLICY "Admins can view gmail service tokens"
-    ON public.gmail_service_tokens
-    FOR SELECT
-    TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-        )
-    );
-
 
 -- ==============================================================================
 -- 11b. Google Drive Service Tokens Table (System-wide Dedicated Storage Account)
@@ -410,20 +416,9 @@ EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
 
--- Enable RLS on drive_service_tokens (Server-side service role & admins only)
+-- Enable RLS on drive_service_tokens (Strictly server-side service_role only)
 ALTER TABLE public.drive_service_tokens ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Admins can view drive service tokens" ON public.drive_service_tokens;
-CREATE POLICY "Admins can view drive service tokens"
-    ON public.drive_service_tokens
-    FOR SELECT
-    TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-        )
-    );
 
 
 -- ==============================================================================
@@ -453,21 +448,9 @@ CREATE INDEX IF NOT EXISTS idx_email_queue_status ON public.email_queue(status, 
 CREATE INDEX IF NOT EXISTS idx_email_queue_event_id ON public.email_queue(event_id);
 CREATE INDEX IF NOT EXISTS idx_email_queue_submission_id ON public.email_queue(submission_id);
 
--- Enable RLS on email_queue
+-- Enable RLS on email_queue (Strictly managed server-side via service_role)
 ALTER TABLE public.email_queue ENABLE ROW LEVEL SECURITY;
-
--- Admins can view and monitor email queue
 DROP POLICY IF EXISTS "Admins can view email queue" ON public.email_queue;
-CREATE POLICY "Admins can view email queue"
-    ON public.email_queue
-    FOR SELECT
-    TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-        )
-    );
 
 
 -- ==============================================================================
@@ -485,20 +468,9 @@ CREATE TABLE IF NOT EXISTS public.event_certificates (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable RLS on event_certificates
+-- Enable RLS on event_certificates (Strictly managed server-side via service_role)
 ALTER TABLE public.event_certificates ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "Admins can manage event certificates" ON public.event_certificates;
-CREATE POLICY "Admins can manage event certificates"
-    ON public.event_certificates
-    FOR ALL
-    TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-        )
-    );
 
 -- Safe column additions to form_submissions for certificate tracking
 DO $$
@@ -532,4 +504,23 @@ BEGIN
 EXCEPTION
     WHEN OTHERS THEN NULL;
 END $$;
+
+
+-- ==============================================================================
+-- 14. Explicit Least-Privilege Grants & Revokes
+-- ==============================================================================
+REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.form_submissions FROM anon, authenticated;
+REVOKE ALL ON public.gmail_service_tokens FROM anon, authenticated;
+REVOKE ALL ON public.drive_service_tokens FROM anon, authenticated;
+REVOKE ALL ON public.email_queue FROM anon, authenticated;
+REVOKE ALL ON public.event_certificates FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.events FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.forms FROM anon, authenticated;
+
+GRANT SELECT ON public.events TO anon, authenticated;
+GRANT SELECT ON public.forms TO anon, authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
+GRANT SELECT ON public.form_submissions TO authenticated;
+
 

@@ -187,9 +187,17 @@ export const authService = {
     });
   },
 
-  async getGmailAuthUrl(): Promise<GmailAuthUrlResponse> {
+  async getGmailAuthUrl(token?: string | null): Promise<GmailAuthUrlResponse> {
     return apiRequest<GmailAuthUrlResponse>('/api/auth/google/gmail-auth-url', {
       method: 'GET',
+      token,
+    });
+  },
+
+  async disconnectGmail(token?: string | null): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>('/api/auth/google/gmail-disconnect', {
+      method: 'POST',
+      token,
     });
   },
 
@@ -207,9 +215,10 @@ export const authService = {
     });
   },
 
-  async getDriveAuthUrl(): Promise<DriveAuthUrlResponse> {
+  async getDriveAuthUrl(token?: string | null): Promise<DriveAuthUrlResponse> {
     return apiRequest<DriveAuthUrlResponse>('/api/auth/google/drive-auth-url', {
       method: 'GET',
+      token,
     });
   },
 

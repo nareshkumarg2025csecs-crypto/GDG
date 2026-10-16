@@ -18,6 +18,30 @@ const eventConfigCache = new BoundedMap(100);
 // In-memory job registry for tracking batch progress
 const activeJobs = new Map();
 
+// Concurrency control: bounded semaphore (max 2 simultaneous Python generator executions)
+const MAX_CONCURRENT_PYTHON_WORKERS = 2;
+let activePythonWorkers = 0;
+const pythonWorkerQueue = [];
+
+function acquireWorkerSlot() {
+  return new Promise((resolve) => {
+    if (activePythonWorkers < MAX_CONCURRENT_PYTHON_WORKERS) {
+      activePythonWorkers++;
+      return resolve();
+    }
+    pythonWorkerQueue.push(resolve);
+  });
+}
+
+function releaseWorkerSlot() {
+  activePythonWorkers--;
+  if (pythonWorkerQueue.length > 0) {
+    const next = pythonWorkerQueue.shift();
+    activePythonWorkers++;
+    next();
+  }
+}
+
 // Helper to prune old completed/cancelled jobs (keep last 30)
 function pruneActiveJobs() {
   if (activeJobs.size > 30) {
@@ -732,6 +756,7 @@ class CertificateService {
     this.validateScriptCode(effectiveCode);
     await this.ensureScriptAssetsDownloaded(effectiveCode);
 
+    await acquireWorkerSlot();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gdg_cert_'));
     const scriptPath = path.join(tempDir, 'generator.py');
     const dataPath = path.join(tempDir, 'data.json');
@@ -739,11 +764,30 @@ class CertificateService {
     const outFilePath = path.join(tempDir, outFileName);
 
     try {
+      // Path containment check
+      const resolvedOutPath = path.resolve(outFilePath);
+      if (!resolvedOutPath.startsWith(path.resolve(tempDir))) {
+        throw new Error('Security Error: Illegal output path traversal.');
+      }
+
       fs.writeFileSync(scriptPath, effectiveCode, 'utf8');
       fs.writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf8');
 
       const pythonBin = this.getPythonBinary();
       await new Promise((resolve, reject) => {
+        // Strip sensitive environment variables: no SUPABASE_*, GMAIL_*, GOOGLE_*, JWT_*
+        const sanitizedEnv = {
+          PATH: process.env.PATH || '',
+          SYSTEMROOT: process.env.SYSTEMROOT || '',
+          APPDATA: process.env.APPDATA || '',
+          LOCALAPPDATA: process.env.LOCALAPPDATA || '',
+          USERPROFILE: process.env.USERPROFILE || '',
+          HOME: process.env.HOME || '',
+          TEMP: tempDir,
+          TMP: tempDir,
+          PYTHONUNBUFFERED: '1',
+        };
+
         const pythonProcess = spawn(
           pythonBin,
           [
@@ -756,39 +800,33 @@ class CertificateService {
             ASSETS_DIR,
           ],
           {
-            env: {
-              PATH: process.env.PATH,
-              SYSTEMROOT: process.env.SYSTEMROOT,
-              APPDATA: process.env.APPDATA,
-              LOCALAPPDATA: process.env.LOCALAPPDATA,
-              USERPROFILE: process.env.USERPROFILE,
-              HOMEPATH: process.env.HOMEPATH,
-              HOMEDRIVE: process.env.HOMEDRIVE,
-              HOME: process.env.HOME,
-              PYTHONPATH: process.env.PYTHONPATH,
-              TEMP: tempDir,
-              TMP: tempDir,
-              PYTHONUNBUFFERED: '1',
-            },
+            env: sanitizedEnv,
             cwd: tempDir,
           }
         );
 
         let stderr = '';
         let stdout = '';
+        const MAX_OUTPUT_BYTES = 64 * 1024; // 64KB cap to prevent buffer exhaustion
 
         pythonProcess.stdout.on('data', (chunk) => {
-          stdout += chunk.toString();
+          if (stdout.length < MAX_OUTPUT_BYTES) {
+            stdout += chunk.toString().slice(0, MAX_OUTPUT_BYTES - stdout.length);
+          }
         });
 
         pythonProcess.stderr.on('data', (chunk) => {
-          stderr += chunk.toString();
+          if (stderr.length < MAX_OUTPUT_BYTES) {
+            stderr += chunk.toString().slice(0, MAX_OUTPUT_BYTES - stderr.length);
+          }
         });
 
         const timer = setTimeout(() => {
-          pythonProcess.kill();
-          reject(new Error('Python certificate generation timed out after 20 seconds.'));
-        }, 20000);
+          try {
+            pythonProcess.kill('SIGKILL');
+          } catch (_) {}
+          reject(new Error('Python certificate generation timed out after 12 seconds.'));
+        }, 12000);
 
         pythonProcess.on('close', (code) => {
           clearTimeout(timer);
@@ -798,9 +836,35 @@ class CertificateService {
             reject(new Error(`Python execution failed (code ${code}): ${stderr || stdout || 'No output file generated.'}`));
           }
         });
+
+        pythonProcess.on('error', (err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
       });
 
+      const stats = fs.statSync(outFilePath);
+      const MAX_CERT_SIZE = 15 * 1024 * 1024; // 15MB
+      if (stats.size > MAX_CERT_SIZE) {
+        throw new Error('Generated certificate exceeds maximum allowed file size (15MB).');
+      }
+
       const fileBuffer = fs.readFileSync(outFilePath);
+
+      // Validate magic bytes
+      if (outputFormat === 'pdf') {
+        const isPdf = fileBuffer.length >= 4 && fileBuffer.toString('utf8', 0, 4) === '%PDF';
+        if (!isPdf) {
+          throw new Error('Generated file validation failed: output is not a valid PDF.');
+        }
+      } else if (outputFormat === 'png') {
+        const isPng = fileBuffer.length >= 8 &&
+          fileBuffer[0] === 0x89 && fileBuffer[1] === 0x50 && fileBuffer[2] === 0x4E && fileBuffer[3] === 0x47;
+        if (!isPng) {
+          throw new Error('Generated file validation failed: output is not a valid PNG.');
+        }
+      }
+
       return {
         buffer: fileBuffer,
         format: outputFormat,
@@ -808,6 +872,7 @@ class CertificateService {
         filename: `Certificate_${(data.attendee_name || 'Participant').replace(/[^a-zA-Z0-9_-]/g, '_')}.${outputFormat}`,
       };
     } finally {
+      releaseWorkerSlot();
       // Clean up temp directory immediately
       try {
         fs.rmSync(tempDir, { recursive: true, force: true });

@@ -24,11 +24,22 @@ const {
   validateCreateForm,
   validateSubmitForm,
 } = require('../middleware/validator');
-const { formSubmissionLimiter } = require('../middleware/rateLimiter');
+const {
+  formSubmissionLimiter,
+  ticketLookupLimiter,
+  fileUploadLimiter,
+} = require('../middleware/rateLimiter');
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB max limit
+  limits: {
+    fileSize: 30 * 1024 * 1024, // 30MB max file size
+    files: 1, // At most 1 file per upload request
+    fields: 10, // Max 10 non-file fields
+    parts: 15, // Total multipart parts (fields + files)
+    fieldNameSize: 100, // Max 100 chars field name
+    fieldSize: 1024 * 1024, // Max 1MB for non-file fields
+  },
 });
 
 const router = express.Router();
@@ -42,9 +53,9 @@ router.get('/scanner-events', requireAuth, requireRole('admin'), scannerGetEvent
 // User Submissions
 router.get('/submissions/my', requireAuth, getMySubmissions);
 
-// Public Ticket Pass Lookup & Direct QR Download (optionalAuth for PII protection)
-router.get('/ticket/:ticketId', optionalAuth, getTicketPass);
-router.get('/ticket/:ticketId/qr-download', downloadTicketQr);
+// Public Ticket Pass Lookup & Direct QR Download (optionalAuth for PII protection and ownership check)
+router.get('/ticket/:ticketId', ticketLookupLimiter, optionalAuth, getTicketPass);
+router.get('/ticket/:ticketId/qr-download', ticketLookupLimiter, optionalAuth, downloadTicketQr);
 
 // Single Form View (public — anyone can see form structure)
 router.get('/:id', getFormById);
@@ -53,6 +64,7 @@ router.get('/:id', getFormById);
 router.post(
   '/:formId/upload',
   requireAuth,
+  fileUploadLimiter,
   upload.single('file'),
   uploadFormFile
 );

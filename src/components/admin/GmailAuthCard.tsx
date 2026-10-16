@@ -117,7 +117,7 @@ export const GmailAuthCard: React.FC<GmailAuthCardProps> = ({ onQueueUpdated }) 
 
   const handleConnectGmail = async () => {
     try {
-      const { auth_url } = await authService.getGmailAuthUrl();
+      const { auth_url } = await authService.getGmailAuthUrl(token);
       if (auth_url) {
         window.location.href = auth_url;
       }

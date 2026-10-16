@@ -81,8 +81,11 @@ export const SEO: React.FC<SEOProps> = ({
       : DEFAULT_KEYWORDS.join(', ');
     setMetaTag('name', 'keywords', keywordStr);
 
-    // 4. Canonical URL
-    const canonicalUrl = canonical || (typeof window !== 'undefined' ? window.location.href : BASE_URL);
+    // 4. Canonical URL (Cleans transient query parameters, enforces canonical hostname)
+    const cleanPath = typeof window !== 'undefined'
+      ? (window.location.pathname.replace(/\/+$/, '') || '/')
+      : '/';
+    const canonicalUrl = canonical || `${BASE_URL}${cleanPath === '/' ? '/' : cleanPath}`;
     setLinkTag('canonical', canonicalUrl);
 
     // 5. Open Graph Meta Tags (Facebook, WhatsApp, LinkedIn, Discord)

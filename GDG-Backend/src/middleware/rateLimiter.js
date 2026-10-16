@@ -164,6 +164,58 @@ const formSubmissionLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// 6. File Upload Limiter (prevents storage flooding and DoS)
+const fileUploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // max 20 uploads per 15 minutes per user/ip
+  keyGenerator: (req) => {
+    const userId = req.user?.id;
+    const ip = getClientIp(req);
+    return userId ? `user_upload_${userId}` : `ip_upload_${ip}`;
+  },
+  handler: rateLimitHandler,
+  skip: shouldSkipGeneral,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 7. Ticket & QR Lookup Limiter
+const ticketLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120, // max 120 ticket queries per 15 minutes per IP
+  keyGenerator: ipKeyGenerator,
+  handler: rateLimitHandler,
+  skip: shouldSkipGeneral,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 8. Certificate Generation & Preview Limiter
+const certificateGenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, // max 30 certificate compiles per 15 minutes per user/ip
+  keyGenerator: (req) => {
+    const userId = req.user?.id;
+    const ip = getClientIp(req);
+    return userId ? `user_cert_${userId}` : `ip_cert_${ip}`;
+  },
+  handler: rateLimitHandler,
+  skip: shouldSkipGeneral,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 9. OAuth Initiation Limiter
+const oauthInitiateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  keyGenerator: ipKeyGenerator,
+  handler: rateLimitHandler,
+  skip: shouldSkipGeneral,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 module.exports = {
   adminLoginLimiter,
   studentLoginLimiter,
@@ -172,4 +224,9 @@ module.exports = {
   studentSignupLimiter,
   generalApiLimiter,
   formSubmissionLimiter,
+  fileUploadLimiter,
+  ticketLookupLimiter,
+  certificateGenLimiter,
+  oauthInitiateLimiter,
 };
+

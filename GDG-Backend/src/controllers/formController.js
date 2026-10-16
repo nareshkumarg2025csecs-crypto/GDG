@@ -1174,7 +1174,7 @@ const submitForm = async (req, res) => {
       nextNum = (submissionCount || 0) + 1;
     }
 
-    const entropy = crypto.randomBytes(2).toString('hex').toUpperCase();
+    const entropy = crypto.randomBytes(6).toString('hex').toUpperCase();
     let ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${entropy}`;
     let collisionChecked = false;
     let attempts = 0;
@@ -1194,14 +1194,14 @@ const submitForm = async (req, res) => {
         break;
       }
       nextNum++;
-      const nextEntropy = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const nextEntropy = crypto.randomBytes(6).toString('hex').toUpperCase();
       ticketId = `${prefix}${String(nextNum).padStart(3, '0')}-${nextEntropy}`;
       attempts++;
     }
 
     // High-concurrency fallback if multiple worker nodes race on the same number
     if (!collisionChecked) {
-      ticketId = `${prefix}${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+      ticketId = `${prefix}${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
       formTicketCounters.set(formId, nextNum + 1);
     }
 
@@ -2217,6 +2217,8 @@ const getTicketPass = async (req, res) => {
 /**
  * GET /api/forms/ticket/:ticketId/qr-download
  * Direct download of the QR code PNG pass image with Content-Disposition header.
+ * Enforces ownership/admin authorization, omits private attendee email from QR text,
+ * and sets strict private cache controls.
  */
 const downloadTicketQr = async (req, res) => {
   try {
@@ -2228,21 +2230,40 @@ const downloadTicketQr = async (req, res) => {
     const cleanTicketId = ticketId.trim().toUpperCase();
 
     // Look up submission details
-    let { data: submission } = await supabaseAdmin
+    const { data: submission } = await supabaseAdmin
       .from('form_submissions')
-      .select('id, form_id, answers, submitted_at, ticket_id')
+      .select('id, form_id, user_id, answers, submitted_at, ticket_id')
       .eq('ticket_id', cleanTicketId)
       .maybeSingle();
 
     if (!submission) {
-      const { data: fallbackSubs } = await supabaseAdmin
-        .from('form_submissions')
-        .select('id, form_id, answers, submitted_at, ticket_id')
-        .limit(100);
+      return res.status(404).json({ error: 'Ticket submission not found.' });
+    }
 
-      submission = (fallbackSubs || []).find(
-        (s) => (s.answers?.ticket_id || '').toUpperCase() === cleanTicketId
-      );
+    // Ownership & Authorization Validation
+    const isOwner = req.user && req.user.id === submission.user_id;
+    const isAdmin = req.user && (req.user.role === 'admin' || req.user.profile?.role === 'admin');
+
+    const downloadToken = req.query.token;
+    let isValidToken = false;
+    if (downloadToken && typeof downloadToken === 'string') {
+      const secret = process.env.SCANNER_TOKEN_SECRET || 'gdg_ticket_qr_secret';
+      const expectedToken = crypto
+        .createHmac('sha256', secret)
+        .update(`${submission.id}:${cleanTicketId}`)
+        .digest('hex');
+      if (downloadToken.length === expectedToken.length) {
+        isValidToken = crypto.timingSafeEqual(
+          Buffer.from(downloadToken),
+          Buffer.from(expectedToken)
+        );
+      }
+    }
+
+    if (!isOwner && !isAdmin && !isValidToken) {
+      return res.status(403).json({
+        error: 'Forbidden: You do not have authorization to download this attendee ticket QR pass.',
+      });
     }
 
     const { data: form } = submission?.form_id
@@ -2255,17 +2276,16 @@ const downloadTicketQr = async (req, res) => {
 
     const eventTitle = event?.title || form?.title || 'GDG Event';
     const attendeeName = submission?.answers?.full_name || submission?.answers?.name || 'Attendee';
-    const attendeeEmail = submission?.answers?.email || '';
 
+    // QR contains opaque verification details WITHOUT exposing attendee email address PII
     const qrText = [
       'GDG EVENT TICKET',
       '==============================',
       `Event: ${eventTitle}`,
       `Ticket ID: ${cleanTicketId}`,
-      `Name: ${attendeeName}`,
-      `Email: ${attendeeEmail}`,
+      `Attendee: ${attendeeName}`,
       '==============================',
-      'Google Developer Groups On Campus',
+      'Google Developer Groups On Campus REC',
     ].join('\n');
 
     const qrBuffer = await generateBrandedQrBuffer(qrText, {
@@ -2276,6 +2296,7 @@ const downloadTicketQr = async (req, res) => {
     });
 
     res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store, private');
     res.setHeader('Content-Disposition', `attachment; filename="gdg-ticket-${cleanTicketId}.png"`);
     return res.status(200).send(qrBuffer);
   } catch (err) {
@@ -2297,15 +2318,28 @@ const uploadFormFile = async (req, res) => {
       return res.status(400).json({ error: 'No file was uploaded.' });
     }
 
+    if (!fieldName || typeof fieldName !== 'string' || !fieldName.trim()) {
+      return res.status(400).json({ error: 'Field name is required for file upload.' });
+    }
+
     // 1. Verify form exists
     const { data: form, error: formErr } = await supabaseAdmin
       .from('forms')
-      .select('id, event_id, title, created_by, schema')
+      .select('id, event_id, title, created_by, schema, opens_at, expires_at, submission_limit')
       .eq('id', formId)
       .single();
 
     if (formErr || !form) {
       return res.status(404).json({ error: 'Form not found.' });
+    }
+
+    // Validate form active window
+    const now = new Date();
+    if (form.opens_at && new Date(form.opens_at) > now) {
+      return res.status(400).json({ error: 'This registration form has not opened yet.' });
+    }
+    if (form.expires_at && new Date(form.expires_at) < now) {
+      return res.status(400).json({ error: 'This registration form has closed and is no longer accepting uploads.' });
     }
 
     // 2. Fetch event title for folder naming
@@ -2318,50 +2352,76 @@ const uploadFormFile = async (req, res) => {
     // 3. Find field schema and validate size & type limits
     const fields = form.schema?.fields || [];
     const targetField = fields.find(
-      (f) => f.name === fieldName || f.id === fieldName || f.type === 'file'
+      (f) => (f.name === fieldName || f.id === fieldName) && f.type === 'file'
     );
 
-    if (targetField) {
-      // Validate max file size
-      const maxMb = targetField.max_file_size_mb || 10;
-      const maxBytes = maxMb * 1024 * 1024;
-      if (req.file.size > maxBytes) {
-        return res.status(400).json({
-          error: `File size exceeds the limit of ${maxMb}MB.`,
-          max_size_mb: maxMb,
-          actual_size_bytes: req.file.size,
-        });
-      }
+    if (!targetField) {
+      return res.status(400).json({
+        error: `Field "${fieldName}" does not exist or is not configured as a file upload field on this form.`,
+      });
+    }
 
-      // Validate allowed file types if specified
-      if (targetField.allowed_file_types && targetField.allowed_file_types !== '*' && targetField.allowed_file_types !== '') {
-        const allowed = targetField.allowed_file_types
-          .split(',')
-          .map((t) => t.trim().toLowerCase())
-          .filter(Boolean);
+    // Validate max file size
+    const maxMb = targetField.max_file_size_mb || 10;
+    const maxBytes = maxMb * 1024 * 1024;
+    if (req.file.size > maxBytes) {
+      return res.status(400).json({
+        error: `File size exceeds the limit of ${maxMb}MB.`,
+        max_size_mb: maxMb,
+        actual_size_bytes: req.file.size,
+      });
+    }
 
-        const fileName = (req.file.originalname || '').toLowerCase();
-        const mime = (req.file.mimetype || '').toLowerCase();
+    // Validate allowed file types if specified
+    if (targetField.allowed_file_types && targetField.allowed_file_types !== '*' && targetField.allowed_file_types !== '') {
+      const allowed = targetField.allowed_file_types
+        .split(',')
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
 
-        const isAllowed = allowed.some((rule) => {
-          if (rule.startsWith('.')) {
-            return fileName.endsWith(rule);
-          }
-          if (rule.endsWith('/*')) {
-            const prefix = rule.slice(0, -1);
-            return mime.startsWith(prefix);
-          }
-          return mime === rule;
-        });
+      const fileName = (req.file.originalname || '').toLowerCase();
+      const mime = (req.file.mimetype || '').toLowerCase();
 
-        if (!isAllowed) {
-          return res.status(400).json({
-            error: `Invalid file type. Allowed types: ${targetField.allowed_file_types}`,
-            allowed_types: targetField.allowed_file_types,
-          });
+      const isAllowed = allowed.some((rule) => {
+        if (rule.startsWith('.')) {
+          return fileName.endsWith(rule);
         }
+        if (rule.endsWith('/*')) {
+          const prefix = rule.slice(0, -1);
+          return mime.startsWith(prefix);
+        }
+        return mime === rule;
+      });
+
+      if (!isAllowed) {
+        return res.status(400).json({
+          error: `Invalid file type. Allowed types: ${targetField.allowed_file_types}`,
+          allowed_types: targetField.allowed_file_types,
+        });
       }
     }
+
+    // Validate file magic bytes to verify file signature integrity
+    const buffer = req.file.buffer;
+    if (buffer && buffer.length >= 4) {
+      const mime = (req.file.mimetype || '').toLowerCase();
+      const isPdf = mime.includes('pdf') || req.file.originalname.toLowerCase().endsWith('.pdf');
+      const isPng = mime.includes('png') || req.file.originalname.toLowerCase().endsWith('.png');
+      const isJpg = mime.includes('jpeg') || mime.includes('jpg') || /\.(jpe?g)$/i.test(req.file.originalname);
+
+      if (isPdf && !buffer.slice(0, 5).toString('ascii').startsWith('%PDF-')) {
+        return res.status(400).json({ error: 'File validation failed: Corrupted or invalid PDF header signature.' });
+      }
+      if (isPng && (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47)) {
+        return res.status(400).json({ error: 'File validation failed: Corrupted or invalid PNG header signature.' });
+      }
+      if (isJpg && (buffer[0] !== 0xff || buffer[1] !== 0xd8 || buffer[2] !== 0xff)) {
+        return res.status(400).json({ error: 'File validation failed: Corrupted or invalid JPEG header signature.' });
+      }
+    }
+
+    // Sanitize filename against directory traversal
+    const safeOriginalName = path.basename(req.file.originalname || 'upload').replace(/[^a-zA-Z0-9._-]/g, '_');
 
     // 4. Resolve Google Drive access token from club/admin storage (NEVER student's personal account)
     const accessToken = await GoogleDriveService.getDriveAccessToken(form.created_by);
@@ -2381,7 +2441,7 @@ const uploadFormFile = async (req, res) => {
     const uploadedFile = await GoogleDriveService.uploadFileToEventFolder({
       accessToken,
       folderId,
-      fileName: req.file.originalname,
+      fileName: safeOriginalName,
       mimeType: req.file.mimetype,
       buffer: req.file.buffer,
       attendeeName,

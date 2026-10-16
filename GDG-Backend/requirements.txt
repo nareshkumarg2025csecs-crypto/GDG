@@ -1,2 +1,2 @@
 # Python dependencies for GDG Certificate Generation
-Pillow>=10.0.0
+Pillow>=10.4.0

@@ -22,7 +22,7 @@ class GmailApiService {
    * @param {string} redirectUri
    * @returns {string}
    */
-  static getAuthUrl(redirectUri) {
+  static getAuthUrl(redirectUri, state = null) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) {
       throw new Error('GOOGLE_CLIENT_ID is missing from environment variables.');
@@ -37,7 +37,31 @@ class GmailApiService {
       prompt: 'consent',
     });
 
+    if (state) {
+      params.set('state', state);
+    }
+
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  /**
+   * Disconnects the shared Gmail account and purges tokens from database and memory.
+   */
+  static async disconnectGmailAccount() {
+    cachedAccessToken = null;
+    tokenExpiresAt = 0;
+    cachedSenderProfile = null;
+    senderProfileExpiresAt = 0;
+
+    try {
+      await supabaseAdmin
+        .from('gmail_service_tokens')
+        .delete()
+        .eq('id', 'default');
+      console.log('[GmailApiService] Gmail account disconnected and tokens purged from database.');
+    } catch (err) {
+      console.warn('[GmailApiService] Could not remove gmail_service_tokens record:', err.message);
+    }
   }
 
   /**

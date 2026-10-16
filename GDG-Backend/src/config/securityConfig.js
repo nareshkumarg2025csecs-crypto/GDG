@@ -37,21 +37,24 @@ const securityConfig = {
 
   // CORS Allowed Origins & OAuth Allowlist
   getAllowedOrigins: () => {
-    const defaultDevOrigins = [
-      'http://localhost:8081',
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'http://127.0.0.1:8081',
-      'http://127.0.0.1:5173',
-      'https://gdgrec.dev',
-      'https://www.gdgrec.dev',
-    ];
+    const defaultOrigins =
+      process.env.NODE_ENV === 'production'
+        ? ['https://gdgrec.dev', 'https://www.gdgrec.dev']
+        : [
+            'http://localhost:8081',
+            'http://localhost:5173',
+            'http://localhost:3000',
+            'http://127.0.0.1:8081',
+            'http://127.0.0.1:5173',
+            'https://gdgrec.dev',
+            'https://www.gdgrec.dev',
+          ];
     const raw = process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || '';
     const configured = raw
       .split(',')
       .map((origin) => origin.trim().replace(/\/$/, ''))
       .filter(Boolean);
-    const origins = new Set([...defaultDevOrigins, ...configured]);
+    const origins = new Set([...defaultOrigins, ...configured]);
     return Array.from(origins);
   },
 };

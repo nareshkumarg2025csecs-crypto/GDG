@@ -2,7 +2,8 @@ const { supabaseAdmin } = require('../config/supabase');
 
 /**
  * Extracts the true client IP address from the Express request.
- * Handles reverse proxies (X-Forwarded-For, X-Real-IP) and IPv6 loopbacks.
+ * Relies on Express-evaluated req.ip behind the trusted proxy boundary,
+ * preventing attackers from forging arbitrary X-Forwarded-For / X-Real-IP headers.
  *
  * @param {import('express').Request} req
  * @returns {string} Client IP address
@@ -10,18 +11,13 @@ const { supabaseAdmin } = require('../config/supabase');
 const getClientIp = (req) => {
   if (!req) return '127.0.0.1';
 
+  // Rely on Express-computed req.ip which respects trusted proxy configuration.
+  // Never read raw headers directly when trust proxy is active.
   let ip =
-    (req.headers && req.headers['x-forwarded-for']) ||
-    (req.headers && req.headers['x-real-ip']) ||
     req.ip ||
     (req.connection && req.connection.remoteAddress) ||
     (req.socket && req.socket.remoteAddress) ||
     '127.0.0.1';
-
-  // If X-Forwarded-For contains multiple IPs, take the first one (original client)
-  if (typeof ip === 'string' && ip.includes(',')) {
-    ip = ip.split(',')[0].trim();
-  }
 
   // Strip IPv4-mapped IPv6 prefix (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
   if (typeof ip === 'string' && ip.startsWith('::ffff:')) {
@@ -54,6 +50,43 @@ const isPrivateIp = (ip) => {
   }
   return false;
 };
+
+/**
+ * Redacts secrets, tokens, passwords, and authorization codes before logging.
+ */
+const redactSensitiveFields = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  const SENSITIVE_KEYS = /password|token|secret|authorization|key|refresh|code|scanner_secret/i;
+  const sanitized = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.test(k)) {
+      sanitized[k] = '[REDACTED]';
+    } else if (v && typeof v === 'object') {
+      sanitized[k] = redactSensitiveFields(v);
+    } else {
+      sanitized[k] = v;
+    }
+  }
+  return sanitized;
+};
+
+// Security-sensitive events that must be durably stored in the database
+const DURABLE_SECURITY_ACTIONS = new Set([
+  'admin_login_success',
+  'admin_login_failed',
+  'account_locked',
+  'role_change',
+  'oauth_connected',
+  'oauth_disconnected',
+  'oauth_replaced',
+  'form_config_updated',
+  'attendance_marked',
+  'ticket_verified',
+  'certificate_issued',
+  'certificate_dispatched',
+  'file_uploaded',
+  'scanner_auth_failed',
+]);
 
 /**
  * Resolves approximate geographical location (city, region, country) from the IP.
@@ -154,7 +187,8 @@ const getInMemoryLogs = () => [...inMemoryLogs];
 /**
  * Reusable activity logger helper.
  * Uses an in-memory buffer to protect Supabase database query and log quota limits.
- * In unit tests or when ENABLE_SUPABASE_LOGS=true, it connects to Supabase as needed.
+ * In unit tests, for security-critical actions, or when ENABLE_SUPABASE_LOGS=true,
+ * it durably persists records to Supabase activity_logs with credential redaction.
  *
  * @param {import('express').Request} req - Express request object
  * @param {object} logParams
@@ -175,22 +209,29 @@ const logActivity = async (req, { user_id = null, action, details = {} } = {}) =
       ? { city: 'Localhost', region: 'Local Network', country: 'Local', is_local: true }
       : { city: null, country: null };
 
+    const sanitizedDetails = redactSensitiveFields(details && typeof details === 'object' ? details : {});
+
     const logEntry = {
       id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       user_id: user_id || (req && req.user && req.user.id) || null,
       action,
-      details: details && typeof details === 'object' ? details : {},
+      details: sanitizedDetails,
       ip_address: ip,
       location,
       user_agent: userAgent,
       created_at: new Date().toISOString(),
     };
 
-    // Store in-memory buffer (zero Supabase egress, zero database queries)
+    // Store in-memory buffer
     addInMemoryLog(logEntry);
 
-    // In unit test runner or when explicitly configured, insert to table
-    if (process.env.NODE_ENV === 'test' || process.env.ENABLE_SUPABASE_LOGS === 'true') {
+    // Persist durably for critical security events, test runners, or when explicitly configured
+    const shouldPersistDurably =
+      DURABLE_SECURITY_ACTIONS.has(action) ||
+      process.env.NODE_ENV === 'test' ||
+      process.env.ENABLE_SUPABASE_LOGS === 'true';
+
+    if (shouldPersistDurably) {
       try {
         const { data, error } = await supabaseAdmin
           .from('activity_logs')

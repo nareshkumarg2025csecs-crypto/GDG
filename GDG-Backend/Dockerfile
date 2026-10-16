@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-bookworm-slim
 
 # Install Python 3, pip, and image processing libraries for Pillow
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,10 +18,15 @@ COPY requirements.txt ./
 
 # Install Node.js production dependencies and Python packages
 RUN npm ci --only=production
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt || pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
 COPY . .
+
+# Ensure app directory permissions belong to non-root node user
+RUN chown -R node:node /app
+
+USER node
 
 EXPOSE 5000
 
@@ -29,3 +34,4 @@ ENV NODE_ENV=production
 ENV PYTHON_BIN=python3
 
 CMD ["node", "--max-old-space-size=384", "src/server.js"]
+

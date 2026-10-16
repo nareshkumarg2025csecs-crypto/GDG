@@ -18,8 +18,11 @@ const CURTAIN_COLORS = ["#4285F4", "#EA4335", "#FBBC04", "#34A853"];
 
 export default function Preloader() {
   const [loading, setLoading] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
     try {
+      const isBot = /bot|googlebot|crawler|spider|robot|crawling|lighthouse/i.test(navigator.userAgent || '');
+      const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      if (isBot || prefersReduced) return false;
       return !sessionStorage.getItem('gdg_preloader_seen');
     } catch {
       return false;

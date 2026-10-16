@@ -49,8 +49,7 @@ app.use(
             return origin.endsWith(rootDomain);
           }
           return false;
-        }) ||
-        /^https:\/\/[a-zA-Z0-9._-]+\.vercel\.app$/.test(origin);
+        });
 
       if (isAllowed) {
         return callback(null, true);
@@ -64,9 +63,9 @@ app.use(
   })
 );
 
-// 3. Request Payload Size Limits (Supports high-res Base64 event banners)
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+// 3. Request Payload Size Limits (Supports Base64 event banners up to 10MB)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // 4. HTTP Parameter Pollution Protection
 app.use(hpp());

@@ -22,6 +22,7 @@ const {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  disconnectGmailAccount,
   scannerAdminEmailLogin,
   getScannerVerifiedAdmins,
 } = require('../controllers/authController');
@@ -37,6 +38,7 @@ const {
   adminSignupLimiter,
   adminCodeValidationLimiter,
   studentSignupLimiter,
+  oauthInitiateLimiter,
 } = require('../middleware/rateLimiter');
 const {
   validateStudentSignup,
@@ -135,13 +137,14 @@ router.post('/google/tokens', requireAuth, saveGoogleTokens);
 router.get('/google/status', requireAuth, getGoogleLinkStatus);
 
 // Official Gmail REST API Authorization & Live Health Monitoring
-router.get('/google/gmail-auth-url', getGmailOAuthUrl);
+router.get('/google/gmail-auth-url', requireAuth, requireRole('admin'), oauthInitiateLimiter, getGmailOAuthUrl);
 router.get('/google/gmail-callback', handleGmailOAuthCallback);
 router.get('/google/gmail-status', requireAuth, requireRole('admin'), getGmailStatus);
 router.post('/google/gmail-drain-queue', requireAuth, requireRole('admin'), drainGmailQueue);
+router.post('/google/gmail-disconnect', requireAuth, requireRole('admin'), disconnectGmailAccount);
 
 // Dedicated Google Drive Storage Authorization & Quota Telemetry
-router.get('/google/drive-auth-url', getDriveOAuthUrl);
+router.get('/google/drive-auth-url', requireAuth, requireRole('admin'), oauthInitiateLimiter, getDriveOAuthUrl);
 router.get('/google/drive-callback', handleDriveOAuthCallback);
 router.get('/google/drive-status', requireAuth, requireRole('admin'), getDriveStatus);
 router.post('/google/drive-folder', requireAuth, requireRole('admin'), setDriveFolder);

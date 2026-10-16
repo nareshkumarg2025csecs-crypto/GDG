@@ -68,9 +68,6 @@ const HeroSection = () => {
       id="home"
       className="relative min-h-[100dvh] lg:h-screen flex flex-col overflow-x-clip lg:overflow-hidden bg-background"
     >
-      {/* SEO title */}
-      <h1 className="sr-only">Google Developer Groups</h1>
-
       {/* Dynamic Theme-Aware Google Ambient Aurora Background */}
       <div
         className="absolute inset-0 z-0 pointer-events-none transition-colors duration-700 overflow-hidden"
@@ -141,8 +138,11 @@ const HeroSection = () => {
               />
             </motion.div>
 
-            {/* Three headline lines with per-line parallax */}
-            <div className="overflow-hidden" aria-hidden="true">
+            {/* Semantic primary H1 headline with per-line parallax */}
+            <h1
+              className="overflow-hidden m-0 p-0 font-normal"
+              aria-label="Google Developer Groups On Campus — REC"
+            >
               {HERO_WORDS.map((word, i) => (
                 <motion.div
                   key={word.text}
@@ -170,7 +170,7 @@ const HeroSection = () => {
                   </motion.span>
                 </motion.div>
               ))}
-            </div>
+            </h1>
 
             {/* Sub-headline */}
             <motion.p

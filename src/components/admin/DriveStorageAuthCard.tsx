@@ -100,7 +100,7 @@ export const DriveStorageAuthCard: React.FC<DriveStorageAuthCardProps> = ({
   const handleConnectOrSwitch = async () => {
     try {
       setIsConnecting(true);
-      const { auth_url } = await authService.getDriveAuthUrl();
+      const { auth_url } = await authService.getDriveAuthUrl(token);
       if (!auth_url) {
         throw new Error('No authorization URL returned by server.');
       }

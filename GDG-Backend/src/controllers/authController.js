@@ -9,6 +9,7 @@ const GoogleCalendarService = require('../services/googleCalendarService');
 const GoogleDriveService = require('../services/googleDriveService');
 const GmailApiService = require('../services/gmailApiService');
 const EmailQueueService = require('../services/emailQueueService');
+const { BoundedMap } = require('../utils/boundedCache');
 
 /**
  * Escapes unsafe HTML characters to prevent XSS / HTML injection in generated emails.
@@ -1298,37 +1299,112 @@ const syncGoogleProfile = async (req, res) => {
   }
 };
 
+// Cryptographically secure OAuth state storage
+const oauthStateCache = new BoundedMap(500);
+const OAUTH_STATE_TTL = 10 * 60 * 1000; // 10 minutes
+
+const generateOAuthState = (userId, purpose, redirectUrl = null) => {
+  const nonce = crypto.randomBytes(32).toString('hex');
+  const state = `${purpose}_${nonce}`;
+  oauthStateCache.set(state, {
+    userId,
+    purpose,
+    redirectUrl,
+    expiresAt: Date.now() + OAUTH_STATE_TTL,
+  });
+  return state;
+};
+
+const validateAndConsumeOAuthState = (state, expectedPurpose) => {
+  if (!state || typeof state !== 'string') {
+    return { valid: false, error: 'Missing OAuth state parameter.' };
+  }
+  // Immediately reject legacy or hardcoded fixed states
+  if (state === 'drive' || state === 'gmail') {
+    return { valid: false, error: 'Insecure or fixed OAuth state rejected. Dynamic cryptographic state required.' };
+  }
+  const entry = oauthStateCache.get(state);
+  if (!entry) {
+    return { valid: false, error: 'Invalid, unrecognized, or previously consumed OAuth state.' };
+  }
+  oauthStateCache.delete(state); // Replay prevention: single-use token
+
+  if (Date.now() > entry.expiresAt) {
+    return { valid: false, error: 'OAuth state has expired. Please initiate authorization again.' };
+  }
+
+  if (entry.purpose !== expectedPurpose) {
+    return { valid: false, error: `Invalid OAuth state purpose: expected ${expectedPurpose}, got ${entry.purpose}.` };
+  }
+
+  return { valid: true, entry };
+};
+
 /**
  * Helper to determine the exact redirect URI for Google OAuth flows.
- * Normalizes 127.0.0.1 to localhost to prevent Google 400 redirect_uri_mismatch errors,
- * and allows explicit override via GMAIL_REDIRECT_URI / GOOGLE_REDIRECT_URI.
+ * Uses trusted environment configuration and rejects untrusted forwarded host headers.
  */
 const getGoogleOAuthRedirectUri = (req, endpoint = 'gmail-callback') => {
   if (process.env.GMAIL_REDIRECT_URI && endpoint === 'gmail-callback') {
     return process.env.GMAIL_REDIRECT_URI;
   }
-  if (process.env.GOOGLE_REDIRECT_URI) {
+  if (process.env.GOOGLE_REDIRECT_URI && endpoint !== 'drive-callback') {
     return process.env.GOOGLE_REDIRECT_URI;
   }
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  let host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:5000';
-  if (host.includes(',')) {
-    host = host.split(',')[0].trim();
+
+  const configuredBackendUrl =
+    process.env.BACKEND_URL ||
+    process.env.SERVER_URL ||
+    process.env.RENDER_EXTERNAL_URL;
+
+  if (configuredBackendUrl) {
+    const cleanBase = configuredBackendUrl.replace(/\/+$/, '');
+    return `${cleanBase}/api/auth/google/${endpoint}`;
   }
+
+  const protocol = process.env.NODE_ENV === 'production' ? 'https' : (req?.protocol || 'http');
+  const allowedHosts = [
+    'localhost:5000',
+    '127.0.0.1:5000',
+    'localhost:8081',
+    'gdg-backend-54mp.onrender.com',
+    'api.gdgrec.dev',
+    'gdgrec.dev',
+    'www.gdgrec.dev',
+  ];
+
+  let rawHost = (req && req.get && req.get('host')) || 'localhost:5000';
+  if (rawHost.includes(',')) {
+    rawHost = rawHost.split(',')[0].trim();
+  }
+
+  let host = rawHost;
   if (host.startsWith('127.0.0.1')) {
     host = host.replace('127.0.0.1', 'localhost');
   }
+
+  if (process.env.NODE_ENV === 'production' && !allowedHosts.includes(host)) {
+    host = 'gdg-backend-54mp.onrender.com';
+  }
+
   return `${protocol}://${host}/api/auth/google/${endpoint}`;
 };
 
 /**
  * GET /api/auth/google/gmail-auth-url
  * Generates and returns/redirects to Google's consent page requesting https://www.googleapis.com/auth/gmail.send
+ * Strictly requires admin authorization and issues a cryptographically secure random state nonce.
  */
 const getGmailOAuthUrl = async (req, res) => {
   try {
+    const adminId = req.user?.id;
+    if (!adminId) {
+      return res.status(401).json({ error: 'Unauthorized: Admin authentication required to initiate Gmail OAuth.' });
+    }
+
+    const state = generateOAuthState(adminId, 'gmail_oauth');
     const redirectUri = getGoogleOAuthRedirectUri(req, 'gmail-callback');
-    const url = GmailApiService.getAuthUrl(redirectUri);
+    const url = GmailApiService.getAuthUrl(redirectUri, state);
 
     if (req.query.redirect === 'true') {
       return res.redirect(url);
@@ -1337,27 +1413,25 @@ const getGmailOAuthUrl = async (req, res) => {
     return res.status(200).json({
       message: 'Gmail API authorization URL generated.',
       auth_url: url,
+      url,
       scope: 'https://www.googleapis.com/auth/gmail.send',
       redirect_uri: redirectUri,
+      state,
     });
   } catch (err) {
     console.error('getGmailOAuthUrl error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Failed to generate Gmail OAuth URL.' });
   }
 };
 
 /**
  * GET /api/auth/google/gmail-callback
- * Handles Google OAuth callback, exchanges code for refresh token with gmail.send scope, and saves it to .env
+ * Handles Google OAuth callback, validates cryptographic state, exchanges code for refresh token, and stores it securely.
  */
 const handleGmailOAuthCallback = async (req, res) => {
   try {
     const { code, error, state } = req.query;
 
-    // Route Drive storage authorizations that reused the pre-authorized callback URI
-    if (state === 'drive') {
-      return handleDriveOAuthCallback(req, res);
-    }
     if (error) {
       return res.status(400).send(`
         <div style="font-family: sans-serif; padding: 30px; text-align: center;">
@@ -1366,6 +1440,33 @@ const handleGmailOAuthCallback = async (req, res) => {
         </div>
       `);
     }
+
+    // Explicit rejection of fixed or cross-flow state values
+    if (state === 'drive') {
+      if (req.headers.accept?.includes('application/json') || !req.accepts('html')) {
+        return res.status(400).json({ error: 'Insecure OAuth state rejected: static drive state' });
+      }
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Insecure OAuth State Rejected</h2>
+          <p>Cross-flow state substitution detected. Fixed state 'drive' is rejected.</p>
+        </div>
+      `);
+    }
+
+    const stateCheck = validateAndConsumeOAuthState(state, 'gmail_oauth');
+    if (!stateCheck.valid) {
+      if (req.headers.accept?.includes('application/json') || !req.accepts('html')) {
+        return res.status(400).json({ error: stateCheck.error });
+      }
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Invalid OAuth State</h2>
+          <p>${escapeHtml(stateCheck.error)}</p>
+        </div>
+      `);
+    }
+
     if (!code) {
       return res.status(400).send(`
         <div style="font-family: sans-serif; padding: 30px; text-align: center;">
@@ -1381,11 +1482,11 @@ const handleGmailOAuthCallback = async (req, res) => {
     const refreshToken = tokens.refresh_token;
 
     if (refreshToken) {
-      // 1. Save to dedicated DB table (gmail_service_tokens)
+      // Save to dedicated DB table (gmail_service_tokens)
       await GmailApiService.saveRefreshToken(refreshToken);
       console.log('[GmailOAuth] Gmail refresh token saved successfully to database');
 
-      // 2. Automatically drain any pending queued registration emails
+      // Automatically drain any pending queued registration emails
       EmailQueueService.drainQueue().catch((drainErr) => {
         console.warn('[GmailOAuth] Background queue drain error:', drainErr.message);
       });
@@ -1523,18 +1624,18 @@ const validateAdminCode = async (req, res) => {
 
 /**
  * GET /api/auth/google/drive-auth-url
- * Generates and returns or redirects to Google OAuth consent page requesting Google Drive scopes
+ * Generates and returns or redirects to Google OAuth consent page requesting Google Drive scopes.
+ * Strictly requires admin authorization and issues a cryptographically secure random state nonce.
  */
 const getDriveOAuthUrl = async (req, res) => {
   try {
-    // Use the pre-authorized gmail-callback with state=drive to avoid redirect_uri_mismatch in Google Console.
-    // Also allows dedicated drive-callback if explicitly requested (?dedicated=true).
-    const useDedicated = req.query.dedicated === 'true';
-    const redirectUri = useDedicated
-      ? getGoogleOAuthRedirectUri(req, 'drive-callback')
-      : getGoogleOAuthRedirectUri(req, 'gmail-callback');
-    const state = useDedicated ? null : 'drive';
+    const adminId = req.user?.id;
+    if (!adminId) {
+      return res.status(401).json({ error: 'Unauthorized: Admin authentication required to initiate Drive OAuth.' });
+    }
 
+    const state = generateOAuthState(adminId, 'drive_oauth');
+    const redirectUri = getGoogleOAuthRedirectUri(req, 'drive-callback');
     const url = GoogleDriveService.getAuthUrl(redirectUri, state);
 
     if (req.query.redirect === 'true') {
@@ -1544,17 +1645,19 @@ const getDriveOAuthUrl = async (req, res) => {
     return res.status(200).json({
       message: 'Drive storage authorization URL generated.',
       auth_url: url,
+      url,
       redirect_uri: redirectUri,
+      state,
     });
   } catch (err) {
     console.error('getDriveOAuthUrl error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Failed to generate Drive OAuth URL.' });
   }
 };
 
 /**
  * GET /api/auth/google/drive-callback
- * Handles Google OAuth callback, exchanges code for refresh token for Google Drive, and updates config.
+ * Handles Google OAuth callback, validates cryptographic state, exchanges code for refresh token, and stores it securely.
  */
 const handleDriveOAuthCallback = async (req, res) => {
   try {
@@ -1567,6 +1670,21 @@ const handleDriveOAuthCallback = async (req, res) => {
         </div>
       `);
     }
+
+    // Require and validate dynamic state
+    const stateCheck = validateAndConsumeOAuthState(state, 'drive_oauth');
+    if (!stateCheck.valid) {
+      if (req.headers.accept?.includes('application/json') || !req.accepts('html')) {
+        return res.status(400).json({ error: stateCheck.error });
+      }
+      return res.status(400).send(`
+        <div style="font-family: sans-serif; padding: 30px; text-align: center;">
+          <h2 style="color: #ef4444;">Invalid OAuth State</h2>
+          <p>${escapeHtml(stateCheck.error)}</p>
+        </div>
+      `);
+    }
+
     if (!code) {
       return res.status(400).send(`
         <div style="font-family: sans-serif; padding: 30px; text-align: center;">
@@ -1576,11 +1694,7 @@ const handleDriveOAuthCallback = async (req, res) => {
       `);
     }
 
-    // Match the redirectUri used during the authorization request
-    const redirectUri = (state === 'drive' || req.originalUrl.includes('gmail-callback'))
-      ? getGoogleOAuthRedirectUri(req, 'gmail-callback')
-      : getGoogleOAuthRedirectUri(req, 'drive-callback');
-
+    const redirectUri = getGoogleOAuthRedirectUri(req, 'drive-callback');
     const tokens = await GoogleDriveService.exchangeCodeForTokens(code, redirectUri);
     const refreshToken = tokens.refresh_token;
 
@@ -1724,6 +1838,24 @@ const disconnectDriveAccount = async (req, res) => {
     console.error('disconnectDriveAccount error:', err);
     return res.status(500).json({
       error: err.message || 'Failed to disconnect Google Drive storage account.',
+    });
+  }
+};
+
+/**
+ * POST /api/auth/google/gmail-disconnect
+ * Authenticated / Admin-only: Disconnects the shared Gmail API account and clears tokens.
+ */
+const disconnectGmailAccount = async (req, res) => {
+  try {
+    await GmailApiService.disconnectGmailAccount();
+    return res.status(200).json({
+      message: 'Gmail API service account disconnected successfully.',
+    });
+  } catch (err) {
+    console.error('disconnectGmailAccount error:', err);
+    return res.status(500).json({
+      error: err.message || 'Failed to disconnect Gmail API account.',
     });
   }
 };
@@ -1912,6 +2044,7 @@ module.exports = {
   setDriveFolder,
   clearDriveFolder,
   disconnectDriveAccount,
+  disconnectGmailAccount,
   scannerAdminEmailLogin,
   getScannerVerifiedAdmins,
 };

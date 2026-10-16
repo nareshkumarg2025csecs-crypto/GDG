@@ -6,7 +6,7 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    host: "::",
+    host: process.env.VITE_DEV_HOST || "localhost",
     port: 8081,
     proxy: {
       "/api": {
