@@ -139,6 +139,38 @@ const tests = [
       const seoHeaderGroup = vercelConfig.headers.find(h => h.source.includes('robots') && h.source.includes('sitemap'));
       assert.ok(seoHeaderGroup);
     }
+  },
+  {
+    name: '7. Google Search Official Site Name & WebSite Schema Validation',
+    fn: () => {
+      const indexPath = path.join(ROOT_DIR, 'index.html');
+      assert.ok(fs.existsSync(indexPath), 'index.html must exist');
+      const htmlContent = fs.readFileSync(indexPath, 'utf8');
+
+      // 1. Verify Meta tags
+      assert.match(htmlContent, /<meta\s+property="og:site_name"\s+content="GDG on Campus REC"\s*\/>/);
+      assert.match(htmlContent, /<meta\s+name="application-name"\s+content="GDG on Campus REC"\s*\/>/);
+
+      // 2. Extract and parse JSON-LD
+      const jsonLdMatch = htmlContent.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+      assert.ok(jsonLdMatch, 'index.html must contain JSON-LD script block');
+      
+      const parsed = JSON.parse(jsonLdMatch[1]);
+      assert.equal(parsed['@context'], 'https://schema.org');
+      assert.ok(Array.isArray(parsed['@graph']), '@graph must be an array');
+
+      const websiteNode = parsed['@graph'].find(node => node['@type'] === 'WebSite');
+      assert.ok(websiteNode, 'WebSite schema node must be present');
+      assert.equal(websiteNode.name, 'GDG on Campus REC', 'WebSite name must match brand');
+      assert.equal(websiteNode.url, 'https://www.gdgrec.dev/', 'WebSite url must be canonical root');
+      assert.ok(Array.isArray(websiteNode.alternateName), 'alternateName must be an array');
+      assert.ok(websiteNode.alternateName.includes('GDG REC'));
+      assert.ok(websiteNode.keywords, 'keywords must be present');
+
+      const orgNode = parsed['@graph'].find(node => node['@type'] === 'Organization');
+      assert.ok(orgNode, 'Organization schema node must be present');
+      assert.equal(orgNode.name, 'Google Developer Groups On Campus - REC');
+    }
   }
 ];
 
