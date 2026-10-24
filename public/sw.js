@@ -1,5 +1,5 @@
 /* GDG REC Progressive Web App Service Worker */
-const CACHE_VERSION = 'gdg-rec-pwa-v2';
+const CACHE_VERSION = 'gdg-rec-pwa-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -57,12 +57,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Bypass API calls, backend websockets, and external services
-  if (
-    url.pathname.startsWith('/api') ||
-    url.hostname.includes('supabase.co') ||
-    url.hostname.includes('google-analytics.com')
-  ) {
+  // 2. Only cache and intercept same-origin requests; allow cross-origin requests (fonts, external images, APIs) to pass directly to browser
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // 3. Bypass API calls
+  if (url.pathname.startsWith('/api')) {
     return;
   }
 
