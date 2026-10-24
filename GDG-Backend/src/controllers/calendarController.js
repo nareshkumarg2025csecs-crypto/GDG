@@ -29,6 +29,12 @@ const createEventReminder = async (req, res) => {
       });
     }
 
+    if (!event.details?.startTime && !event.details?.start_time && !event.details?.endTime && !event.details?.end_time) {
+      return res.status(400).json({
+        error: 'This event is an announcement or campaign without a scheduled date and time.',
+      });
+    }
+
     // 2. Check if user has a linked Google identity and access token
     const { isLinked, tokenData } = await GoogleCalendarService.checkUserGoogleLink(userId);
 

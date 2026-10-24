@@ -150,7 +150,14 @@ export const EventsPage: React.FC = () => {
   const isEventPast = (e: ClubEvent) => {
     const end = e.details?.endTime || e.details?.end_time;
     const start = e.details?.startTime || e.details?.start_time;
-    const target = end ? parseEventDate(end) : (start ? parseEventDate(start) : null);
+    const close = e.details?.closing_time || e.details?.closes_at;
+    const target = end
+      ? parseEventDate(end)
+      : start
+      ? parseEventDate(start)
+      : close
+      ? parseEventDate(close)
+      : null;
     if (!target) return false;
     return new Date() > target;
   };
@@ -173,14 +180,24 @@ export const EventsPage: React.FC = () => {
     };
   }, [publishedEvents]);
 
-  // Distinct categories
+  // Distinct categories (strictly scoped to the active timeframe)
   const categories = useMemo(() => {
     const cats = new Set<string>();
     publishedEvents.forEach((e) => {
+      const past = isEventPast(e);
+      if (timeframe === 'upcoming' && past) return;
+      if (timeframe === 'past' && !past) return;
       if (e.details?.category) cats.add(e.details.category);
     });
     return ['all', ...Array.from(cats)];
-  }, [publishedEvents]);
+  }, [publishedEvents, timeframe]);
+
+  // Reset selected category to 'all' if not present in the current timeframe
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !categories.includes(selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [categories, selectedCategory]);
 
   // Dynamic category counts (scoped to current timeframe)
   const categoryCounts = useMemo(() => {
@@ -196,8 +213,8 @@ export const EventsPage: React.FC = () => {
 
       counts.all = (counts.all || 0) + 1;
       const cat = e.details?.category;
-      if (cat) {
-        counts[cat] = (counts[cat] || 0) + 1;
+      if (cat && counts[cat] !== undefined) {
+        counts[cat] = counts[cat] + 1;
       }
     });
 

@@ -36,6 +36,7 @@ import {
   type ClubEvent,
   type EventForm,
   getEventRegistrationState,
+  formatEventDate,
   formatEventDateRange,
   formatEventTimeRange,
   calculateRemainingTime,
@@ -307,17 +308,34 @@ export const EventDetailPage: React.FC = () => {
   };
 
   // Determine event timing, countdown & conclusion state
+  const startRaw = details?.startTime || details?.start_time;
+  const endRaw = details?.endTime || details?.end_time;
+  const closingRaw = details?.closing_time || details?.closes_at;
+  const hasDate = Boolean(startRaw || endRaw);
+  const hasClosingOnly = !hasDate && Boolean(closingRaw);
+  const startDateParsed = startRaw ? parseEventDate(startRaw) : null;
+  const endDateParsed = endRaw ? parseEventDate(endRaw) : null;
+  const isMultiDay = Boolean(
+    startDateParsed &&
+      endDateParsed &&
+      (startDateParsed.getFullYear() !== endDateParsed.getFullYear() ||
+        startDateParsed.getMonth() !== endDateParsed.getMonth() ||
+        startDateParsed.getDate() !== endDateParsed.getDate())
+  );
+  const hasTime = Boolean(hasDate);
+  const hasVenue = Boolean(details?.location || details?.venue);
+  const hasAnyMetadata = Boolean(hasDate || hasClosingOnly || hasVenue);
+
   const eventStartTime = useMemo(() => {
-    const st = details?.startTime || details?.start_time;
-    if (!st) return null;
-    return parseEventDate(st);
-  }, [details]);
+    if (!startRaw) return null;
+    return parseEventDate(startRaw);
+  }, [startRaw]);
 
   const eventEndTime = useMemo(() => {
-    const et = details?.endTime || details?.end_time || details?.startTime || details?.start_time;
+    const et = endRaw || startRaw || closingRaw;
     if (!et) return null;
     return parseEventDate(et);
-  }, [details]);
+  }, [endRaw, startRaw, closingRaw]);
 
   const eventEnded = useMemo(() => {
     if (!eventEndTime) return false;
@@ -705,93 +723,146 @@ export const EventDetailPage: React.FC = () => {
               {isLiveNow && (
                 <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/30 flex items-center gap-2.5 text-google-green">
                   <span className="w-2.5 h-2.5 rounded-full bg-google-green animate-ping" />
-                  <span className="text-xs font-mono font-bold uppercase tracking-wider">Event is Live Right Now!</span>
+                  <span className="text-xs font-mono font-bold tracking-wider">
+                    {details?.category ? `${details.category} is Live Now!` : 'Event is Live Now!'}
+                  </span>
                 </div>
               )}
 
               {/* Key Event Metadata Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-sm">
-                {/* Date Block */}
-                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
-                  <div className="w-9 h-9 rounded-xl bg-google-blue/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Calendar className="w-4 h-4 text-google-blue" />
-                  </div>
-                  <div>
-                    <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground">
-                      Event Date
-                    </span>
-                    <span className="font-semibold text-foreground text-xs sm:text-sm">
-                      {formatEventDateRange(
-                        details.startTime || details.start_time,
-                        details.endTime || details.end_time
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Time Block */}
-                <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
-                  <div className="w-9 h-9 rounded-xl bg-google-yellow/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Clock className="w-4 h-4 text-google-yellow" />
-                  </div>
-                  <div>
-                    <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground">
-                      Time Schedule
-                    </span>
-                    <span className="font-semibold text-foreground text-xs sm:text-sm">
-                      {formatEventTimeRange(
-                        details.startTime || details.start_time,
-                        details.endTime || details.end_time
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Location / Venue Block */}
-                {(details.location || details.venue) && (
-                  <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60 sm:col-span-2 md:col-span-1">
-                    <div className="w-9 h-9 rounded-xl bg-google-red/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <MapPin className="w-4 h-4 text-google-red" />
+              {hasAnyMetadata && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-sm">
+                  {/* Date Block */}
+                  {hasDate ? (
+                    <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                      <div className="w-9 h-9 rounded-xl bg-google-blue/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Calendar className="w-4 h-4 text-google-blue" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                          Event Date
+                        </span>
+                        {isMultiDay ? (
+                          <div className="space-y-1 pt-0.5 text-xs sm:text-sm">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-google-blue shrink-0 w-12">
+                                Start:
+                              </span>
+                              <span className="font-semibold text-foreground">
+                                {formatEventDate(startRaw)}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-google-yellow shrink-0 w-12">
+                                End:
+                              </span>
+                              <span className="font-semibold text-foreground">
+                                {formatEventDate(endRaw)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                            {formatEventDate(startRaw || endRaw)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground">
-                        Venue / Location
-                      </span>
-                      <span className="font-semibold text-foreground text-xs sm:text-sm">
-                        {details.location || details.venue}
-                      </span>
+                  ) : hasClosingOnly ? (
+                    <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Calendar className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                          Closing Date
+                        </span>
+                        <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                          {formatEventDate(closingRaw)}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  ) : null}
+
+                  {/* Time Block */}
+                  {hasTime ? (
+                    <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                      <div className="w-9 h-9 rounded-xl bg-google-yellow/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Clock className="w-4 h-4 text-google-yellow" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                          Time Schedule
+                        </span>
+                        <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                          {formatEventTimeRange(startRaw, endRaw)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : hasClosingOnly ? (
+                    <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <Clock className="w-4 h-4 text-amber-500" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                          Closes At
+                        </span>
+                        <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                          {formatEventTimeRange(null, closingRaw)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Location / Venue Block */}
+                  {hasVenue && (
+                    <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60 sm:col-span-2 md:col-span-1">
+                      <div className="w-9 h-9 rounded-xl bg-google-red/10 flex items-center justify-center shrink-0 mt-0.5">
+                        <MapPin className="w-4 h-4 text-google-red" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                          Venue / Location
+                        </span>
+                        <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                          {details.location || details.venue}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Sync to Google Calendar & Telemetry Actions */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div>
-                  {showCalendarAddedBadge ? (
-                    <div className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold">
-                      <CalendarCheck className="w-4 h-4" />
-                      <span>Added to Google Calendar</span>
-                    </div>
-                  ) : eventEnded ? null : (
-                    <button
-                      type="button"
-                      disabled={isCalendarLoading}
-                      onClick={handleAddToCalendar}
-                      className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-                    >
-                      {isCalendarLoading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-google-blue" />
-                          <span>Adding to Google Calendar...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CalendarPlus className="w-4 h-4 text-google-yellow" />
-                          <span>Sync to Google Calendar</span>
-                        </>
-                      )}
-                    </button>
+                  {hasDate && (
+                    showCalendarAddedBadge ? (
+                      <div className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold">
+                        <CalendarCheck className="w-4 h-4" />
+                        <span>Added to Google Calendar</span>
+                      </div>
+                    ) : eventEnded ? null : (
+                      <button
+                        type="button"
+                        disabled={isCalendarLoading}
+                        onClick={handleAddToCalendar}
+                        className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                      >
+                        {isCalendarLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-google-blue" />
+                            <span>Adding to Google Calendar...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CalendarPlus className="w-4 h-4 text-google-yellow" />
+                            <span>Sync to Google Calendar</span>
+                          </>
+                        )}
+                      </button>
+                    )
                   )}
                 </div>
 

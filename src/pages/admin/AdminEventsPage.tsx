@@ -23,6 +23,7 @@ import {
   Home,
   Loader2,
   Award,
+  Megaphone,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import { eventService } from '@/services/eventService';
@@ -469,24 +470,33 @@ export const AdminEventsPage: React.FC = () => {
 
                     {/* Date, Time & Venue */}
                     <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/60">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                        <span>
-                          {formatEventDateRange(
-                            details.startTime || details.start_time,
-                            details.endTime || details.end_time
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
-                        <span>
-                          {formatEventTimeRange(
-                            details.startTime || details.start_time,
-                            details.endTime || details.end_time
-                          )}
-                        </span>
-                      </div>
+                      {Boolean(details.startTime || details.start_time || details.endTime || details.end_time) ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                            <span>
+                              {formatEventDateRange(
+                                details.startTime || details.start_time,
+                                details.endTime || details.end_time
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
+                            <span>
+                              {formatEventTimeRange(
+                                details.startTime || details.start_time,
+                                details.endTime || details.end_time
+                              )}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-google-blue font-medium">
+                          <Megaphone className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                          <span>Announcement / Campaign (No fixed date)</span>
+                        </div>
+                      )}
                       {(details.location || details.venue) && (
                         <div className="flex items-center gap-2">
                           <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />

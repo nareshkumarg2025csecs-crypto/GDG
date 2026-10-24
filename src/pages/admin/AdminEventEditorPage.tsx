@@ -35,6 +35,8 @@ import {
   QrCode,
   User,
   Users,
+  CalendarPlus,
+  Megaphone,
 } from 'lucide-react';
 import { stopLenis, startLenis } from '@/lib/scroll';
 import { eventService } from '@/services/eventService';
@@ -54,6 +56,7 @@ import {
   formatEventDate,
   formatEventTimeRange,
   calculateRemainingTime,
+  parseEventDate,
 } from '@/lib/formUtils';
 import { DEPARTMENT_OPTIONS, YEAR_OF_STUDY_OPTIONS } from '@/lib/profileConstants';
 import {
@@ -398,6 +401,7 @@ export const AdminEventEditorPage: React.FC = () => {
   const [location, setLocation] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [closingTime, setClosingTime] = useState('');
   const [capacity, setCapacity] = useState<string>('');
   const [bannerUrl, setBannerUrl] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState('');
@@ -946,6 +950,7 @@ export const AdminEventEditorPage: React.FC = () => {
   // Refs for datetime inputs and image uploader
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
+  const closingInputRef = useRef<HTMLInputElement>(null);
   const expiryInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1146,19 +1151,11 @@ export const AdminEventEditorPage: React.FC = () => {
   // Load existing event data if editing
   useEffect(() => {
     if (!id) {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(10, 0, 0, 0);
-      const endTomorrow = new Date(tomorrow);
-      endTomorrow.setHours(12, 30, 0, 0);
-
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const startIsoStr = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T10:00`;
-      const endIsoStr = `${endTomorrow.getFullYear()}-${pad(endTomorrow.getMonth() + 1)}-${pad(endTomorrow.getDate())}T12:30`;
-
-      setStartTime(startIsoStr);
-      setEndTime(endIsoStr);
-      setExpiresAt(startIsoStr);
+      // Keep dates empty by default so announcements, campaigns, and promotions can be created without mandatory dates
+      setStartTime('');
+      setEndTime('');
+      setClosingTime('');
+      setExpiresAt('');
       return;
     }
 
@@ -1201,6 +1198,10 @@ export const AdminEventEditorPage: React.FC = () => {
 
         if (details.endTime || details.end_time) {
           setEndTime(isoToLocalInput(details.endTime || details.end_time));
+        }
+
+        if (details.closing_time || details.closes_at) {
+          setClosingTime(isoToLocalInput(details.closing_time || details.closes_at));
         }
 
         // Fetch attached form
@@ -1513,12 +1514,6 @@ export const AdminEventEditorPage: React.FC = () => {
       return;
     }
 
-    if (!startTime) {
-      setErrorBanner('Event start date and time is required.');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
     const targetPublished =
       forcePublish !== undefined ? forcePublish : isEditing ? isPublished : true;
 
@@ -1543,10 +1538,12 @@ export const AdminEventEditorPage: React.FC = () => {
         coverImage: bannerUrl.trim() || undefined,
         theme_color: themeColor,
         is_registration_open: isRegistrationOpen,
-        startTime: startTime,
-        start_time: startTime,
-        endTime: endTime || startTime,
-        end_time: endTime || startTime,
+        startTime: startTime.trim() ? startTime.trim() : null,
+        start_time: startTime.trim() ? startTime.trim() : null,
+        endTime: endTime.trim() ? endTime.trim() : (startTime.trim() ? startTime.trim() : null),
+        end_time: endTime.trim() ? endTime.trim() : (startTime.trim() ? startTime.trim() : null),
+        closing_time: (!startTime.trim() && !endTime.trim() && closingTime.trim()) ? closingTime.trim() : null,
+        closes_at: (!startTime.trim() && !endTime.trim() && closingTime.trim()) ? closingTime.trim() : null,
         capacity: capacity ? Number(capacity) : undefined,
         send_qr_email: emailConfig.enabled,
         include_qr: emailConfig.enabled ? emailConfig.include_qr !== false : false,
@@ -1913,54 +1910,201 @@ export const AdminEventEditorPage: React.FC = () => {
             )}
           </div>
 
-          {/* Date & Time Pickers with Visible Calendar Trigger Icon */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-foreground/80 mb-1.5">
-                Start Date & Time <span className="text-google-red">*</span>
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  ref={startInputRef}
-                  type="datetime-local"
-                  required
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
-                />
-                <button
-                  type="button"
-                  onClick={() => startInputRef.current?.showPicker?.()}
-                  className="absolute left-3 p-0.5 text-google-blue hover:scale-110 transition-transform"
-                  title="Open Calendar Date Picker"
-                >
-                  <Calendar className="w-4 h-4" />
-                </button>
+          {/* Date & Time Pickers (Optional for Announcements, Promotions & Campaigns) */}
+          <div className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+              <div>
+                <label className="block text-xs font-semibold text-foreground/80">
+                  Event Timing &amp; Schedule (Optional)
+                </label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Leave blank for promotions, announcements, campaigns, or events without a fixed date/time.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {Boolean(startTime || endTime) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStartTime('');
+                      setEndTime('');
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors border border-border/60"
+                    title="Clear timing to make this an announcement or campaign"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Clear Timing</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      tomorrow.setHours(10, 0, 0, 0);
+                      const endTomorrow = new Date(tomorrow);
+                      endTomorrow.setHours(12, 30, 0, 0);
+                      const pad = (n: number) => String(n).padStart(2, '0');
+                      const sIso = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}T10:00`;
+                      const eIso = `${endTomorrow.getFullYear()}-${pad(endTomorrow.getMonth() + 1)}-${pad(endTomorrow.getDate())}T12:30`;
+                      setStartTime(sIso);
+                      setEndTime(eIso);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-google-blue hover:bg-google-blue/10 transition-colors border border-google-blue/30"
+                  >
+                    <Calendar className="w-3 h-3" />
+                    <span>Set Tomorrow 10 AM</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-foreground/80 mb-1.5">
-                End Date & Time
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  ref={endInputRef}
-                  type="datetime-local"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
-                />
-                <button
-                  type="button"
-                  onClick={() => endInputRef.current?.showPicker?.()}
-                  className="absolute left-3 p-0.5 text-google-yellow hover:scale-110 transition-transform"
-                  title="Open Calendar Date Picker"
-                >
-                  <Calendar className="w-4 h-4" />
-                </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-foreground/75 mb-1.5">
+                  Start Date &amp; Time (Optional)
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    ref={startInputRef}
+                    type="datetime-local"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => startInputRef.current?.showPicker?.()}
+                    className="absolute left-3 p-0.5 text-google-blue hover:scale-110 transition-transform"
+                    title="Open Calendar Date Picker"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-foreground/75 mb-1.5">
+                  End Date &amp; Time (Optional)
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    ref={endInputRef}
+                    type="datetime-local"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-google-blue/30 focus:border-google-blue"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => endInputRef.current?.showPicker?.()}
+                    className="absolute left-3 p-0.5 text-google-yellow hover:scale-110 transition-transform"
+                    title="Open Calendar Date Picker"
+                  >
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* When neither Start nor End schedule is provided: Option for Announcement Closing Date & Time */}
+            {!startTime && !endTime && (
+              <div className="mt-3 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-3 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+                    <div>
+                      <label className="block text-xs font-bold text-foreground">
+                        Closing Date &amp; Time for Announcement (Optional)
+                      </label>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Since this announcement has no scheduled event date, specify when it expires. After this time, it moves automatically to Past Events as Concluded.
+                      </p>
+                    </div>
+                  </div>
+                  {closingTime && (
+                    <button
+                      type="button"
+                      onClick={() => setClosingTime('')}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors border border-destructive/20 shrink-0 self-start sm:self-auto"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Remove Expiry</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  <div className="relative flex items-center">
+                    <input
+                      ref={closingInputRef}
+                      type="datetime-local"
+                      value={closingTime}
+                      onChange={(e) => setClosingTime(e.target.value)}
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-input bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => closingInputRef.current?.showPicker?.()}
+                      className="absolute left-3 p-0.5 text-amber-500 hover:scale-110 transition-transform"
+                      title="Open Calendar Date Picker"
+                    >
+                      <Calendar className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = new Date();
+                        target.setDate(target.getDate() + 3);
+                        target.setHours(23, 59, 0, 0);
+                        const pad = (n: number) => String(n).padStart(2, '0');
+                        setClosingTime(`${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T23:59`);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition-colors"
+                    >
+                      In 3 Days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = new Date();
+                        target.setDate(target.getDate() + 7);
+                        target.setHours(23, 59, 0, 0);
+                        const pad = (n: number) => String(n).padStart(2, '0');
+                        setClosingTime(`${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T23:59`);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition-colors"
+                    >
+                      In 1 Week
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = new Date();
+                        target.setMonth(target.getMonth() + 1);
+                        target.setHours(23, 59, 0, 0);
+                        const pad = (n: number) => String(n).padStart(2, '0');
+                        setClosingTime(`${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}T23:59`);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium transition-colors"
+                    >
+                      In 1 Month
+                    </button>
+                  </div>
+                </div>
+
+                {closingTime && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 font-mono">
+                    {new Date(closingTime) > new Date()
+                      ? `⏳ Announcement concludes on ${new Date(closingTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(closingTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                      : `⚠️ Specified closing time has already passed! This event will be categorized under Past Events immediately.`}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Event Banner / Poster Image (Storage Bucket Upload or URL) */}
@@ -4052,105 +4196,388 @@ Pass: {{ticket_link}}`,
               </div>
 
               {/* Preview Content */}
-              <div data-lenis-prevent className="max-h-[75vh] overflow-y-auto p-6 sm:p-8 space-y-6">
-                {/* Banner */}
-                {bannerUrl && (
-                  <div className="relative h-48 sm:h-64 w-full rounded-2xl overflow-hidden bg-black">
-                    <img
-                      src={bannerUrl}
-                      alt="Banner Preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                  </div>
-                )}
+              {(() => {
+                const previewStartIso = startTime.trim() || null;
+                const previewEndIso = endTime.trim() || null;
+                const previewClosingIso = (!previewStartIso && !previewEndIso && closingTime.trim()) ? closingTime.trim() : null;
+                const hasPreviewDate = Boolean(previewStartIso || previewEndIso);
+                const hasPreviewClosing = !hasPreviewDate && Boolean(previewClosingIso);
+                const previewStartParsed = previewStartIso ? parseEventDate(previewStartIso) : null;
+                const previewEndParsed = previewEndIso ? parseEventDate(previewEndIso) : null;
+                const isPreviewMultiDay = Boolean(
+                  previewStartParsed &&
+                    previewEndParsed &&
+                    (previewStartParsed.getFullYear() !== previewEndParsed.getFullYear() ||
+                      previewStartParsed.getMonth() !== previewEndParsed.getMonth() ||
+                      previewStartParsed.getDate() !== previewEndParsed.getDate())
+                );
+                const hasPreviewTime = Boolean(hasPreviewDate);
+                const hasPreviewVenue = Boolean(location && location.trim());
+                const hasPreviewMetadata = Boolean(hasPreviewDate || hasPreviewClosing || hasPreviewVenue);
 
-                {/* Title & Badge */}
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase inline-block"
-                      style={{ backgroundColor: `${themeColor}20`, color: themeColor }}
-                    >
-                      {category || 'Workshop'}
-                    </span>
-                    {enableParticipationType && (
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono uppercase ${
-                        participationType === 'team'
-                          ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
-                          : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                      }`}>
-                        {participationType === 'team' ? (
-                          <>
-                            <Users className="w-3.5 h-3.5" />
-                            <span>Team Event</span>
-                          </>
-                        ) : (
-                          <>
-                            <User className="w-3.5 h-3.5" />
-                            <span>Individual Event</span>
-                          </>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-2xl sm:text-4xl font-bold font-sans">
-                    {title || 'Untitled Event'}
-                  </h2>
-                </div>
+                const previewNowMs = Date.now();
+                const isPreviewLiveNow = previewStartParsed ? (
+                  previewNowMs >= previewStartParsed.getTime() &&
+                  previewNowMs <= (previewEndParsed ? previewEndParsed.getTime() : previewStartParsed.getTime() + 3 * 3600 * 1000)
+                ) : false;
 
-                {/* Meta Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-muted/40 border border-border/60 text-xs">
-                  <div>
-                    <span className="font-mono text-muted-foreground uppercase font-bold">Date</span>
-                    <p className="font-semibold text-sm mt-0.5">{formatEventDate(startTime)}</p>
-                  </div>
-                  <div>
-                    <span className="font-mono text-muted-foreground uppercase font-bold">Time</span>
-                    <p className="font-semibold text-sm mt-0.5">{formatEventTimeRange(startTime, endTime)}</p>
-                  </div>
-                  <div>
-                    <span className="font-mono text-muted-foreground uppercase font-bold">Venue</span>
-                    <p className="font-semibold text-sm mt-0.5 truncate">{location || 'Campus'}</p>
-                  </div>
-                </div>
-
-                {/* Custom Sections Rendered with Markdown */}
-                {customSections.map((sec) => (
-                  <div key={sec.id} className="p-5 rounded-2xl bg-muted/30 border border-border/60 space-y-2">
-                    <h3 className="text-base font-bold font-sans text-foreground">{sec.title}</h3>
-                    {sec.type === 'link' ? (
-                      <a
-                        href={sec.url || '#'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-google-blue hover:underline inline-flex items-center gap-1"
-                      >
-                        <span>{sec.content || sec.url || 'Open Resource'}</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                return (
+                  <div data-lenis-prevent className="max-h-[75vh] overflow-y-auto p-6 sm:p-8 space-y-6">
+                    {/* Banner Image or Gradient Header */}
+                    {bannerUrl ? (
+                      <div className="relative aspect-[16/9] sm:aspect-[21/9] w-full rounded-2xl overflow-hidden bg-black shadow-inner">
+                        <img
+                          src={bannerUrl}
+                          alt="Banner Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 pointer-events-none" />
+                        <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-10 flex items-center gap-2">
+                          <span
+                            className="px-2.5 py-1 rounded-lg text-xs font-bold font-mono uppercase text-white shadow-sm"
+                            style={{ backgroundColor: `${themeColor}dd` }}
+                          >
+                            {category || 'Workshop'}
+                          </span>
+                        </div>
+                      </div>
                     ) : (
-                      <MarkdownRenderer content={sec.content} />
+                      <div
+                        className="aspect-[16/9] sm:aspect-[21/9] w-full rounded-2xl p-6 sm:p-8 flex flex-col justify-between overflow-hidden shadow-inner"
+                        style={{
+                          background: `radial-gradient(circle at 80% 20%, ${themeColor}35 0%, #111111 85%)`,
+                        }}
+                      >
+                        <div className="flex justify-end">
+                          <span className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center border border-white/15">
+                            <Sparkles className="w-4 h-4 text-white/90" />
+                          </span>
+                        </div>
+                        <div>
+                          <span
+                            className="px-2.5 py-1 rounded-md text-[11px] font-mono font-bold uppercase text-white inline-block mb-1.5 shadow-sm"
+                            style={{ backgroundColor: `${themeColor}dd` }}
+                          >
+                            {category || 'Workshop'}
+                          </span>
+                          <h2 className="text-xl sm:text-2xl font-display font-bold text-white line-clamp-2">
+                            {title || 'Untitled Event'}
+                          </h2>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Badges & Event Title */}
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className="px-3 py-1 rounded-full text-xs font-bold font-mono uppercase"
+                          style={{
+                            backgroundColor: `${themeColor}18`,
+                            color: themeColor,
+                            border: `1px solid ${themeColor}30`,
+                          }}
+                        >
+                          {category || 'Workshop'}
+                        </span>
+
+                        {enableParticipationType && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold font-mono uppercase bg-muted text-foreground border border-border">
+                            {participationType === 'team' ? (
+                              <>
+                                <Users className="w-3.5 h-3.5 text-purple-400" />
+                                <span>Team Event</span>
+                              </>
+                            ) : (
+                              <>
+                                <User className="w-3.5 h-3.5 text-blue-400" />
+                                <span>Individual Event</span>
+                              </>
+                            )}
+                          </span>
+                        )}
+
+                        {/* Forms Included vs Open Announcement Status Badge */}
+                        {hasForm ? (
+                          !isRegistrationOpen ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-yellow text-black font-mono shadow-xs">
+                              <span>Closed</span>
+                            </span>
+                          ) : opensAt && new Date(opensAt) > new Date() ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500 text-white font-mono shadow-xs">
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>Opens in {calculateRemainingTime(opensAt).formattedShort}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-green text-white font-mono shadow-xs">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Registration Open</span>
+                            </span>
+                          )
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-google-blue/15 text-google-blue border border-google-blue/30 font-mono shadow-xs">
+                            <Megaphone className="w-3.5 h-3.5" />
+                            <span>Announcement &amp; Campaign</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-extrabold text-foreground leading-tight">
+                        {title || 'Untitled Event'}
+                      </h1>
+                    </div>
+
+                    {/* Live Indicator in Preview */}
+                    {isPreviewLiveNow && (
+                      <div className="p-3.5 rounded-2xl bg-google-green/10 border border-google-green/30 flex items-center gap-2.5 text-google-green">
+                        <span className="w-2.5 h-2.5 rounded-full bg-google-green animate-ping" />
+                        <span className="text-xs font-mono font-bold tracking-wider">
+                          {category ? `${category} is Live Now!` : 'Event is Live Now!'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Key Event Metadata Grid (Conditionally Rendered: Same as EventDetailPage) */}
+                    {hasPreviewMetadata && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-sm">
+                        {/* Date Block */}
+                        {hasPreviewDate ? (
+                          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                            <div className="w-9 h-9 rounded-xl bg-google-blue/10 flex items-center justify-center shrink-0 mt-0.5">
+                              <Calendar className="w-4 h-4 text-google-blue" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                                Event Date
+                              </span>
+                              {isPreviewMultiDay ? (
+                                <div className="space-y-1 pt-0.5 text-xs sm:text-sm">
+                                  <div className="flex items-baseline gap-2">
+                                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-google-blue shrink-0 w-12">
+                                      Start:
+                                    </span>
+                                    <span className="font-semibold text-foreground">
+                                      {formatEventDate(previewStartIso)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-2">
+                                    <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-google-yellow shrink-0 w-12">
+                                      End:
+                                    </span>
+                                    <span className="font-semibold text-foreground">
+                                      {formatEventDate(previewEndIso)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                                  {formatEventDate(previewStartIso || previewEndIso)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : hasPreviewClosing ? (
+                          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                            <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                              <Calendar className="w-4 h-4 text-amber-500" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                                Closing Date
+                              </span>
+                              <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                                {formatEventDate(previewClosingIso)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Time Block */}
+                        {hasPreviewTime ? (
+                          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                            <div className="w-9 h-9 rounded-xl bg-google-yellow/10 flex items-center justify-center shrink-0 mt-0.5">
+                              <Clock className="w-4 h-4 text-google-yellow" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                                Time Schedule
+                              </span>
+                              <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                                {formatEventTimeRange(previewStartIso, previewEndIso)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : hasPreviewClosing ? (
+                          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60">
+                            <div className="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0 mt-0.5">
+                              <Clock className="w-4 h-4 text-amber-500" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                                Closes At
+                              </span>
+                              <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                                {formatEventTimeRange(null, previewClosingIso)}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Location / Venue Block */}
+                        {hasPreviewVenue && (
+                          <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-muted/40 border border-border/60 sm:col-span-2 md:col-span-1">
+                            <div className="w-9 h-9 rounded-xl bg-google-red/10 flex items-center justify-center shrink-0 mt-0.5">
+                              <MapPin className="w-4 h-4 text-google-red" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[11px] font-mono uppercase font-bold text-muted-foreground mb-1">
+                                Venue / Location
+                              </span>
+                              <span className="font-semibold text-foreground text-xs sm:text-sm block">
+                                {location}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Sync to Google Calendar & Telemetry Actions */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                      <div>
+                        {hasPreviewDate ? (
+                          <div className="inline-flex items-center gap-2 h-10 px-4 rounded-xl border border-border bg-card text-xs font-semibold text-foreground shadow-xs">
+                            <CalendarPlus className="w-4 h-4 text-google-yellow" />
+                            <span>Sync to Google Calendar</span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* Spots Telemetry */}
+                      {hasForm && showSubmissionCount && (
+                        <div className="text-xs text-muted-foreground">
+                          <span className="font-medium">Capacity: </span>
+                          <span className="font-bold text-foreground font-mono">
+                            0 {effectiveSubmissionLimit ? `/ ${effectiveSubmissionLimit} seats` : 'registered'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* About this Event & Custom Sections */}
+                    <div className="p-6 rounded-2xl bg-muted/15 border border-border/60 space-y-6">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-google-blue" />
+                        <h3 className="text-xl font-display font-bold text-foreground">About this Event</h3>
+                      </div>
+
+                      {customSections.length > 0 ? (
+                        customSections.map((sec, idx) => (
+                          <div key={sec.id || idx} className="space-y-2">
+                            {sec.title && sec.title !== 'About the Event' && (
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-google-green" />
+                                <h4 className="text-base font-display font-bold text-foreground">{sec.title}</h4>
+                              </div>
+                            )}
+                            {sec.type === 'link' ? (
+                              <a
+                                href={sec.url || '#'}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 text-sm text-google-blue hover:underline font-semibold"
+                              >
+                                <span>{sec.content || sec.url || 'Open Resource'}</span>
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            ) : (
+                              <div className="text-sm text-muted-foreground leading-relaxed pl-3 border-l-2 border-border/70">
+                                <MarkdownRenderer content={sec.content} />
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Join us for this exciting Google Developer Group campus event. Connect with community peers, learn practical skills, and build projects together.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Registration & Forms Section (Respected when form is included vs not included) */}
+                    {hasForm ? (
+                      <div className="p-6 rounded-2xl bg-muted/25 border border-border/80 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-google-green" />
+                            <h3 className="text-lg font-display font-bold text-foreground">
+                              Registration &amp; Participation
+                            </h3>
+                          </div>
+                          <span className="text-xs font-mono text-muted-foreground">
+                            {formFields.length} question{formFields.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+
+                        {formTitle && (
+                          <p className="text-xs text-muted-foreground font-medium">
+                            {formTitle}
+                          </p>
+                        )}
+
+                        {isRegistrationOpen ? (
+                          <div className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-google-blue text-white font-semibold text-sm shadow-md">
+                            <FileText className="w-4 h-4" />
+                            <span>Fill Registration Form ({formFields.length} fields)</span>
+                          </div>
+                        ) : (
+                          <div className="w-full text-center py-3 px-4 rounded-xl bg-muted text-muted-foreground text-xs font-semibold border border-border">
+                            Registration is currently closed
+                          </div>
+                        )}
+
+                        {formFields.length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-border/50">
+                            <span className="text-[10px] font-mono uppercase text-muted-foreground font-bold block">
+                              Form Questions Preview:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {formFields.map((field) => (
+                                <span
+                                  key={field.id}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-xs text-foreground font-medium"
+                                >
+                                  <span>{field.label || field.name}</span>
+                                  {field.required && <span className="text-google-red font-bold">*</span>}
+                                  <span className="text-[10px] font-mono text-muted-foreground">({field.type})</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* No Form Included: Clean Announcement / Open Event Block */
+                      <div className="p-5 rounded-2xl bg-muted/20 border border-border/60 flex items-center gap-3.5 text-muted-foreground">
+                        <div className="w-10 h-10 rounded-xl bg-google-blue/10 border border-google-blue/20 flex items-center justify-center shrink-0 text-google-blue">
+                          <Megaphone className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-bold text-foreground">
+                            Announcement &amp; Promotion (No Registration Form)
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            No registration form is attached to this event. Attendees can read the announcement, view resources, and participate directly.
+                          </p>
+                        </div>
+                      </div>
                     )}
                   </div>
-                ))}
-
-                {/* Registration CTA Preview */}
-                <div className="pt-4 border-t border-border flex items-center justify-between">
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-xl border text-xs font-semibold text-foreground bg-background"
-                  >
-                    + Add to Google Calendar
-                  </button>
-                  <button
-                    type="button"
-                    className="px-6 py-2.5 rounded-xl bg-google-blue text-white text-xs font-bold shadow-md"
-                  >
-                    Register / Fill Form ({formFields.length} questions)
-                  </button>
-                </div>
-              </div>
+                );
+              })()}
             </motion.div>
           </motion.div>
         )}

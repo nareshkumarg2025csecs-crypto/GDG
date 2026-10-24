@@ -374,10 +374,11 @@ export function formatEventDateRange(
   startIso?: string | null,
   endIso?: string | null
 ): string {
-  if (!startIso) return 'Date TBA';
+  if (!startIso && !endIso) return 'Date TBA';
+  if (!startIso && endIso) return formatEventDate(endIso);
   try {
     const start = parseEventDate(startIso);
-    if (!start) return 'Date TBA';
+    if (!start) return endIso ? formatEventDate(endIso) : 'Date TBA';
 
     const formatOpts: Intl.DateTimeFormatOptions = {
       weekday: 'short',
@@ -402,20 +403,29 @@ export function formatEventDateRange(
     if (sameDay) return startStr;
 
     const endStr = end.toLocaleDateString('en-US', formatOpts);
-    return `${startStr} - ${endStr}`;
+    return `${startStr} – ${endStr}`;
   } catch {
     return 'Date TBA';
   }
 }
 
 /**
- * Formats start and end times into a readable range (e.g. "10:00 AM - 12:30 PM").
+ * Formats start and end times into a readable range (e.g. "10:00 AM – 12:30 PM").
  */
 export function formatEventTimeRange(startIso?: string | null, endIso?: string | null): string {
-  if (!startIso) return 'Time TBA';
+  if (!startIso && !endIso) return 'Time TBA';
+  if (!startIso && endIso) {
+    const end = parseEventDate(endIso);
+    if (!end) return 'Time TBA';
+    return end.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  }
   try {
     const start = parseEventDate(startIso);
-    if (!start) return 'Time TBA';
+    if (!start) return endIso ? formatEventTimeRange(undefined, endIso) : 'Time TBA';
 
     const startTimeStr = start.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -433,6 +443,8 @@ export function formatEventTimeRange(startIso?: string | null, endIso?: string |
       minute: '2-digit',
       hour12: true,
     });
+
+    if (startTimeStr === endTimeStr) return startTimeStr;
 
     return `${startTimeStr} – ${endTimeStr}`;
   } catch {

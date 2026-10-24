@@ -17,6 +17,7 @@ import {
   Timer,
   Flame,
   ZoomIn,
+  Megaphone,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -24,7 +25,7 @@ import { usePromoBannerStore } from '@/store/promoBannerStore';
 import { EVENT_PROMO_CONFIG } from '@/config/eventPromoConfig';
 import { eventService } from '@/services/eventService';
 import { formService } from '@/services/formService';
-import { getEventRegistrationState, type ClubEvent, type EventForm } from '@/lib/formUtils';
+import { getEventRegistrationState, formatEventDate, type ClubEvent, type EventForm } from '@/lib/formUtils';
 import { getEventSlug } from '@/lib/slugUtils';
 
 export type BannerTier = 'slots_low' | 'closing_soon' | 'new_release';
@@ -140,6 +141,15 @@ export const EventLaunchSpotlight: React.FC = () => {
           if (rawStart) {
             const startTimeMs = new Date(rawStart).getTime();
             if (!isNaN(startTimeMs) && startTimeMs <= now) {
+              return false;
+            }
+          }
+
+          // Check if closing time has already passed for dateless announcements
+          const rawClosing = details.closing_time || details.closes_at;
+          if (rawClosing) {
+            const closingTimeMs = new Date(rawClosing).getTime();
+            if (!isNaN(closingTimeMs) && closingTimeMs <= now) {
               return false;
             }
           }
@@ -310,9 +320,14 @@ export const EventLaunchSpotlight: React.FC = () => {
             const evDetails = ev.details || {};
             const rawStart = evDetails.startTime || evDetails.start_time;
             const startMs = rawStart ? new Date(rawStart).getTime() : 0;
+            const rawClosing = evDetails.closing_time || evDetails.closes_at;
+            const closingMs = rawClosing ? new Date(rawClosing).getTime() : 0;
             const createdMs = new Date(ev.created_at || ev.updated_at || evDetails.startTime || 0).getTime();
             const maxAgeMs = (EVENT_PROMO_CONFIG.MAX_EVENT_AGE_DAYS || 90) * 24 * 60 * 60 * 1000;
-            const isRecentOrUpcoming = startMs > now || (createdMs > 0 && now - createdMs <= maxAgeMs);
+            const isRecentOrUpcoming =
+              (startMs > 0 && startMs > now) ||
+              (closingMs > 0 && closingMs > now) ||
+              (createdMs > 0 && now - createdMs <= maxAgeMs);
 
             if (isRecentOrUpcoming) {
               const storageKey = `${EVENT_PROMO_CONFIG.STORAGE_KEY_PREFIX}${ev.id}_new_release`;
@@ -423,15 +438,22 @@ export const EventLaunchSpotlight: React.FC = () => {
     details?.cover_image ||
     details?.banner ||
     null;
-  const category = details?.category || 'Flagship Event';
-  const locationText = details?.location || details?.venue || 'Campus Venue / Online';
+  const category = details?.category || 'Announcement';
+  const rawLocation = details?.location || details?.venue;
+  const locationText = rawLocation && rawLocation.trim() ? rawLocation.trim() : null;
 
-  // Format date cleanly
-  const rawDate = details?.startTime || details?.start_time;
-  let formattedDate = 'Upcoming Date';
-  if (rawDate) {
+  const rawStart = details?.startTime || details?.start_time;
+  const rawClosing = details?.closing_time || details?.closes_at;
+  const isAnnouncement =
+    !rawStart ||
+    !promo.form ||
+    Boolean(details?.category && /announcement|campaign|promotion|notice/i.test(details.category));
+
+  // Format date cleanly: only set if actual start time or closing time exists
+  let formattedDate: string | null = null;
+  if (rawStart) {
     try {
-      const d = new Date(rawDate);
+      const d = new Date(rawStart);
       if (!isNaN(d.getTime())) {
         formattedDate = d.toLocaleDateString(undefined, {
           weekday: 'short',
@@ -444,6 +466,8 @@ export const EventLaunchSpotlight: React.FC = () => {
     } catch {
       // fallback
     }
+  } else if (rawClosing) {
+    formattedDate = `Active until ${formatEventDate(rawClosing)}`;
   }
 
   // Clean snippet from event description if available
@@ -478,16 +502,24 @@ export const EventLaunchSpotlight: React.FC = () => {
       icon: Clock,
     },
     new_release: {
-      tag: promo.form ? 'Registration Open' : 'Featured Event',
-      headline: promo.form ? 'Event Registration Open' : 'Featured Event',
-      subhead: eventSnippet || `Scheduled for ${formattedDate} at ${locationText}.`,
-      badgePill: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/70 border-blue-200 dark:border-blue-900',
+      tag: isAnnouncement ? 'Campus Announcement' : promo.form ? 'Registration Open' : 'Featured Event',
+      headline: isAnnouncement ? 'Campus Announcement' : promo.form ? 'Event Registration Open' : 'Featured Event',
+      subhead:
+        eventSnippet ||
+        (isAnnouncement
+          ? (rawClosing
+              ? `Active until ${formatEventDate(rawClosing)}.`
+              : 'Official announcement and updates from the GDG team.')
+          : `Scheduled for ${formattedDate || 'Upcoming Session'}${locationText ? ` at ${locationText}` : ''}.`),
+      badgePill: isAnnouncement
+        ? 'text-google-blue dark:text-blue-400 bg-google-blue/10 dark:bg-blue-950/70 border-google-blue/30 dark:border-blue-900'
+        : 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/70 border-blue-200 dark:border-blue-900',
       accentColor: details?.theme_color || '#2563EB',
       buttonBg: 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/30',
       topBarGradient: 'from-[#172554] via-[#1d4ed8] to-[#4338ca]',
       risingAura: 'radial-gradient(ellipse at 50% 135%, rgba(255, 255, 255, 0.3) 0%, rgba(99, 102, 241, 0.85) 30%, transparent 75%)',
       glowColor: 'rgba(37, 99, 235, 0.45)',
-      icon: Sparkles,
+      icon: isAnnouncement ? Megaphone : Sparkles,
     },
   }[tier];
 
@@ -570,12 +602,15 @@ export const EventLaunchSpotlight: React.FC = () => {
                     <span>{tierConfig.tag}</span>
                   </span>
 
-                  {/* Category Pill */}
-                  <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hidden md:inline shrink-0">
-                    {category}
-                  </span>
-
-                  <span className="text-slate-300 dark:text-zinc-700 hidden md:inline">&bull;</span>
+                  {/* Category Pill (Shown if distinct from status tag) */}
+                  {category && category.toLowerCase() !== tierConfig.tag.toLowerCase() && (
+                    <>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hidden md:inline shrink-0">
+                        {category}
+                      </span>
+                      <span className="text-slate-300 dark:text-zinc-700 hidden md:inline">&bull;</span>
+                    </>
+                  )}
 
                   {/* Event Title */}
                   <span
@@ -587,10 +622,17 @@ export const EventLaunchSpotlight: React.FC = () => {
 
                   {/* Metadata Chips: Date & Venue (Matching Main Banner Chip style) */}
                   <div className="hidden lg:flex items-center gap-2 shrink-0">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300">
-                      <Calendar className="w-3 h-3 text-blue-500" />
-                      <span>{formattedDate}</span>
-                    </span>
+                    {formattedDate ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300">
+                        <Calendar className="w-3 h-3 text-blue-500" />
+                        <span>{formattedDate}</span>
+                      </span>
+                    ) : isAnnouncement ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-google-blue/10 dark:bg-blue-950/60 border border-google-blue/20 dark:border-blue-800 text-[11px] font-semibold text-google-blue dark:text-blue-400">
+                        <Megaphone className="w-3 h-3" />
+                        <span>Announcement</span>
+                      </span>
+                    ) : null}
 
                     {locationText && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300 max-w-[180px] truncate">
@@ -616,7 +658,9 @@ export const EventLaunchSpotlight: React.FC = () => {
                     className={`px-4 py-1.5 rounded-xl font-bold text-xs shadow-md transition-all duration-200 flex items-center gap-1.5 group hover:scale-105 active:scale-95 ${tierConfig.buttonBg}`}
                   >
                     <span>
-                      {promo.form
+                      {isAnnouncement
+                        ? 'Read Announcement'
+                        : promo.form
                         ? tier === 'slots_low'
                           ? 'Register Now'
                           : tier === 'closing_soon'
@@ -695,7 +739,7 @@ export const EventLaunchSpotlight: React.FC = () => {
                       {event.title}
                     </p>
                     <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
-                      {formattedDate}
+                      {formattedDate || (isAnnouncement ? 'Open Announcement' : category)}
                     </p>
                   </div>
 
@@ -704,7 +748,7 @@ export const EventLaunchSpotlight: React.FC = () => {
                     onClick={handleCtaClick}
                     className={`px-3 py-1.5 rounded-lg font-bold text-[11px] shadow-sm flex items-center gap-1 shrink-0 active:scale-95 transition-all ${tierConfig.buttonBg}`}
                   >
-                    <span>{promo.form ? 'Register' : 'View Event'}</span>
+                    <span>{isAnnouncement ? 'Read' : promo.form ? 'Register' : 'View'}</span>
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
@@ -781,8 +825,8 @@ export const EventLaunchSpotlight: React.FC = () => {
                     <TierIcon className="w-3.5 h-3.5 shrink-0" />
                     <span>{tierConfig.tag}</span>
                   </span>
-                  <span className="text-[11px] font-bold text-slate-300 dark:text-zinc-400">
-                    {category}
+                  <span className="text-[11px] font-semibold text-slate-400 dark:text-zinc-500">
+                    GDG On Campus
                   </span>
                 </div>
 
@@ -810,13 +854,6 @@ export const EventLaunchSpotlight: React.FC = () => {
                     <div className="absolute top-3 right-3 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-md text-white text-xs font-semibold border border-white/20 shadow-lg">
                       <ZoomIn className="w-3.5 h-3.5 text-blue-400" />
                       <span>Click to zoom</span>
-                    </div>
-
-                    {/* Bottom Category pill */}
-                    <div className="absolute bottom-2.5 left-2.5 z-20">
-                      <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-black/60 text-white backdrop-blur-md border border-white/20">
-                        {category}
-                      </span>
                     </div>
                   </div>
                 )}
@@ -853,14 +890,23 @@ export const EventLaunchSpotlight: React.FC = () => {
 
                   {/* Metadata Chips: Date & Venue */}
                   <div className="flex flex-wrap items-center gap-2 text-xs pt-0.5">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 font-medium">
-                      <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                      <span>{formattedDate}</span>
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 font-medium">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                      <span className="truncate max-w-[200px]">{locationText}</span>
-                    </div>
+                    {formattedDate ? (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 font-medium">
+                        <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                        <span>{formattedDate}</span>
+                      </div>
+                    ) : isAnnouncement ? (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-google-blue/10 dark:bg-blue-950/60 border border-google-blue/20 dark:border-blue-800 text-google-blue dark:text-blue-400 font-medium">
+                        <Megaphone className="w-3.5 h-3.5" />
+                        <span>Open Announcement</span>
+                      </div>
+                    ) : null}
+                    {locationText && (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 font-medium">
+                        <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                        <span className="truncate max-w-[200px]">{locationText}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* DYNAMIC TIER FEATURE BLOCK (Capacity Bar / Countdown / Details) */}
@@ -905,12 +951,30 @@ export const EventLaunchSpotlight: React.FC = () => {
                   {tier === 'new_release' && (
                     <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-700 dark:text-zinc-300 font-medium">
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center gap-2">
-                        <Zap className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="truncate">{promo.form ? 'Registration Open' : 'Featured Event'}</span>
+                        {isAnnouncement ? (
+                          <>
+                            <Megaphone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span className="truncate">Open Announcement</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span className="truncate">{promo.form ? 'Registration Open' : 'Featured Event'}</span>
+                          </>
+                        )}
                       </div>
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 flex items-center gap-2">
-                        <Code2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                        <span className="truncate">{category}</span>
+                        {details?.participation_type ? (
+                          <>
+                            <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="truncate capitalize">{details.participation_type} Participation</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="truncate">Verified Campus Event</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -924,7 +988,9 @@ export const EventLaunchSpotlight: React.FC = () => {
                     className={`w-full py-3.5 px-6 rounded-xl font-bold text-sm shadow-md transition-all duration-200 flex items-center justify-center gap-2 group ${tierConfig.buttonBg}`}
                   >
                     <span>
-                      {promo.form
+                      {isAnnouncement
+                        ? 'Read Announcement'
+                        : promo.form
                         ? tier === 'slots_low'
                           ? 'Register Now'
                           : tier === 'closing_soon'
@@ -1021,14 +1087,23 @@ export const EventLaunchSpotlight: React.FC = () => {
 
                   {/* Date & Venue Chips */}
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300">
-                      <Calendar className="w-3.5 h-3.5 text-blue-500" />
-                      {formattedDate}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300 truncate max-w-[170px]">
-                      <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                      {locationText}
-                    </span>
+                    {formattedDate ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300">
+                        <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                        {formattedDate}
+                      </span>
+                    ) : isAnnouncement ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-google-blue/10 dark:bg-blue-950/60 border border-google-blue/20 dark:border-blue-800 text-[11px] font-medium text-google-blue dark:text-blue-400">
+                        <Megaphone className="w-3.5 h-3.5" />
+                        Announcement
+                      </span>
+                    ) : null}
+                    {locationText && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-[11px] font-medium text-slate-700 dark:text-zinc-300 truncate max-w-[170px]">
+                        <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                        {locationText}
+                      </span>
+                    )}
                   </div>
 
                   {/* Dynamic Mobile Urgency Meter */}
@@ -1058,10 +1133,21 @@ export const EventLaunchSpotlight: React.FC = () => {
 
                   {tier === 'new_release' && (
                     <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
-                        {promo.form ? 'Registration open for this event' : 'Featured GDG campus event'}
-                      </p>
+                      {isAnnouncement ? (
+                        <>
+                          <Megaphone className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                          <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
+                            {details?.category || 'Community Announcement'}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                          <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
+                            {promo.form ? 'Registration open for this event' : 'Featured GDG campus event'}
+                          </p>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1075,7 +1161,9 @@ export const EventLaunchSpotlight: React.FC = () => {
                   className={`w-full h-12 rounded-xl font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 ${tierConfig.buttonBg}`}
                 >
                   <span>
-                    {promo.form
+                    {isAnnouncement
+                      ? 'Read Announcement'
+                      : promo.form
                       ? tier === 'slots_low'
                         ? 'Register Now'
                         : tier === 'closing_soon'

@@ -14,11 +14,13 @@ import {
   CheckCircle2,
   Sparkles,
   Timer,
+  Megaphone,
 } from 'lucide-react';
 import {
   type ClubEvent,
   type EventForm,
   getEventRegistrationState,
+  formatEventDate,
   formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
@@ -60,14 +62,19 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   const startDate = details.startTime || details.start_time;
   const endDate = details.endTime || details.end_time;
+  const closingDate = details.closing_time || details.closes_at;
 
   // Determine if event has ended
-  const eventEnd = endDate || startDate;
+  const eventEnd = endDate || startDate || closingDate;
   const isEnded = eventEnd ? new Date() > new Date(eventEnd) : false;
 
-  // Upcoming start countdown
+  // Upcoming start countdown & live now status
   const startDateObj = startDate ? parseEventDate(startDate) : null;
   const isUpcomingStart = !isEnded && startDateObj ? startDateObj.getTime() > Date.now() : false;
+  const isLiveNow = !isEnded && startDateObj ? (
+    Date.now() >= startDateObj.getTime() &&
+    (!endDate || Date.now() <= (parseEventDate(endDate)?.getTime() || startDateObj.getTime() + 3 * 3600 * 1000))
+  ) : false;
   const startCountdown = isUpcomingStart ? calculateRemainingTime(startDate) : null;
   const formattedCountdown = startCountdown && !startCountdown.isPast
     ? startCountdown.days > 0
@@ -231,10 +238,16 @@ export const EventCard: React.FC<EventCardProps> = ({
           ) : <div />}
 
           {/* Timer logic:
+              - If event is actively live: show 'Category is Live'
               - If form included and open: show 'Closes in' timer
               - After form closes or if form not included: show 'Starts in' timer if event upcoming
           */}
-          {attachedForm && regState === 'open' && formattedCloseCountdown ? (
+          {isLiveNow ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-black/85 backdrop-blur-md text-google-green border border-google-green/40 shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-google-green animate-ping shrink-0" />
+              <span>{details.category ? `${details.category} is Live` : 'Live Now'}</span>
+            </span>
+          ) : attachedForm && regState === 'open' && formattedCloseCountdown ? (
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold font-mono bg-black/80 backdrop-blur-md text-white border border-amber-500/40 shadow-xs">
               <Timer className="w-3 h-3 text-amber-400 animate-pulse shrink-0" />
               <span>Closes in {formattedCloseCountdown}</span>
@@ -252,13 +265,28 @@ export const EventCard: React.FC<EventCardProps> = ({
       <div className="p-5 sm:p-6 flex-1 flex flex-col justify-between space-y-4">
         <div>
           {/* Date & Time Header Row */}
-          <div className="flex items-center gap-2 text-xs font-semibold text-google-blue mb-2 flex-wrap">
-            <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-            <span>{formatEventDateRange(startDate, endDate)}</span>
-            <span className="text-muted-foreground/60">•</span>
-            <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
-            <span className="text-muted-foreground">{formatEventTimeRange(startDate, endDate)}</span>
-          </div>
+          {Boolean(startDate || endDate) ? (
+            <div className="flex items-center gap-2 text-xs font-semibold text-google-blue mb-2 flex-wrap">
+              <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
+              <span>{formatEventDateRange(startDate, endDate)}</span>
+              <span className="text-muted-foreground/60">•</span>
+              <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
+              <span className="text-muted-foreground">{formatEventTimeRange(startDate, endDate)}</span>
+            </div>
+          ) : closingDate ? (
+            <div className="flex items-center gap-2 text-xs font-semibold text-amber-500 mb-2 flex-wrap">
+              <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Closes {formatEventDate(closingDate)}</span>
+              <span className="text-muted-foreground/60">•</span>
+              <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span className="text-muted-foreground">{formatEventTimeRange(null, closingDate)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-google-blue mb-2">
+              <Megaphone className="w-3.5 h-3.5 text-google-blue shrink-0" />
+              <span>{details.category || 'Announcement / Campaign'}</span>
+            </div>
+          )}
 
           {/* Event Title */}
           <Link
@@ -331,30 +359,32 @@ export const EventCard: React.FC<EventCardProps> = ({
       <div className="px-5 py-3.5 bg-muted/30 border-t border-border/80 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           {/* Add to Google Calendar Action */}
-          {isAddedToCal ? (
-            <span className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold shadow-xs">
-              <CalendarCheck className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Added</span>
-            </span>
-          ) : isEnded ? (
-            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
-              Concluded
-            </span>
-          ) : regState !== 'closed' ? (
-            <button
-              type="button"
-              disabled={isCalendarProcessing}
-              onClick={() => onAddToCalendar(event.id)}
-              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-              title="Add to Google Calendar"
-            >
-              <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
-              <span>{isCalendarProcessing ? 'Syncing...' : 'Add to Cal'}</span>
-            </button>
-          ) : (
-            <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
-              Closed
-            </span>
+          {Boolean(startDate || endDate) && (
+            isAddedToCal ? (
+              <span className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border border-google-green/30 bg-google-green/10 text-google-green text-xs font-semibold shadow-xs">
+                <CalendarCheck className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Added</span>
+              </span>
+            ) : isEnded ? (
+              <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
+                Concluded
+              </span>
+            ) : regState !== 'closed' ? (
+              <button
+                type="button"
+                disabled={isCalendarProcessing}
+                onClick={() => onAddToCalendar(event.id)}
+                className="inline-flex items-center gap-1.5 h-10 px-3 rounded-xl border border-border bg-card hover:bg-muted text-xs font-semibold text-foreground transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                title="Add to Google Calendar"
+              >
+                <CalendarPlus className="w-3.5 h-3.5 text-google-yellow" />
+                <span>{isCalendarProcessing ? 'Syncing...' : 'Add to Cal'}</span>
+              </button>
+            ) : (
+              <span className="text-[11px] font-mono text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-muted/60">
+                Closed
+              </span>
+            )
           )}
 
           {/* QR Code Share Button (44px min touch target) */}
