@@ -13,8 +13,8 @@ export const getApiBaseUrl = (): string => {
     if (isLocalhost) {
       return '';
     }
-    // Hosted production (e.g. Vercel): target live Render backend
-    return 'https://gdg-backend-54mp.onrender.com';
+    // Hosted production (e.g. Vercel): target live custom backend domain
+    return 'https://api.gdgrec.dev';
   }
   return 'http://localhost:5000';
 };

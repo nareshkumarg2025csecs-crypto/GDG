@@ -133,7 +133,7 @@ const tests = [
       assert.ok(globalHeaderGroup);
       const cspHeader = globalHeaderGroup.headers.find(h => h.key === 'Content-Security-Policy');
       assert.ok(cspHeader);
-      assert.match(cspHeader.value, /https:\/\/gdg-backend-54mp\.onrender\.com/);
+      assert.match(cspHeader.value, /https:\/\/api\.gdgrec\.dev/);
       const htmlHeaderGroup = vercelConfig.headers.find(h => h.source.includes('index\\.html'));
       assert.ok(htmlHeaderGroup);
       const seoHeaderGroup = vercelConfig.headers.find(h => h.source.includes('robots') && h.source.includes('sitemap'));

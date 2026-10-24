@@ -2,10 +2,24 @@
   "installCommand": "npm install --legacy-peer-deps",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "gdg-rec-five.vercel.app" }],
+      "destination": "https://www.gdgrec.dev/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "gdgrec.dev" }],
+      "destination": "https://www.gdgrec.dev/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://gdg-backend-54mp.onrender.com/api/$1"
+      "destination": "https://api.gdgrec.dev/api/$1"
     },
     {
       "source": "/(.*)",
