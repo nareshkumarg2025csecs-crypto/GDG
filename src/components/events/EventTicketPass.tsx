@@ -582,13 +582,23 @@ export const EventTicketPass: React.FC<EventTicketPassProps> = ({
 
             {/* Event Schedule & Venue Information */}
             <div className="p-2 sm:p-2.5 rounded-xl bg-muted/40 border border-border/70 space-y-1 text-[11px]">
-              <div className="flex items-center gap-1.5 text-foreground font-semibold truncate">
-                <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                <span className="truncate">{eventDate}</span>
-                <span className="text-muted-foreground">•</span>
-                <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
-                <span className="truncate">{eventTime}</span>
-              </div>
+              {(eventDate || eventTime) ? (
+                <div className="flex items-center gap-1.5 text-foreground font-semibold truncate">
+                  {eventDate && (
+                    <>
+                      <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                      <span className="truncate">{eventDate}</span>
+                    </>
+                  )}
+                  {eventDate && eventTime && <span className="text-muted-foreground">•</span>}
+                  {eventTime && (
+                    <>
+                      <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
+                      <span className="truncate">{eventTime}</span>
+                    </>
+                  )}
+                </div>
+              ) : null}
               <div className="flex items-center gap-1.5 text-muted-foreground truncate">
                 <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
                 <span className="truncate">{eventVenue}</span>

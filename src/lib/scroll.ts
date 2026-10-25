@@ -40,14 +40,14 @@ export function initSmoothScroll(): void {
     document.documentElement.style.scrollBehavior = 'auto';
 
     lenisInstance = new Lenis({
-        duration: 1.2,
+        duration: 1.0,
         easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
         orientation: 'vertical',
         gestureOrientation: 'vertical',
         smoothWheel: true,
-        wheelMultiplier: 1,
+        wheelMultiplier: 1.0,
         smoothTouch: false,
-        touchMultiplier: 2,
+        touchMultiplier: 1.5,
         infinite: false,
         prevent: (node: any) => {
             if (!node) return false;
@@ -78,7 +78,8 @@ export function initSmoothScroll(): void {
         }
     });
 
-    gsap.ticker.lagSmoothing(0);
+    // Smooth out dropped frames without violent scroll jumps
+    gsap.ticker.lagSmoothing(500, 33);
 }
 
 /**

@@ -47,7 +47,15 @@ export const EventsPage: React.FC = () => {
   const [calendarProcessingId, setCalendarProcessingId] = useState<string | null>(null);
   const [showCalendarConnectModal, setShowCalendarConnectModal] = useState(false);
   const [calendarConnectUrl, setCalendarConnectUrl] = useState<string | null>(null);
-  const [qrModalEvent, setQrModalEvent] = useState<{ title: string; url: string } | null>(null);
+  const [qrModalEvent, setQrModalEvent] = useState<{
+    title: string;
+    url: string;
+    shareText?: string;
+    category?: string;
+    date?: string;
+    venue?: string;
+    description?: string;
+  } | null>(null);
   const [localAddedCalendarEventIds, setLocalAddedCalendarEventIds] = useState<string[]>([]);
 
   // 1. Cached Events Query (5-minute staleTime)
@@ -541,6 +549,11 @@ export const EventsPage: React.FC = () => {
             onClose={() => setQrModalEvent(null)}
             eventTitle={qrModalEvent.title}
             eventUrl={qrModalEvent.url}
+            shareText={qrModalEvent.shareText}
+            category={qrModalEvent.category}
+            date={qrModalEvent.date}
+            venue={qrModalEvent.venue}
+            description={qrModalEvent.description}
           />
         )}
       </main>

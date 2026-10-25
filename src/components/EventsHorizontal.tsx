@@ -126,9 +126,11 @@ function EventCard({ event, index, isDark }: { event: EventItem; index: number; 
 
         {/* Bottom content block with backdrop protection */}
         <div className="p-4 sm:p-5 rounded-2xl bg-black/90 backdrop-blur-sm md:backdrop-blur-md border border-white/15 shadow-2xl space-y-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: event.color }}>
-            {event.date}
-          </p>
+          {event.date && event.date.trim() !== '' && event.date !== 'Date TBA' ? (
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: event.color }}>
+              {event.date}
+            </p>
+          ) : null}
 
           <h3
             className="font-display leading-tight line-clamp-2 text-white drop-shadow-sm"
@@ -191,16 +193,20 @@ export function EventsHorizontal() {
     return published.map((e, idx) => {
       const details = e.details || {};
       const col = details.theme_color || colors[idx % colors.length];
+      const start = details.startTime || details.start_time;
+      const end = details.endTime || details.end_time;
+      let eventDate = '';
+      if (start || end) {
+        eventDate = formatEventDateRange(start, end);
+      }
+
       return {
         id: e.id,
         eventId: e.id,
         slug: getEventSlug(e),
         title: e.title,
         type: details.category || 'Workshop',
-        date: formatEventDateRange(
-          details.startTime || details.start_time,
-          details.endTime || details.end_time
-        ),
+        date: eventDate,
         color: col,
         bannerUrl: details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image,
         description: stripMarkdown(

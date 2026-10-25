@@ -11,6 +11,7 @@ import {
   CalendarPlus,
   CalendarCheck,
   QrCode,
+  Share2,
   CheckCircle2,
   Sparkles,
   Timer,
@@ -26,7 +27,9 @@ import {
   stripMarkdown,
   calculateRemainingTime,
   parseEventDate,
+  buildEventShareContent,
 } from '@/lib/formUtils';
+import { toast } from '@/hooks/use-toast';
 import { getEventSlug } from '@/lib/slugUtils';
 
 interface EventCardProps {
@@ -38,7 +41,15 @@ interface EventCardProps {
   isCalendarProcessing?: boolean;
   isAuthenticated: boolean;
   onAddToCalendar: (eventId: string) => void;
-  onShareQr: (event: { title: string; url: string }) => void;
+  onShareQr: (event: {
+    title: string;
+    url: string;
+    shareText?: string;
+    category?: string;
+    date?: string;
+    venue?: string;
+    description?: string;
+  }) => void;
   onNavigate: () => void;
 }
 
@@ -120,6 +131,44 @@ export const EventCard: React.FC<EventCardProps> = ({
 
   const accentColor = details.theme_color || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
   const banner = details.thumbnail_url || details.banner_url || details.coverImage || details.cover_image;
+
+  const handleCardShare = async () => {
+    const shareUrl = `${window.location.origin}/events/${eventSlug}`;
+    const shareContent = buildEventShareContent({
+      title: event.title,
+      category: details.category,
+      startTime: startDate,
+      endTime: endDate,
+      closingTime: closingDate,
+      venue: details.location || details.venue,
+      description: details.description,
+      url: shareUrl,
+    });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: shareContent.title,
+          text: shareContent.shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareContent.fullMessage);
+      toast({
+        title: 'Event Details Copied!',
+        description: 'Formatted event invitation and link copied to clipboard.',
+      });
+    } catch {
+      navigator.clipboard.writeText(shareUrl);
+      toast({ title: 'Link Copied', description: 'Event link copied to clipboard.' });
+    }
+  };
 
   return (
     <motion.article
@@ -390,17 +439,49 @@ export const EventCard: React.FC<EventCardProps> = ({
           {/* QR Code Share Button (44px min touch target) */}
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              const shareUrl = `${window.location.origin}/events/${eventSlug}`;
+              const shareContent = buildEventShareContent({
+                title: event.title,
+                category: details.category,
+                startTime: startDate,
+                endTime: endDate,
+                closingTime: closingDate,
+                venue: details.location || details.venue,
+                description: details.description,
+                url: shareUrl,
+              });
+              const eventTime = details.time || (startDate ? formatEventTimeRange(startDate, endDate) : '');
+              const formattedDateWithTime = startDate
+                ? `${formatEventDateRange(startDate, endDate)}${eventTime && !/TBA/i.test(eventTime) ? ` · ${eventTime}` : ''}`
+                : undefined;
+
               onShareQr({
                 title: event.title,
-                url: `${window.location.origin}/events/${eventSlug}`,
-              })
-            }
+                url: shareUrl,
+                shareText: shareContent.fullMessage,
+                category: details.category,
+                date: formattedDateWithTime,
+                venue: details.location || details.venue,
+                description: details.description || (details.custom_sections && details.custom_sections[0]?.content),
+              });
+            }}
             className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer shadow-xs active:scale-95"
             title="Share event as QR Code"
             aria-label="Share as QR Code"
           >
             <QrCode className="w-4 h-4" />
+          </button>
+
+          {/* Formatted Event Share Button */}
+          <button
+            type="button"
+            onClick={handleCardShare}
+            className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer shadow-xs active:scale-95"
+            title="Share event"
+            aria-label="Share event"
+          >
+            <Share2 className="w-4 h-4" />
           </button>
         </div>
 

@@ -79,6 +79,14 @@ const FluidCanvas = () => {
     const [isVisible, setIsVisible] = useState(true);
     const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || window.matchMedia?.('(pointer: coarse)').matches);
 
+    const [tabVisible, setTabVisible] = useState(() => (typeof document !== 'undefined' ? !document.hidden : true));
+
+    useEffect(() => {
+        const handleVis = () => setTabVisible(!document.hidden);
+        document.addEventListener('visibilitychange', handleVis);
+        return () => document.removeEventListener('visibilitychange', handleVis);
+    }, []);
+
     useEffect(() => {
         const el = containerRef.current;
         if (!el || typeof IntersectionObserver === 'undefined') return;
@@ -109,7 +117,7 @@ const FluidCanvas = () => {
                         e.preventDefault();
                     }, false);
                 }}
-                frameloop={isVisible ? "always" : "never"}
+                frameloop={isVisible && tabVisible ? "always" : "never"}
                 style={{
                     position: 'absolute',
                     top: 0,

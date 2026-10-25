@@ -264,15 +264,7 @@ const HeroSection = () => {
                 >
                   Pixel 🐾
                 </span>
-                <span
-                  className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded"
-                  style={{
-                    backgroundColor: isDark ? 'rgba(66,133,244,0.22)' : 'rgba(66,133,244,0.12)',
-                    color: '#4285F4',
-                  }}
-                >
-                  3D Mascot
-                </span>
+                
                 <span
                   className="text-[11px] font-body"
                   style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(31,31,31,0.55)' }}

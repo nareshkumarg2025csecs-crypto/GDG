@@ -86,6 +86,8 @@ export default function GdgCatMascot({
 }: GdgCatMascotProps) {
   const host = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(false);
+  const [canMountScene, setCanMountScene] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
   const [inView, setInView] = useState(true);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -98,6 +100,37 @@ export default function GdgCatMascot({
     const handleVis = () => setTabVisible(!document.hidden);
     document.addEventListener('visibilitychange', handleVis);
     return () => document.removeEventListener('visibilitychange', handleVis);
+  }, []);
+
+  // Pause rendering during rapid scrolling so mobile & desktop keep native 60/120 FPS
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const handleScroll = () => {
+      setIsScrolling(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        setIsScrolling(false);
+      }, 120);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // Defer mounting heavy 3D WebGL context until after initial paint & animations complete
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ('requestIdleCallback' in window) {
+      const handle = (window as any).requestIdleCallback(() => {
+        setCanMountScene(true);
+      }, { timeout: 600 });
+      return () => (window as any).cancelIdleCallback(handle);
+    } else {
+      const timer = setTimeout(() => setCanMountScene(true), 350);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   // Lazy-mount when within ~200px of the viewport; pause rendering when scrolled away.
@@ -114,7 +147,7 @@ export default function GdgCatMascot({
   }, []);
 
   const handleError = (e: unknown) => { setFailed(true); onError?.(e); };
-  const showScene = near && webgl && !failed;
+  const showScene = near && canMountScene && webgl && !failed;
 
   const posterEl = (
     <img src={poster} alt={alt} draggable={false}
@@ -130,11 +163,11 @@ export default function GdgCatMascot({
       aria-label={alt}
     >
       {/* Poster underneath: visible until the 3D model is ready, and as the fallback. */}
-      <div style={{ position: 'absolute', inset: 0, opacity: ready && showScene ? 0 : 1, transition: 'opacity .4s' }}>
+      <div style={{ position: 'absolute', inset: 0, opacity: ready && showScene ? 0 : 1, transition: 'opacity .5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
         {posterEl}
       </div>
       {showScene && (
-        <div style={{ position: 'absolute', inset: 0, opacity: ready ? 1 : 0, transition: 'opacity .4s' }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: ready ? 1 : 0, transition: 'opacity .5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
           <SceneBoundary onError={handleError} fallback={null}>
             <Suspense fallback={null}>
               <GdgCatScene
@@ -147,7 +180,7 @@ export default function GdgCatMascot({
                 animate={animate && !reduced}
                 lightIntensity={lightIntensity}
                 shadow={shadow}
-                paused={!inView || !tabVisible}
+                paused={!inView || !tabVisible || isScrolling}
                 onReady={() => { setReady(true); onLoad?.(); }}
               />
             </Suspense>

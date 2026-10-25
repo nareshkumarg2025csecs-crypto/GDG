@@ -348,12 +348,13 @@ export function parseEventDate(isoDate?: string | null): Date | null {
 
 /**
  * Formats ISO date string to a human-readable date.
+ * Returns empty string if date is missing or invalid.
  */
 export function formatEventDate(isoDate?: string | null): string {
-  if (!isoDate) return 'Date TBA';
+  if (!isoDate) return '';
   try {
     const d = parseEventDate(isoDate);
-    if (!d) return 'Date TBA';
+    if (!d) return '';
     return d.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
@@ -361,7 +362,7 @@ export function formatEventDate(isoDate?: string | null): string {
       year: 'numeric',
     });
   } catch {
-    return 'Date TBA';
+    return '';
   }
 }
 
@@ -369,16 +370,17 @@ export function formatEventDate(isoDate?: string | null): string {
  * Formats a start/end date pair smartly:
  * - Same calendar day → shows single date (e.g. "Sat, Aug 23, 2026")
  * - Different calendar days → shows "From [date] to [date]"
+ * Returns empty string if neither date is present.
  */
 export function formatEventDateRange(
   startIso?: string | null,
   endIso?: string | null
 ): string {
-  if (!startIso && !endIso) return 'Date TBA';
+  if (!startIso && !endIso) return '';
   if (!startIso && endIso) return formatEventDate(endIso);
   try {
     const start = parseEventDate(startIso);
-    if (!start) return endIso ? formatEventDate(endIso) : 'Date TBA';
+    if (!start) return endIso ? formatEventDate(endIso) : '';
 
     const formatOpts: Intl.DateTimeFormatOptions = {
       weekday: 'short',
@@ -405,18 +407,19 @@ export function formatEventDateRange(
     const endStr = end.toLocaleDateString('en-US', formatOpts);
     return `${startStr} – ${endStr}`;
   } catch {
-    return 'Date TBA';
+    return '';
   }
 }
 
 /**
  * Formats start and end times into a readable range (e.g. "10:00 AM – 12:30 PM").
+ * Returns empty string if neither time is present.
  */
 export function formatEventTimeRange(startIso?: string | null, endIso?: string | null): string {
-  if (!startIso && !endIso) return 'Time TBA';
+  if (!startIso && !endIso) return '';
   if (!startIso && endIso) {
     const end = parseEventDate(endIso);
-    if (!end) return 'Time TBA';
+    if (!end) return '';
     return end.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
@@ -425,7 +428,7 @@ export function formatEventTimeRange(startIso?: string | null, endIso?: string |
   }
   try {
     const start = parseEventDate(startIso);
-    if (!start) return endIso ? formatEventTimeRange(undefined, endIso) : 'Time TBA';
+    if (!start) return endIso ? formatEventTimeRange(undefined, endIso) : '';
 
     const startTimeStr = start.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -448,7 +451,7 @@ export function formatEventTimeRange(startIso?: string | null, endIso?: string |
 
     return `${startTimeStr} – ${endTimeStr}`;
   } catch {
-    return 'Time TBA';
+    return '';
   }
 }
 
@@ -476,4 +479,96 @@ export function stripMarkdown(markdown?: string | null): string {
     .replace(/\n+/g, ' ') // collapse multi-lines
     .replace(/\s{2,}/g, ' ') // collapse multiple spaces
     .trim();
+}
+
+export interface EventShareInput {
+  title: string;
+  category?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  closingTime?: string | null;
+  venue?: string | null;
+  location?: string | null;
+  description?: string | null;
+  url: string;
+}
+
+export interface EventShareResult {
+  title: string;
+  shareText: string;
+  fullMessage: string;
+  url: string;
+}
+
+/**
+ * Builds a contextual, beautifully formatted sharing message according to the event type,
+ * dates, location, and description.
+ */
+export function buildEventShareContent(input: EventShareInput): EventShareResult {
+  const title = (input.title || 'GDG Event').trim();
+  const category = (input.category || 'Event').trim();
+  const isAnnouncement = category.toLowerCase() === 'announcement';
+
+  const dateRange = formatEventDateRange(input.startTime, input.endTime);
+  const timeRange = formatEventTimeRange(input.startTime, input.endTime);
+  const closingDate = input.closingTime ? formatEventDate(input.closingTime) : '';
+  const venue = (input.venue || input.location || '').trim();
+
+  // Strip markdown and grab a clean 1-2 sentence preview
+  const rawDesc = input.description ? stripMarkdown(input.description) : '';
+  const teaser = rawDesc.length > 150 ? `${rawDesc.slice(0, 147)}...` : rawDesc;
+
+  const lines: string[] = [];
+
+  if (isAnnouncement) {
+    lines.push(`📢 ${title}`);
+    lines.push(`🏷️ Announcement · Google Developer Groups REC`);
+    if (teaser) {
+      lines.push('');
+      lines.push(teaser);
+    }
+    if (closingDate) {
+      lines.push('');
+      lines.push(`⏳ Active until: ${closingDate}`);
+    }
+  } else {
+    // Contextual icon based on category
+    let icon = '🚀';
+    const catLower = category.toLowerCase();
+    if (catLower.includes('hackathon')) icon = '⚡';
+    else if (catLower.includes('workshop') || catLower.includes('bootcamp')) icon = '🛠️';
+    else if (catLower.includes('speaker') || catLower.includes('talk')) icon = '🎙️';
+    else if (catLower.includes('contest') || catLower.includes('competition')) icon = '🏆';
+    else if (catLower.includes('social') || catLower.includes('meetup')) icon = '🤝';
+
+    lines.push(`${icon} ${title}`);
+    lines.push(`🏷️ ${category} · Google Developer Groups on Campus REC`);
+    if (teaser) {
+      lines.push('');
+      lines.push(teaser);
+    }
+    lines.push('');
+    if (dateRange) {
+      lines.push(`📅 Date: ${dateRange}${timeRange ? ` · ${timeRange}` : ''}`);
+    } else if (closingDate) {
+      lines.push(`⏳ Closes: ${closingDate}`);
+    }
+    if (venue) {
+      lines.push(`📍 Venue: ${venue}`);
+    }
+  }
+
+  // Header prompt before link
+  lines.push('');
+  lines.push(isAnnouncement ? '🔗 Read full announcement:' : '🔗 Explore details & participate:');
+
+  const shareText = lines.join('\n');
+  const fullMessage = `${shareText}\n${input.url}`;
+
+  return {
+    title: `${title} | GDG on Campus REC`,
+    shareText,
+    fullMessage,
+    url: input.url,
+  };
 }

@@ -87,14 +87,35 @@ function Kitten({
   }, [scene, isCoarse]);
 
   useEffect(() => {
-    // Warm up & precompile shaders on the actual loaded mascot geometry and materials
-    try {
-      gl.compile(scene, camera);
-    } catch {
-      // Fallback if compile is unsupported on constrained WebGL context
-    }
-    onReady?.();
-    invalidate();
+    let isMounted = true;
+    const warmupAndCompile = async () => {
+      // Warm up & precompile shaders asynchronously using GPU worker threads
+      // This prevents the main JS thread from freezing on first visit
+      try {
+        if ('compileAsync' in gl && typeof (gl as any).compileAsync === 'function') {
+          await (gl as any).compileAsync(scene, camera);
+        } else {
+          gl.compile(scene, camera);
+        }
+      } catch {
+        // Fallback if compile is unsupported on constrained WebGL context
+      }
+
+      if (isMounted) {
+        // Let GPU complete texture upload before signaling ready to fade in
+        requestAnimationFrame(() => {
+          if (isMounted) {
+            onReady?.();
+            invalidate();
+          }
+        });
+      }
+    };
+
+    warmupAndCompile();
+    return () => {
+      isMounted = false;
+    };
   }, [scene, gl, camera, onReady, invalidate]);
 
   useFrame((state, delta) => {
@@ -181,12 +202,12 @@ export default function GdgCatScene(props: GdgCatSceneProps) {
       gl={{
         alpha: true,
         antialias: !isCoarse,
-        powerPreference: 'high-performance',
+        powerPreference: isCoarse ? 'default' : 'high-performance',
         stencil: false,
         depth: true,
         precision: isCoarse ? 'mediump' : 'highp',
       }}
-      dpr={[1, isCoarse ? 1.05 : 1.35]}
+      dpr={[1, isCoarse ? 1.15 : 1.5]}
       shadows={false}
       frameloop={frameloopMode}
       camera={{ position: cameraPosition, fov, near: 0.1, far: 50 }}

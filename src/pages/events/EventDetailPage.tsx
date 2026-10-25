@@ -41,6 +41,7 @@ import {
   formatEventTimeRange,
   calculateRemainingTime,
   parseEventDate,
+  buildEventShareContent,
 } from '@/lib/formUtils';
 import EventTicketPass from '@/components/events/EventTicketPass';
 import { SEO } from '@/components/common/SEO';
@@ -294,14 +295,38 @@ export const EventDetailPage: React.FC = () => {
     return `https://www.gdgrec.dev/events/${slug}`;
   }, [canonicalSlug, id]);
 
-  const handleShare = () => {
+  const handleShare = async () => {
+    const shareContent = buildEventShareContent({
+      title: event?.title || 'GDG Event',
+      category: details?.category,
+      startTime: details?.startTime || details?.start_time,
+      endTime: details?.endTime || details?.end_time,
+      closingTime: details?.closing_time || details?.closes_at,
+      venue: details?.location || details?.venue,
+      description: details?.description || (details?.custom_sections && details.custom_sections[0]?.content),
+      url: canonicalUrl,
+    });
+
     if (navigator.share) {
-      navigator.share({
-        title: event?.title || 'GDG Event',
-        text: 'Check out this event on GDG on Campus!',
-        url: canonicalUrl,
+      try {
+        await navigator.share({
+          title: shareContent.title,
+          text: shareContent.shareText,
+          url: canonicalUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareContent.fullMessage);
+      toast({
+        title: 'Event Details Copied!',
+        description: 'Formatted event invitation and link copied to clipboard.',
       });
-    } else {
+    } catch {
       navigator.clipboard.writeText(canonicalUrl);
       toast({ title: 'Link Copied', description: 'Event link copied to your clipboard.' });
     }
@@ -1037,13 +1062,6 @@ export const EventDetailPage: React.FC = () => {
           </div>
         </div>
 
-        {/* QR Share Modal */}
-        <EventQrModal
-          isOpen={showQrModal}
-          onClose={() => setShowQrModal(false)}
-          eventTitle={event?.title || 'Event'}
-          eventUrl={canonicalUrl}
-        />
 
         {/* Ticket Pass QR Modal */}
         {showTicketModal && event && (
@@ -1171,6 +1189,30 @@ export const EventDetailPage: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* QR Code Share Modal */}
+        {showQrModal && (
+          <EventQrModal
+            isOpen={showQrModal}
+            onClose={() => setShowQrModal(false)}
+            eventTitle={event.title}
+            eventUrl={canonicalUrl}
+            shareText={buildEventShareContent({
+              title: event.title,
+              category: details?.category,
+              startTime: details?.startTime || details?.start_time,
+              endTime: details?.endTime || details?.end_time,
+              closingTime: details?.closing_time || details?.closes_at,
+              venue: details?.location || details?.venue,
+              description: details?.description,
+              url: canonicalUrl,
+            }).fullMessage}
+            category={details?.category}
+            date={details?.startTime ? `${formatEventDateRange(details.startTime, details.endTime)}${details?.time && !/TBA/i.test(details.time) ? ` · ${details.time}` : ''}` : undefined}
+            venue={details?.location || details?.venue}
+            description={details?.description || event.description}
+          />
+        )}
       </main>
 
       <Footer />

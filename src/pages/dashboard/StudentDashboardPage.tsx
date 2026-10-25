@@ -52,6 +52,7 @@ import {
   type EventForm,
   type FormSubmission,
   parseEventDate,
+  formatEventDate,
   formatEventDateRange,
   formatEventTimeRange,
   stripMarkdown,
@@ -1021,24 +1022,33 @@ export const StudentDashboardPage: React.FC = () => {
                         </p>
 
                         <div className="space-y-1.5 text-xs text-muted-foreground pt-2 border-t border-border/60">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                            <span>
-                              {formatEventDateRange(
-                                details.startTime || details.start_time,
-                                details.endTime || details.end_time
-                              )}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
-                            <span>
-                              {formatEventTimeRange(
-                                details.startTime || details.start_time,
-                                details.endTime || details.end_time
-                              )}
-                            </span>
-                          </div>
+                          {Boolean(details.startTime || details.start_time || details.endTime || details.end_time) ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                                <span>
+                                  {formatEventDateRange(
+                                    details.startTime || details.start_time,
+                                    details.endTime || details.end_time
+                                  )}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-3.5 h-3.5 text-google-yellow shrink-0" />
+                                <span>
+                                  {formatEventTimeRange(
+                                    details.startTime || details.start_time,
+                                    details.endTime || details.end_time
+                                  )}
+                                </span>
+                              </div>
+                            </>
+                          ) : Boolean(details.closing_time || details.closes_at) ? (
+                            <div className="flex items-center gap-2 text-amber-500 font-medium">
+                              <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <span>Closes {formatEventDate(details.closing_time || details.closes_at)}</span>
+                            </div>
+                          ) : null}
                           {(details.location || details.venue) && (
                             <div className="flex items-center gap-2">
                               <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
@@ -1337,15 +1347,22 @@ export const StudentDashboardPage: React.FC = () => {
                         )}
 
                         <div className="space-y-1.5 text-xs text-muted-foreground pt-1">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
-                            <span>
-                              {formatEventDateRange(
-                                details.startTime || details.start_time,
-                                details.endTime || details.end_time
-                              )}
-                            </span>
-                          </div>
+                          {Boolean(details.startTime || details.start_time || details.endTime || details.end_time) ? (
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-3.5 h-3.5 text-google-blue shrink-0" />
+                              <span>
+                                {formatEventDateRange(
+                                  details.startTime || details.start_time,
+                                  details.endTime || details.end_time
+                                )}
+                              </span>
+                            </div>
+                          ) : Boolean(details.closing_time || details.closes_at) ? (
+                            <div className="flex items-center gap-2 text-amber-500 font-medium">
+                              <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                              <span>Closes {formatEventDate(details.closing_time || details.closes_at)}</span>
+                            </div>
+                          ) : null}
                           {(details.location || details.venue) && (
                             <div className="flex items-center gap-2">
                               <MapPin className="w-3.5 h-3.5 text-google-red shrink-0" />
