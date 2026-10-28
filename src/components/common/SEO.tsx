@@ -14,8 +14,8 @@ export interface SEOProps {
 const DEFAULT_TITLE = 'Google Developer Groups on Campus | REC';
 const DEFAULT_DESCRIPTION =
   'Official website for Google Developer Groups on Campus at Rajalakshmi Engineering College (REC). Discover upcoming workshops, hackathons, speaker sessions, and tech resources.';
-const DEFAULT_IMAGE = 'https://www.gdgrec.dev/favicon.png';
-const SITE_NAME = 'Google Developer Groups On Campus - REC';
+const DEFAULT_IMAGE = 'https://www.gdgrec.dev/icons/icon-512x512.png';
+const SITE_NAME = 'GDG on Campus REC';
 const BASE_URL = 'https://www.gdgrec.dev';
 
 const DEFAULT_KEYWORDS = [
